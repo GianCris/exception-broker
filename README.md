@@ -1,3 +1,19 @@
 # Exception Broker
 
-Multi-party exception resolution through constraint-aware phone calls powered by CALL-E.
+## Instalación
+
+```sh
+npm install
+```
+
+## Pruebas
+
+```sh
+npm test
+```
+
+## Typecheck
+
+```sh
+npm run typecheck
+```
