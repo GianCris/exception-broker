@@ -2,109 +2,120 @@ import { approvalsForPlan } from '../domain/approvals.js';
 import type { Case001SimulationResult } from '../domain/simulation.js';
 import type { ActorRole, PlanStatus } from '../domain/types.js';
 
+const presentationTimeZone = 'America/Lima';
+
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Lima',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
+  timeZone: presentationTimeZone,
+  month: 'short', day: 'numeric', year: 'numeric',
 });
-
 const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Lima',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
+  timeZone: presentationTimeZone,
+  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
 });
-
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Lima',
-  hour: 'numeric',
-  minute: '2-digit',
+  timeZone: presentationTimeZone,
+  hour: 'numeric', minute: '2-digit',
 });
 
-export const formatDate = (value: string): string =>
-  dateFormatter.format(new Date(value));
-
-export const formatDateTime = (value: string): string =>
-  dateTimeFormatter.format(new Date(value));
-
-export const formatTime = (value: string): string =>
-  timeFormatter.format(new Date(value));
-
+export const formatDate = (value: string): string => dateFormatter.format(new Date(value));
+export const formatDateTime = (value: string): string => dateTimeFormatter.format(new Date(value));
+export const formatTime = (value: string): string => timeFormatter.format(new Date(value));
 export const formatCost = (value: number): string =>
-  `S/${value.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-
+  `S/${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const formatLabel = (value: string): string =>
-  value
-    .toLowerCase()
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  value.toLowerCase().split('_').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 
-const authorizationFieldLabels = {
-  maxSubstituteQuantity: 'Maximum substitute units',
-} as const;
+const authorizationFieldLabels = { maxSubstituteQuantity: 'Client substitute limit' } as const;
+
+type PlanExplanation =
+  | Readonly<{ kind: 'rejected'; proposedSubstitutes: number; clientLimit: number; reason: string }>
+  | Readonly<{ kind: 'no-solution'; requiredTomorrow: number; availableTomorrow: number; shortfall: number }>
+  | Readonly<{ kind: 'final'; unlockPreviousValue: number; unlockNewValue: number }>;
 
 export type PlanViewModel = Readonly<{
   id: string;
   version: number;
   status: PlanStatus;
   statusLabel: string;
+  isFinal: boolean;
   tomorrowTotal: number;
   originalTomorrow: number;
   substituteTomorrow: number;
   originalLater: number;
   laterDeliveryDate: string;
   clientAdditionalCost: string;
+  costAllocation: readonly Readonly<{ role: ActorRole; label: string; cost: string }>[];
+  validationPassed: boolean;
+  explanation: PlanExplanation;
 }>;
 
 export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
+  const authorizationChange = simulation.authorizationChanges.find(
+    ({ field }) => field === 'maxSubstituteQuantity',
+  );
+  const finalValidation = simulation.validations.find(({ planId }) => planId === simulation.finalPlanId);
   const plans: readonly PlanViewModel[] = [...simulation.plans]
     .sort((left, right) => left.version - right.version)
-    .map((plan) => ({
-      id: plan.id,
-      version: plan.version,
-      status: plan.status,
-      statusLabel: formatLabel(plan.status),
-      tomorrowTotal:
-        plan.originalQuantityTomorrow + plan.substituteQuantityTomorrow,
-      originalTomorrow: plan.originalQuantityTomorrow,
-      substituteTomorrow: plan.substituteQuantityTomorrow,
-      originalLater: plan.originalQuantityLater,
-      laterDeliveryDate: formatDateTime(plan.laterDeliveryDate),
-      clientAdditionalCost: formatCost(plan.clientAdditionalCost),
-    }));
-  const finalPlan = simulation.plans.find(
-    ({ id }) => id === simulation.finalPlanId,
-  );
-  const finalValidation = simulation.validations.find(
-    ({ planId }) => planId === simulation.finalPlanId,
-  );
-  const finalApprovals =
-    simulation.finalPlanId === null
-      ? []
-      : approvalsForPlan(simulation.approvals, simulation.finalPlanId).map(
-          (approval) => ({
-            actorId: approval.actorId,
-            role: approval.actorRole,
-            roleLabel: formatLabel(approval.actorRole),
-            decision: approval.decision,
-            decisionLabel: formatLabel(approval.decision),
-            createdAt: formatDateTime(approval.createdAt),
-          }),
-        );
+    .map((plan) => {
+      const isFinal = plan.id === simulation.finalPlanId;
+      const validation = simulation.validations.find(({ planId }) => planId === plan.id);
+      let explanation: PlanExplanation;
+
+      if (isFinal && authorizationChange !== undefined) {
+        explanation = {
+          kind: 'final',
+          unlockPreviousValue: authorizationChange.previousValue,
+          unlockNewValue: authorizationChange.newValue,
+        };
+      } else if (plan.status === 'NO_SOLUTION') {
+        explanation = {
+          kind: 'no-solution',
+          requiredTomorrow: simulation.noSolutionEvidence.requiredMinimumUnitsTomorrow,
+          availableTomorrow: simulation.noSolutionEvidence.availableUnitsTomorrow,
+          shortfall:
+            simulation.noSolutionEvidence.requiredMinimumUnitsTomorrow -
+            simulation.noSolutionEvidence.availableUnitsTomorrow,
+        };
+      } else {
+        const r04 = validation?.result.violations.find(({ ruleId }) => ruleId === 'R-04');
+        explanation = {
+          kind: 'rejected',
+          proposedSubstitutes: plan.substituteQuantityTomorrow,
+          clientLimit: authorizationChange?.previousValue ?? 0,
+          reason: r04?.message ?? '',
+        };
+      }
+
+      return {
+        id: plan.id,
+        version: plan.version,
+        status: plan.status,
+        statusLabel: formatLabel(plan.status),
+        isFinal,
+        tomorrowTotal: plan.originalQuantityTomorrow + plan.substituteQuantityTomorrow,
+        originalTomorrow: plan.originalQuantityTomorrow,
+        substituteTomorrow: plan.substituteQuantityTomorrow,
+        originalLater: plan.originalQuantityLater,
+        laterDeliveryDate: formatDateTime(plan.laterDeliveryDate),
+        clientAdditionalCost: formatCost(plan.clientAdditionalCost),
+        costAllocation: [
+          { role: 'supplier', label: formatLabel('supplier'), cost: formatCost(plan.supplierAbsorbedCost) },
+          { role: 'production', label: formatLabel('production'), cost: formatCost(plan.productionAbsorbedCost) },
+          { role: 'client', label: formatLabel('client'), cost: formatCost(plan.clientAdditionalCost) },
+        ],
+        validationPassed: isFinal && finalValidation?.result.valid === true,
+        explanation,
+      };
+    });
 
   return {
     header: {
       caseId: simulation.caseId,
+      caseLabel: `${simulation.caseId} · Supply exception`,
+      title: `${simulation.updatedCase.requestedQuantity}-unit shortage resolved`,
       requestedQuantity: simulation.updatedCase.requestedQuantity,
-      targetDeliveryDate: formatDateTime(
-        simulation.updatedCase.targetDeliveryDate,
-      ),
+      participantCount: simulation.updatedCase.actors.length,
+      targetDeliveryDate: formatDateTime(simulation.updatedCase.targetDeliveryDate),
       status: simulation.status,
       statusLabel: formatLabel(simulation.status),
     },
@@ -119,40 +130,21 @@ export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
       reason: change.reason,
       createdAt: formatDateTime(change.createdAt),
     })),
-    finalPlan:
-      finalPlan === undefined
-        ? null
-        : {
-            id: finalPlan.id,
-            originalTomorrow: finalPlan.originalQuantityTomorrow,
-            substituteTomorrow: finalPlan.substituteQuantityTomorrow,
-            originalLater: finalPlan.originalQuantityLater,
-            laterDeliveryDate: formatDateTime(finalPlan.laterDeliveryDate),
-            clientAdditionalCost: formatCost(finalPlan.clientAdditionalCost),
-            costAllocation: [
-              {
-                role: 'supplier' as ActorRole,
-                label: formatLabel('supplier'),
-                cost: formatCost(finalPlan.supplierAbsorbedCost),
-              },
-              {
-                role: 'production' as ActorRole,
-                label: formatLabel('production'),
-                cost: formatCost(finalPlan.productionAbsorbedCost),
-              },
-              {
-                role: 'client' as ActorRole,
-                label: formatLabel('client'),
-                cost: formatCost(finalPlan.clientAdditionalCost),
-              },
-            ],
-            validationPassed: finalValidation?.result.valid === true,
-          },
-    approvals: finalApprovals,
+    finalPlanId: simulation.finalPlanId,
+    approvals:
+      simulation.finalPlanId === null
+        ? []
+        : approvalsForPlan(simulation.approvals, simulation.finalPlanId).map((approval) => ({
+            actorId: approval.actorId,
+            planId: approval.planId,
+            role: approval.actorRole,
+            roleLabel: formatLabel(approval.actorRole),
+            decision: approval.decision,
+            decisionLabel: formatLabel(approval.decision),
+            createdAt: formatDateTime(approval.createdAt),
+          })),
     events: [...simulation.events]
-      .sort(
-        (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt),
-      )
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
       .map((event) => ({
         id: event.eventId,
         date: formatDate(event.createdAt),

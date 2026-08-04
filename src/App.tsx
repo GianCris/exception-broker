@@ -4,7 +4,6 @@ import { ApprovalCards } from './ui/ApprovalCards.js';
 import { AuthorizationChangeCard } from './ui/AuthorizationChangeCard.js';
 import { CaseHeader } from './ui/CaseHeader.js';
 import { DecisionTrace } from './ui/DecisionTrace.js';
-import { FinalPlan } from './ui/FinalPlan.js';
 import { PlanProgress } from './ui/PlanProgress.js';
 
 export const App = () => {
@@ -16,8 +15,7 @@ export const App = () => {
         <CaseHeader {...viewModel.header} />
         <PlanProgress plans={viewModel.plans} />
         <AuthorizationChangeCard changes={viewModel.authorizationChanges} />
-        <FinalPlan plan={viewModel.finalPlan} />
-        <ApprovalCards approvals={viewModel.approvals} />
+        <ApprovalCards approvals={viewModel.approvals} finalPlanId={viewModel.finalPlanId} />
         <DecisionTrace events={viewModel.events} />
       </main>
       <footer>Exception Broker · Decision record generated from the official case simulation</footer>
