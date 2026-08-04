@@ -33,19 +33,35 @@ export const planStatusSchema = z.enum([
   'INVALIDATED',
 ]);
 
-export const constraintSchema = z
+const supplyConstraintSchema = z
   .object({
-    quantity: quantitySchema,
+    type: z.literal('SUPPLY'),
+    originalQuantity: quantitySchema,
+    substituteQuantity: quantitySchema,
     deliveryDate: deliveryDateSchema,
-    additionalCost: additionalCostSchema,
+    substituteUnitAdditionalCost: additionalCostSchema,
   })
   .strict();
 
+const minimumDeliveryConstraintSchema = z
+  .object({
+    type: z.literal('MINIMUM_DELIVERY'),
+    minimumRequiredQuantity: quantitySchema,
+    deliveryDate: deliveryDateSchema,
+    allowsOriginalAndSubstituteMix: z.boolean(),
+  })
+  .strict();
+
+export const constraintSchema = z.discriminatedUnion('type', [
+  supplyConstraintSchema,
+  minimumDeliveryConstraintSchema,
+]);
+
 export const authorizationSchema = z
   .object({
-    quantity: quantitySchema,
-    deliveryDate: deliveryDateSchema,
-    additionalCost: additionalCostSchema,
+    maxAbsorbableAdditionalCost: additionalCostSchema,
+    maxSubstituteQuantity: quantitySchema,
+    latestAcceptedDeliveryDate: deliveryDateSchema,
   })
   .strict();
 
@@ -62,9 +78,8 @@ export const exceptionCaseSchema = z
   .object({
     id: caseIdSchema,
     status: caseStatusSchema,
-    quantity: quantitySchema,
-    deliveryDate: deliveryDateSchema,
-    additionalCost: additionalCostSchema,
+    requestedQuantity: quantitySchema,
+    targetDeliveryDate: deliveryDateSchema,
     actors: z.array(actorSchema).length(3),
   })
   .strict()
@@ -86,9 +101,25 @@ export const planSchema = z
     caseId: caseIdSchema,
     status: planStatusSchema,
     version: z.number().int().positive(),
-    quantity: quantitySchema,
-    deliveryDate: deliveryDateSchema,
-    additionalCost: additionalCostSchema,
+    originalQuantityTomorrow: quantitySchema,
+    substituteQuantityTomorrow: quantitySchema,
+    originalQuantityLater: quantitySchema,
+    laterDeliveryDate: deliveryDateSchema,
+    clientAdditionalCost: additionalCostSchema,
+    supplierAbsorbedCost: additionalCostSchema,
+    productionAbsorbedCost: additionalCostSchema,
+  })
+  .strict();
+
+export const transitionSchema = z
+  .object({
+    caseId: caseIdSchema,
+    fromStatus: caseStatusSchema,
+    toStatus: caseStatusSchema,
+    triggeredByActorId: actorIdSchema.optional(),
+    reason: z.string().trim().min(1),
+    planId: planIdSchema.optional(),
+    createdAt: deliveryDateSchema,
   })
   .strict();
 
@@ -111,4 +142,3 @@ export const callResultSchema = z
     createdAt: deliveryDateSchema,
   })
   .strict();
-

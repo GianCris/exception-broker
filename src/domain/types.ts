@@ -14,6 +14,7 @@ import type {
   planIdSchema,
   planSchema,
   planStatusSchema,
+  transitionSchema,
 } from './schemas.js';
 
 export type CaseId = z.infer<typeof caseIdSchema>;
@@ -29,4 +30,4 @@ export type ExceptionCase = z.infer<typeof exceptionCaseSchema>;
 export type Plan = z.infer<typeof planSchema>;
 export type Approval = z.infer<typeof approvalSchema>;
 export type CallResult = z.infer<typeof callResultSchema>;
-
+export type Transition = z.infer<typeof transitionSchema>;

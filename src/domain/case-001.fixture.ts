@@ -1,34 +1,44 @@
 import { exceptionCaseSchema } from './schemas.js';
 
-const tomorrowAtFive = '2026-08-04T17:00:00-05:00';
-const fridayAtFive = '2026-08-07T17:00:00-05:00';
+export const case001TomorrowAtFive = '2026-08-04T17:00:00-05:00';
+export const case001FridayAtFive = '2026-08-07T17:00:00-05:00';
 
 export const case001Fixture = exceptionCaseSchema.parse({
   id: 'CASE-001',
   status: 'CASE_CREATED',
-  quantity: 400,
-  deliveryDate: tomorrowAtFive,
-  additionalCost: 0,
+  requestedQuantity: 400,
+  targetDeliveryDate: case001TomorrowAtFive,
   actors: [
     {
       id: 'supplier',
       role: 'supplier',
       constraints: [
         {
-          quantity: 200,
-          deliveryDate: tomorrowAtFive,
-          additionalCost: 0,
+          type: 'SUPPLY',
+          originalQuantity: 200,
+          substituteQuantity: 0,
+          deliveryDate: case001TomorrowAtFive,
+          substituteUnitAdditionalCost: 0,
         },
         {
-          quantity: 200,
-          deliveryDate: fridayAtFive,
-          additionalCost: 0,
+          type: 'SUPPLY',
+          originalQuantity: 200,
+          substituteQuantity: 0,
+          deliveryDate: case001FridayAtFive,
+          substituteUnitAdditionalCost: 0,
+        },
+        {
+          type: 'SUPPLY',
+          originalQuantity: 0,
+          substituteQuantity: 200,
+          deliveryDate: case001TomorrowAtFive,
+          substituteUnitAdditionalCost: 0.5,
         },
       ],
       authorization: {
-        quantity: 400,
-        deliveryDate: fridayAtFive,
-        additionalCost: 0,
+        maxAbsorbableAdditionalCost: 60,
+        maxSubstituteQuantity: 200,
+        latestAcceptedDeliveryDate: case001FridayAtFive,
       },
     },
     {
@@ -36,15 +46,16 @@ export const case001Fixture = exceptionCaseSchema.parse({
       role: 'production',
       constraints: [
         {
-          quantity: 300,
-          deliveryDate: tomorrowAtFive,
-          additionalCost: 0,
+          type: 'MINIMUM_DELIVERY',
+          minimumRequiredQuantity: 300,
+          deliveryDate: case001TomorrowAtFive,
+          allowsOriginalAndSubstituteMix: true,
         },
       ],
       authorization: {
-        quantity: 300,
-        deliveryDate: tomorrowAtFive,
-        additionalCost: 0,
+        maxAbsorbableAdditionalCost: 20,
+        maxSubstituteQuantity: 400,
+        latestAcceptedDeliveryDate: case001FridayAtFive,
       },
     },
     {
@@ -52,17 +63,23 @@ export const case001Fixture = exceptionCaseSchema.parse({
       role: 'client',
       constraints: [
         {
-          quantity: 300,
-          deliveryDate: tomorrowAtFive,
-          additionalCost: 0,
+          type: 'MINIMUM_DELIVERY',
+          minimumRequiredQuantity: 300,
+          deliveryDate: case001TomorrowAtFive,
+          allowsOriginalAndSubstituteMix: true,
+        },
+        {
+          type: 'MINIMUM_DELIVERY',
+          minimumRequiredQuantity: 100,
+          deliveryDate: case001FridayAtFive,
+          allowsOriginalAndSubstituteMix: true,
         },
       ],
       authorization: {
-        quantity: 50,
-        deliveryDate: tomorrowAtFive,
-        additionalCost: 0,
+        maxAbsorbableAdditionalCost: 0,
+        maxSubstituteQuantity: 50,
+        latestAcceptedDeliveryDate: case001FridayAtFive,
       },
     },
   ],
 });
-

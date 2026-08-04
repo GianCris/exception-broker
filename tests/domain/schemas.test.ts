@@ -1,14 +1,43 @@
 import { describe, expect, it } from 'vitest';
 
-import { case001Fixture } from '../../src/domain/case-001.fixture.js';
+import {
+  case001Fixture,
+  case001FridayAtFive,
+  case001TomorrowAtFive,
+} from '../../src/domain/case-001.fixture.js';
 import {
   exceptionCaseSchema,
   planSchema,
+  transitionSchema,
 } from '../../src/domain/schemas.js';
 
 type MutableRecord = Record<string, any>;
 
 const fixtureCopy = (): MutableRecord => structuredClone(case001Fixture);
+
+const validPlan = {
+  id: 'PLAN-001',
+  caseId: 'CASE-001',
+  status: 'DRAFT',
+  version: 1,
+  originalQuantityTomorrow: 200,
+  substituteQuantityTomorrow: 100,
+  originalQuantityLater: 100,
+  laterDeliveryDate: case001FridayAtFive,
+  clientAdditionalCost: 0,
+  supplierAbsorbedCost: 50,
+  productionAbsorbedCost: 0,
+} as const;
+
+const validTransition = {
+  caseId: 'CASE-001',
+  fromStatus: 'CASE_CREATED',
+  toStatus: 'COLLECTING_CONSTRAINTS',
+  triggeredByActorId: 'supplier',
+  reason: 'Supplier constraints collection started',
+  planId: 'PLAN-001',
+  createdAt: '2026-08-03T18:00:00-05:00',
+} as const;
 
 describe('official CASE-001 domain schemas', () => {
   it('accepts the official CASE-001 fixture', () => {
@@ -22,128 +51,148 @@ describe('official CASE-001 domain schemas', () => {
     );
   });
 
-  it('rejects an invalid actor role', () => {
-    const candidate = fixtureCopy();
-    candidate.actors[0].role = 'carrier';
+  it('represents original and substitute supplier quantities explicitly', () => {
+    const supplier = case001Fixture.actors.find(({ role }) => role === 'supplier');
 
-    expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
+    expect(supplier?.constraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          originalQuantity: 200,
+          substituteQuantity: 0,
+          deliveryDate: case001TomorrowAtFive,
+        }),
+        expect.objectContaining({
+          originalQuantity: 200,
+          substituteQuantity: 0,
+          deliveryDate: case001FridayAtFive,
+        }),
+        expect.objectContaining({
+          originalQuantity: 0,
+          substituteQuantity: 200,
+          substituteUnitAdditionalCost: 0.5,
+          deliveryDate: case001TomorrowAtFive,
+        }),
+      ]),
+    );
   });
 
-  it('rejects an invalid case status', () => {
-    const candidate = fixtureCopy();
-    candidate.status = 'OPEN';
+  it('represents authorized margins and substitute maximums explicitly', () => {
+    const supplier = case001Fixture.actors.find(({ role }) => role === 'supplier');
+    const production = case001Fixture.actors.find(
+      ({ role }) => role === 'production',
+    );
+    const client = case001Fixture.actors.find(({ role }) => role === 'client');
 
-    expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
+    expect(supplier?.authorization).toMatchObject({
+      maxAbsorbableAdditionalCost: 60,
+    });
+    expect(production?.authorization).toMatchObject({
+      maxAbsorbableAdditionalCost: 20,
+    });
+    expect(client?.authorization).toMatchObject({
+      maxAbsorbableAdditionalCost: 0,
+      maxSubstituteQuantity: 50,
+    });
   });
 
-  it('rejects an invalid plan status', () => {
-    expect(
-      planSchema.safeParse({
-        id: 'PLAN-001',
-        caseId: 'CASE-001',
-        status: 'GENERATED',
-        version: 1,
-        quantity: 400,
-        deliveryDate: case001Fixture.deliveryDate,
-        additionalCost: 0,
-      }).success,
-    ).toBe(false);
+  it('accepts a plan with a split delivery', () => {
+    expect(planSchema.parse(validPlan)).toEqual(validPlan);
+  });
+
+  it('accepts a valid transition', () => {
+    expect(transitionSchema.parse(validTransition)).toEqual(validTransition);
+  });
+
+  it('accepts a transition without optional actor or plan IDs', () => {
+    const { triggeredByActorId: _actor, planId: _plan, ...transition } =
+      validTransition;
+
+    expect(transitionSchema.safeParse(transition).success).toBe(true);
   });
 
   it.each([
-    ['negative case quantity', (value: MutableRecord) => (value.quantity = -1)],
-    ['decimal case quantity', (value: MutableRecord) => (value.quantity = 1.5)],
-    [
-      'negative constraint quantity',
-      (value: MutableRecord) => (value.actors[0].constraints[0].quantity = -1),
-    ],
-    [
-      'decimal authorization quantity',
-      (value: MutableRecord) => (value.actors[2].authorization.quantity = 50.5),
-    ],
-  ])('rejects %s', (_label, mutate) => {
-    const candidate = fixtureCopy();
-    mutate(candidate);
-
-    expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
+    ['empty case ID', { ...validTransition, caseId: '' }],
+    ['invalid from status', { ...validTransition, fromStatus: 'OPEN' }],
+    ['invalid to status', { ...validTransition, toStatus: 'DONE' }],
+    ['empty actor ID', { ...validTransition, triggeredByActorId: '  ' }],
+    ['empty reason', { ...validTransition, reason: '' }],
+    ['empty plan ID', { ...validTransition, planId: '' }],
+    ['invalid date', { ...validTransition, createdAt: 'today' }],
+    ['unknown field', { ...validTransition, nextActor: 'client' }],
+  ])('rejects transition with %s', (_label, transition) => {
+    expect(transitionSchema.safeParse(transition).success).toBe(false);
   });
 
   it.each([
-    ['case cost', (value: MutableRecord) => (value.additionalCost = -1)],
+    ['invalid role', (value: MutableRecord) => (value.actors[0].role = 'carrier')],
+    ['invalid status', (value: MutableRecord) => (value.status = 'OPEN')],
+    ['negative requested quantity', (value: MutableRecord) => (value.requestedQuantity = -1)],
+    ['decimal requested quantity', (value: MutableRecord) => (value.requestedQuantity = 1.5)],
     [
-      'constraint cost',
+      'negative original quantity',
+      (value: MutableRecord) => (value.actors[0].constraints[0].originalQuantity = -1),
+    ],
+    [
+      'decimal substitute quantity',
+      (value: MutableRecord) => (value.actors[0].constraints[2].substituteQuantity = 1.5),
+    ],
+    [
+      'negative substitute unit cost',
       (value: MutableRecord) =>
-        (value.actors[0].constraints[0].additionalCost = -1),
+        (value.actors[0].constraints[2].substituteUnitAdditionalCost = -0.5),
     ],
     [
-      'authorization cost',
+      'negative authorized margin',
       (value: MutableRecord) =>
-        (value.actors[1].authorization.additionalCost = -1),
+        (value.actors[0].authorization.maxAbsorbableAdditionalCost = -1),
     ],
-  ])('rejects a negative %s', (_label, mutate) => {
-    const candidate = fixtureCopy();
-    mutate(candidate);
-
-    expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
-  });
-
-  it.each([
-    ['case ID', (value: MutableRecord) => (value.id = '  ')],
-    ['actor ID', (value: MutableRecord) => (value.actors[0].id = '')],
-  ])('rejects an empty %s', (_label, mutate) => {
-    const candidate = fixtureCopy();
-    mutate(candidate);
-
-    expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
-  });
-
-  it.each([
-    ['case date', (value: MutableRecord) => (value.deliveryDate = 'tomorrow')],
     [
-      'constraint date',
+      'negative substitute maximum',
       (value: MutableRecord) =>
-        (value.actors[0].constraints[0].deliveryDate = '2026-02-30'),
+        (value.actors[2].authorization.maxSubstituteQuantity = -1),
     ],
+    ['empty case ID', (value: MutableRecord) => (value.id = '')],
+    ['empty actor ID', (value: MutableRecord) => (value.actors[0].id = '  ')],
+    ['invalid target date', (value: MutableRecord) => (value.targetDeliveryDate = 'tomorrow')],
     [
-      'authorization date',
+      'invalid authorization date',
       (value: MutableRecord) =>
-        (value.actors[0].authorization.deliveryDate = 'invalid'),
+        (value.actors[0].authorization.latestAcceptedDeliveryDate = 'Friday'),
     ],
-  ])('rejects an invalid %s', (_label, mutate) => {
-    const candidate = fixtureCopy();
-    mutate(candidate);
-
-    expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
-  });
-
-  it.each([
-    ['case field', (value: MutableRecord) => (value.currency = 'USD')],
-    ['actor field', (value: MutableRecord) => (value.actors[0].company = 'Acme')],
+    ['unknown case field', (value: MutableRecord) => (value.quantity = 400)],
     [
-      'constraint field',
-      (value: MutableRecord) => (value.actors[0].constraints[0].sku = 'SKU-1'),
+      'ambiguous authorization field',
+      (value: MutableRecord) => (value.actors[2].authorization.quantity = 50),
     ],
-  ])('rejects an unknown %s', (_label, mutate) => {
+    [
+      'ambiguous constraint field',
+      (value: MutableRecord) => (value.actors[0].constraints[0].quantity = 200),
+    ],
+  ])('rejects case data with %s', (_label, mutate) => {
     const candidate = fixtureCopy();
     mutate(candidate);
 
     expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
   });
 
-  it('rejects fewer or more than three actors', () => {
+  it('rejects actor counts other than three and duplicated roles', () => {
     const tooFew = fixtureCopy();
     tooFew.actors.pop();
-    const tooMany = fixtureCopy();
-    tooMany.actors.push(structuredClone(tooMany.actors[0]));
+    const duplicated = fixtureCopy();
+    duplicated.actors[2].role = 'supplier';
 
     expect(exceptionCaseSchema.safeParse(tooFew).success).toBe(false);
-    expect(exceptionCaseSchema.safeParse(tooMany).success).toBe(false);
+    expect(exceptionCaseSchema.safeParse(duplicated).success).toBe(false);
   });
 
-  it('rejects three actors with duplicated roles', () => {
-    const candidate = fixtureCopy();
-    candidate.actors[2].role = 'supplier';
-
-    expect(exceptionCaseSchema.safeParse(candidate).success).toBe(false);
+  it.each([
+    ['negative split quantity', { ...validPlan, originalQuantityLater: -1 }],
+    ['decimal split quantity', { ...validPlan, substituteQuantityTomorrow: 1.5 }],
+    ['negative absorbed cost', { ...validPlan, supplierAbsorbedCost: -1 }],
+    ['invalid later date', { ...validPlan, laterDeliveryDate: 'Friday' }],
+    ['ambiguous quantity', { ...validPlan, quantity: 400 }],
+    ['ambiguous cost', { ...validPlan, additionalCost: 50 }],
+  ])('rejects plan with %s', (_label, plan) => {
+    expect(planSchema.safeParse(plan).success).toBe(false);
   });
 });
