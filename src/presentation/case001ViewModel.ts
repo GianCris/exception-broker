@@ -3,12 +3,14 @@ import type { Case001SimulationResult } from '../domain/simulation.js';
 import type { ActorRole, PlanStatus } from '../domain/types.js';
 
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Lima',
   month: 'short',
   day: 'numeric',
   year: 'numeric',
 });
 
 const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Lima',
   month: 'short',
   day: 'numeric',
   hour: 'numeric',
@@ -16,6 +18,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
 });
 
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Lima',
   hour: 'numeric',
   minute: '2-digit',
 });
