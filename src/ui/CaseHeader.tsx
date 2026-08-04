@@ -4,8 +4,9 @@ type CaseHeaderProps = Readonly<{
   requestedQuantity: number;
   participantCount: number;
   targetDeliveryDate: string;
-  status: string;
   statusLabel: string;
+  statusTone: string;
+  summary: string;
 }>;
 
 const BrokerMark = () => (
@@ -17,7 +18,7 @@ const BrokerMark = () => (
 );
 
 export const CaseHeader = ({
-  caseLabel, title, requestedQuantity, participantCount, targetDeliveryDate, status, statusLabel,
+  caseLabel, title, requestedQuantity, participantCount, targetDeliveryDate, statusLabel, statusTone, summary,
 }: CaseHeaderProps) => (
   <header className="case-header">
     <div className="brand-row"><BrokerMark /><span className="brand-name">Exception Broker</span></div>
@@ -25,9 +26,9 @@ export const CaseHeader = ({
       <div>
         <p className="case-label">{caseLabel}</p>
         <h1>{title}</h1>
-        <p className="commercial-copy">Three parties.<br />Three constraints.<br />One approved recovery plan.</p>
+        <p className="commercial-copy">{summary}</p>
       </div>
-      <span className={`status-badge status-${status.toLowerCase()}`}><span aria-hidden="true">✓</span> {statusLabel}</span>
+      <span className={`status-badge status-${statusTone}`}><span aria-hidden="true">●</span> {statusLabel}</span>
     </div>
     <dl className="case-metrics">
       <div><dt>Requested units</dt><dd>{requestedQuantity.toLocaleString()}</dd></div>

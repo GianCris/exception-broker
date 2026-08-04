@@ -12,9 +12,9 @@ export const Case001Demo = ({ viewModel }: Readonly<{ viewModel: Case001ViewMode
     <div className="app-shell">
       <main>
         <CaseHeader {...viewModel.header} />
-        <PlanProgress plans={viewModel.priorPlans} />
-        <AuthorizationChangeCard changes={viewModel.authorizationChanges} />
-        {viewModel.resolutionAvailable && viewModel.finalPlan !== null ? (
+        <PlanProgress plans={viewModel.priorPlans} heading={viewModel.progressHeading} description={viewModel.progressDescription} />
+        {viewModel.authorizationChangeAvailable ? <AuthorizationChangeCard changes={viewModel.authorizationChanges} /> : null}
+        {viewModel.resolutionApproved && viewModel.finalPlan !== null ? (
           <>
             <FinalPlanCard plan={viewModel.finalPlan} />
             <ApprovalCards approvals={viewModel.finalApprovals} finalPlanId={viewModel.finalPlan.id} />
@@ -22,7 +22,7 @@ export const Case001Demo = ({ viewModel }: Readonly<{ viewModel: Case001ViewMode
         ) : (
           <section className="section resolution-unavailable" aria-labelledby="resolution-unavailable-title">
             <p className="eyebrow">Resolution status</p>
-            <h2 id="resolution-unavailable-title">No final resolution available</h2>
+            <h2 id="resolution-unavailable-title">{viewModel.resolutionMessage}</h2>
           </section>
         )}
         <DecisionTrace events={viewModel.events} />
