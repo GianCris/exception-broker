@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite --configLoader runner",
     "build": "tsc --noEmit && vite build --configLoader runner",
+    "calle:smoke": "tsc -p tsconfig.smoke.json && node .calle-smoke-dist/scripts/calle-live-smoke-test.js",
     "test": "vitest run --configLoader runner",
     "typecheck": "tsc --noEmit"
   },
