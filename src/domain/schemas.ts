@@ -123,11 +123,20 @@ export const transitionSchema = z
   })
   .strict();
 
+export const approvalDecisionSchema = z.enum([
+  'APPROVED',
+  'REJECTED',
+  'PENDING',
+  'NEEDS_CLARIFICATION',
+]);
+
 export const approvalSchema = z
   .object({
+    caseId: caseIdSchema,
     planId: planIdSchema,
     actorId: actorIdSchema,
-    approved: z.boolean(),
+    actorRole: actorRoleSchema,
+    decision: approvalDecisionSchema,
     createdAt: deliveryDateSchema,
   })
   .strict();
