@@ -48,3 +48,9 @@ export const PlanProgress = ({ plans }: Readonly<{ plans: readonly PlanViewModel
     <div className="plan-progress">{plans.map((plan) => <div className="plan-step" key={plan.id}><PlanCard plan={plan} /></div>)}</div>
   </section>
 );
+
+export const FinalPlanCard = ({ plan }: Readonly<{ plan: PlanViewModel }>) => (
+  <section className="section final-plan-result" aria-label="Final approved plan result">
+    <PlanCard plan={plan} />
+  </section>
+);

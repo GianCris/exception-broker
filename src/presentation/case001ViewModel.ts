@@ -1,6 +1,6 @@
 import { approvalsForPlan } from '../domain/approvals.js';
 import type { Case001SimulationResult } from '../domain/simulation.js';
-import type { ActorRole, PlanStatus } from '../domain/types.js';
+import type { ActorRole, PlanId, PlanStatus } from '../domain/types.js';
 
 const presentationTimeZone = 'America/Lima';
 
@@ -33,7 +33,7 @@ type PlanExplanation =
   | Readonly<{ kind: 'final'; unlockPreviousValue: number; unlockNewValue: number }>;
 
 export type PlanViewModel = Readonly<{
-  id: string;
+  id: PlanId;
   version: number;
   status: PlanStatus;
   statusLabel: string;
@@ -107,6 +107,11 @@ export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
         explanation,
       };
     });
+  const finalPlan = plans.find(({ id }) => id === simulation.finalPlanId) ?? null;
+  const resolutionAvailable = finalPlan !== null;
+  const priorPlans = resolutionAvailable
+    ? plans.filter(({ version }) => version < finalPlan.version)
+    : plans;
 
   return {
     header: {
@@ -119,7 +124,9 @@ export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
       status: simulation.status,
       statusLabel: formatLabel(simulation.status),
     },
-    plans,
+    priorPlans,
+    finalPlan,
+    resolutionAvailable,
     authorizationChanges: simulation.authorizationChanges.map((change) => ({
       actorRole: change.actorRole,
       actorLabel: formatLabel(change.actorRole),
@@ -130,11 +137,10 @@ export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
       reason: change.reason,
       createdAt: formatDateTime(change.createdAt),
     })),
-    finalPlanId: simulation.finalPlanId,
-    approvals:
-      simulation.finalPlanId === null
+    finalApprovals:
+      finalPlan === null
         ? []
-        : approvalsForPlan(simulation.approvals, simulation.finalPlanId).map((approval) => ({
+        : approvalsForPlan(simulation.approvals, finalPlan.id).map((approval) => ({
             actorId: approval.actorId,
             planId: approval.planId,
             role: approval.actorRole,

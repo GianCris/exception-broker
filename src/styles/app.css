@@ -35,7 +35,7 @@ time { color: #737d79; font-size: .74rem; }
 .section-heading.compact { margin-bottom: 14px; }
 .eyebrow { margin: 0 0 7px; color: #6256b3; font-size: .68rem; font-weight: 850; letter-spacing: .11em; text-transform: uppercase; }
 
-.plan-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-items: start; }
+.plan-progress { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; align-items: start; }
 .plan-step { position: relative; min-width: 0; }
 .plan-step:not(:last-child)::after { content: "→"; position: absolute; top: 46px; right: -22px; z-index: 2; color: #8d9491; font-size: 1rem; }
 .plan-card { min-height: 100%; padding: 18px; border: 1px solid #dde1e0; border-radius: 16px; background: #fff; box-shadow: 0 6px 20px rgb(31 39 36 / 4%); }
@@ -64,6 +64,12 @@ time { color: #737d79; font-size: .74rem; }
 .final-details dl div { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid #dfebe3; }
 .final-details dd { margin-top: 0; font-size: .77rem; text-align: right; }
 .validation-badge { display: inline-flex; gap: 6px; align-items: center; margin: 2px 0 0; padding: 7px 9px; border-radius: 8px; color: #216741; background: #dff2e6; font-size: .7rem; font-weight: 820; }
+.final-plan-result { position: relative; max-width: 760px; margin-right: auto; margin-left: auto; }
+.final-plan-result::before, .authorization-card::after { content: "↓"; position: absolute; left: 50%; color: #8d9491; font-size: 1rem; transform: translateX(-50%); }
+.final-plan-result::before { top: -34px; }
+.authorization-card { position: relative; }
+.authorization-card::after { bottom: -34px; }
+.resolution-unavailable { padding: 22px; border: 1px solid #dadddf; border-radius: 15px; background: #fff; text-align: center; }
 
 .authorization-card { display: flex; gap: 18px; padding: 22px; border: 1px solid #b9b4dc; border-left: 4px solid #6256b3; border-radius: 16px; background: #fff; box-shadow: 0 8px 26px rgb(75 65 139 / 7%); }
 .authorization-icon { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border-radius: 12px; color: #fff; background: #6256b3; font-size: 1.2rem; }

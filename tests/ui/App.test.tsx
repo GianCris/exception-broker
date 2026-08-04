@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { App } from '../../src/App.js';
+import { App, Case001Demo } from '../../src/App.js';
 import { simulateCase001 } from '../../src/domain/case-001.simulation.js';
 import { createCase001ViewModel } from '../../src/presentation/case001ViewModel.js';
 
@@ -19,8 +19,8 @@ describe('Exception Broker demo UI', () => {
 
     expect(screen.getByRole('heading', { name: viewModel.header.title })).toBeInTheDocument();
     const cards = screen.getAllByTestId('plan-card');
-    expect(cards).toHaveLength(viewModel.plans.length);
-    viewModel.plans.forEach((plan, position) => {
+    expect(cards).toHaveLength(viewModel.priorPlans.length + 1);
+    [...viewModel.priorPlans, viewModel.finalPlan!].forEach((plan, position) => {
       expect(within(cards[position]!).getByText(plan.id)).toBeInTheDocument();
       expect(within(cards[position]!).getByText(plan.statusLabel)).toBeInTheDocument();
     });
@@ -28,8 +28,8 @@ describe('Exception Broker demo UI', () => {
 
   it('shows rejection evidence and the no-solution shortfall prepared by the view model', () => {
     const viewModel = createCase001ViewModel(simulateCase001());
-    const rejected = viewModel.plans.find(({ explanation }) => explanation.kind === 'rejected');
-    const blocked = viewModel.plans.find(({ explanation }) => explanation.kind === 'no-solution');
+    const rejected = viewModel.priorPlans.find(({ explanation }) => explanation.kind === 'rejected');
+    const blocked = viewModel.priorPlans.find(({ explanation }) => explanation.kind === 'no-solution');
     expect(rejected?.explanation.kind).toBe('rejected');
     expect(blocked?.explanation.kind).toBe('no-solution');
     render(<App />);
@@ -59,11 +59,38 @@ describe('Exception Broker demo UI', () => {
     const viewModel = createCase001ViewModel(simulateCase001());
     render(<App />);
 
-    expect(screen.getByText((_, element) => element?.tagName === 'P' && element.textContent?.includes(String(viewModel.finalPlanId)) === true)).toBeInTheDocument();
-    for (const approval of viewModel.approvals) {
-      expect(approval.planId).toBe(viewModel.finalPlanId);
+    expect(screen.getByText((_, element) => element?.tagName === 'P' && element.textContent?.includes(String(viewModel.finalPlan?.id)) === true)).toBeInTheDocument();
+    for (const approval of viewModel.finalApprovals) {
+      expect(approval.planId).toBe(viewModel.finalPlan?.id);
       expect(screen.getByRole('heading', { name: approval.roleLabel })).toBeInTheDocument();
     }
+  });
+
+  it('renders the causal sequence exactly once', () => {
+    const viewModel = createCase001ViewModel(simulateCase001());
+    render(<App />);
+    const priorHeadings = viewModel.priorPlans.map(({ id }) => screen.getByRole('heading', { name: id }));
+    const authorization = screen.getByRole('heading', { name: 'Constraint updated' });
+    const final = screen.getByRole('heading', { name: viewModel.finalPlan!.id });
+    const approvals = screen.getByRole('heading', { name: 'Final approvals' });
+
+    expect(priorHeadings[0]!.compareDocumentPosition(priorHeadings[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(priorHeadings[1]!.compareDocumentPosition(authorization) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(authorization.compareDocumentPosition(final) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(final.compareDocumentPosition(approvals) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText('Final approved plan')).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { name: 'Constraint updated' })).toHaveLength(1);
+  });
+
+  it.each([null, 'PLAN-UNKNOWN'])('shows a neutral state without final approvals for finalPlanId %s', (finalPlanId) => {
+    const simulation = simulateCase001();
+    const viewModel = createCase001ViewModel({ ...simulation, finalPlanId: finalPlanId as typeof simulation.finalPlanId });
+    render(<Case001Demo viewModel={viewModel} />);
+
+    expect(screen.queryByText('Final approved plan')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Final approvals' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No final resolution available' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('plan-card')).toHaveLength(simulation.plans.length);
   });
 
   it('starts Decision Trace closed and opens to show simulated events', () => {
