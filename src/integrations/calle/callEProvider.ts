@@ -13,7 +13,7 @@ import {
   type CallProvider,
   type ProviderOperationalErrorKind,
 } from './provider.js';
-import type { CallRequest } from './types.js';
+import type { CallRequest, PhoneDecision } from './types.js';
 
 type CreateAndWaitOptions = Readonly<{
   idempotencyKey: string;
@@ -31,11 +31,15 @@ export type CalleApiKeySource = () => string | undefined;
 export type CallEProviderOptions = Readonly<{
   apiKeySource?: CalleApiKeySource;
   clientFactory?: CallEClientFactory;
+  allowedDecisions?: readonly PhoneDecision['decision'][];
 }>;
 
 const decisionValues = ['APPROVED', 'REJECTED', 'PENDING', 'NEEDS_CLARIFICATION'] as const;
 
-export const buildCallEInput = (request: CallRequest): CreateCallInput => ({
+export const buildCallEInput = (
+  request: CallRequest,
+  allowedDecisions: readonly PhoneDecision['decision'][] = decisionValues,
+): CreateCallInput => ({
   task: [
     request.objective,
     '',
@@ -60,7 +64,7 @@ export const buildCallEInput = (request: CallRequest): CreateCallInput => ({
     properties: {
       decision: {
         type: 'string',
-        enum: [...decisionValues],
+        enum: [...allowedDecisions],
         description: 'Use only the explicit decision supported by the call evidence.',
       },
       actorId: { type: 'string', enum: [request.actorId] },
@@ -124,10 +128,12 @@ const operationalKindForSdkError = (error: unknown): ProviderOperationalErrorKin
 export class CallEProvider implements CallProvider {
   readonly #apiKeySource: CalleApiKeySource;
   readonly #clientFactory: CallEClientFactory;
+  readonly #allowedDecisions: readonly PhoneDecision['decision'][];
 
   constructor(options: CallEProviderOptions = {}) {
     this.#apiKeySource = options.apiKeySource ?? defaultApiKeySource;
     this.#clientFactory = options.clientFactory ?? defaultClientFactory;
+    this.#allowedDecisions = [...(options.allowedDecisions ?? decisionValues)];
   }
 
   async executeCall(request: CallRequest): Promise<unknown> {
@@ -139,7 +145,7 @@ export class CallEProvider implements CallProvider {
     try {
       const client = this.#clientFactory(apiKey);
       return await client.calls.createAndWait(
-        buildCallEInput(request),
+        buildCallEInput(request, this.#allowedDecisions),
         { idempotencyKey: request.requestId },
       );
     } catch (error: unknown) {
