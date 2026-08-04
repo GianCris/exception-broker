@@ -208,18 +208,14 @@ const validateR09: Rule = (exceptionCase, plan) => {
 
   const expected =
     plan.substituteQuantityTomorrow * substituteUnitAdditionalCost;
-  /*
-   * The functional document specifies subtraction here. With CASE-001's
-   * client maximum of zero, positive absorbed costs cannot balance a positive
-   * substitute cost. The formula is kept literal instead of correcting it by
-   * assumption.
-   */
   const actual =
-    plan.clientAdditionalCost -
-    plan.supplierAbsorbedCost -
+    plan.clientAdditionalCost +
+    plan.supplierAbsorbedCost +
     plan.productionAbsorbedCost;
+  const floatingPointEpsilon =
+    Number.EPSILON * Math.max(Math.abs(expected), Math.abs(actual), 1);
 
-  return Math.abs(expected - actual) <= COST_TOLERANCE
+  return Math.abs(expected - actual) <= COST_TOLERANCE + floatingPointEpsilon
     ? []
     : violation(
         'R-09',

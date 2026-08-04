@@ -13,12 +13,12 @@ const validPlan = planSchema.parse({
   caseId: 'CASE-001',
   status: 'DRAFT',
   version: 1,
-  originalQuantityTomorrow: 300,
-  substituteQuantityTomorrow: 0,
+  originalQuantityTomorrow: 250,
+  substituteQuantityTomorrow: 50,
   originalQuantityLater: 100,
   laterDeliveryDate: case001FridayAtFive,
   clientAdditionalCost: 0,
-  supplierAbsorbedCost: 0,
+  supplierAbsorbedCost: 25,
   productionAbsorbedCost: 0,
 });
 
@@ -57,7 +57,7 @@ describe('validatePlan', () => {
     expect(
       ruleIds(
         planWith({
-          originalQuantityTomorrow: 299,
+          originalQuantityTomorrow: 249,
           originalQuantityLater: 101,
         }),
       ),
@@ -68,7 +68,7 @@ describe('validatePlan', () => {
     expect(
       ruleIds(
         planWith({
-          originalQuantityTomorrow: 299,
+          originalQuantityTomorrow: 249,
           originalQuantityLater: 101,
         }),
       ),
@@ -106,12 +106,27 @@ describe('validatePlan', () => {
     ).toContain('R-08');
   });
 
-  it('rejects inconsistent substitute cost', () => {
-    expect(ruleIds(planWith({ supplierAbsorbedCost: 0.02 }))).toContain('R-09');
+  it('accepts 50 substitutes when the supplier absorbs the full S/25 cost', () => {
+    expect(ruleIds(validPlan)).not.toContain('R-09');
   });
 
-  it('accepts an R-09 floating point difference of exactly 0.01', () => {
-    expect(ruleIds(planWith({ supplierAbsorbedCost: 0.01 }))).not.toContain(
+  it('accepts 50 substitutes when supplier and production split S/25', () => {
+    expect(
+      ruleIds(
+        planWith({
+          supplierAbsorbedCost: 15,
+          productionAbsorbedCost: 10,
+        }),
+      ),
+    ).not.toContain('R-09');
+  });
+
+  it('rejects 50 substitutes when allocated cost totals S/24.98', () => {
+    expect(ruleIds(planWith({ supplierAbsorbedCost: 24.98 }))).toContain('R-09');
+  });
+
+  it('accepts an R-09 difference of exactly S/0.01', () => {
+    expect(ruleIds(planWith({ supplierAbsorbedCost: 24.99 }))).not.toContain(
       'R-09',
     );
   });
