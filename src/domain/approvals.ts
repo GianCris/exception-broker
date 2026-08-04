@@ -54,27 +54,97 @@ export const approvalsForPlan = (
 ): readonly Approval[] =>
   approvals.filter((approval) => approval.planId === planId);
 
-const latestDecisionsByRole = (
-  approvals: readonly Approval[],
-  planId: PlanId,
-): ReadonlyMap<ActorRole, Approval> => {
-  const latest = new Map<ActorRole, Approval>();
+type ApprovalState =
+  | Readonly<{
+      success: true;
+      currentByRole: ReadonlyMap<ActorRole, Approval>;
+      planApprovals: readonly Approval[];
+    }>
+  | Readonly<{
+      success: false;
+      reason: string;
+    }>;
 
-  for (const approval of approvalsForPlan(approvals, planId)) {
-    latest.set(approval.actorRole, approval);
+const approvalState = (
+  exceptionCase: ExceptionCase,
+  plan: Plan,
+  approvals: readonly Approval[],
+): ApprovalState => {
+  if (plan.caseId !== exceptionCase.id) {
+    return { success: false, reason: 'Plan caseId does not match the case' };
   }
 
-  return latest;
+  const planApprovals = approvalsForPlan(approvals, plan.id);
+  const decisionsByActor = new Map<ActorId, Approval[]>();
+
+  for (const approval of planApprovals) {
+    if (approval.caseId !== exceptionCase.id) {
+      return {
+        success: false,
+        reason: 'Approval caseId does not match the case',
+      };
+    }
+
+    const actor = exceptionCase.actors.find(
+      ({ id }) => id === approval.actorId,
+    );
+
+    if (actor === undefined) {
+      return { success: false, reason: 'Approval actorId does not exist' };
+    }
+
+    if (actor.role !== approval.actorRole) {
+      return {
+        success: false,
+        reason: 'Approval actorRole does not match the actor identity',
+      };
+    }
+
+    const actorDecisions = decisionsByActor.get(actor.id) ?? [];
+    decisionsByActor.set(actor.id, [...actorDecisions, approval]);
+  }
+
+  const currentByRole = new Map<ActorRole, Approval>();
+
+  for (const actorDecisions of decisionsByActor.values()) {
+    const latestTimestamp = Math.max(
+      ...actorDecisions.map(({ createdAt }) => Date.parse(createdAt)),
+    );
+    const latest = actorDecisions.filter(
+      ({ createdAt }) => Date.parse(createdAt) === latestTimestamp,
+    );
+    const latestDecisions = new Set(latest.map(({ decision }) => decision));
+
+    if (latestDecisions.size > 1) {
+      return {
+        success: false,
+        reason: 'Conflicting decisions share the same timestamp',
+      };
+    }
+
+    // Equal actor, timestamp, and decision entries are historical duplicates;
+    // either instance represents the same deterministic current state.
+    const current = latest[0];
+    if (current !== undefined) {
+      currentByRole.set(current.actorRole, current);
+    }
+  }
+
+  return { success: true, currentByRole, planApprovals };
 };
 
 export const hasAllRequiredApprovals = (
+  exceptionCase: ExceptionCase,
+  plan: Plan,
   approvals: readonly Approval[],
-  planId: PlanId,
 ): boolean => {
-  const latest = latestDecisionsByRole(approvals, planId);
+  const state = approvalState(exceptionCase, plan, approvals);
 
-  return REQUIRED_ROLES.every(
-    (role) => latest.get(role)?.decision === 'APPROVED',
+  return (
+    state.success &&
+    REQUIRED_ROLES.every(
+      (role) => state.currentByRole.get(role)?.decision === 'APPROVED',
+    )
   );
 };
 
@@ -121,28 +191,38 @@ export const canApprovePlan = (
   plan: Plan,
   approvals: readonly Approval[],
 ): PlanDecisionResult => {
-  if (plan.status === 'INVALIDATED') {
-    return { success: false, reason: 'An invalidated plan cannot be approved' };
-  }
+  const state = approvalState(exceptionCase, plan, approvals);
 
-  if (plan.status === 'REJECTED') {
-    return { success: false, reason: 'A rejected plan cannot be approved' };
+  if (!state.success) {
+    return state;
   }
 
   if (
-    approvalsForPlan(approvals, plan.id).some(
+    state.planApprovals.some(
       ({ decision }) => decision === 'REJECTED',
     )
   ) {
     return { success: false, reason: 'The plan has a recorded rejection' };
   }
 
-  if (!hasAllRequiredApprovals(approvals, plan.id)) {
+  if (
+    !REQUIRED_ROLES.every(
+      (role) => state.currentByRole.get(role)?.decision === 'APPROVED',
+    )
+  ) {
     return { success: false, reason: 'The plan lacks all required approvals' };
   }
 
   if (!validatePlan(exceptionCase, plan).valid) {
     return { success: false, reason: 'The plan violates active constraints' };
+  }
+
+  if (plan.status === 'INVALIDATED') {
+    return { success: false, reason: 'An invalidated plan cannot be approved' };
+  }
+
+  if (plan.status === 'REJECTED') {
+    return { success: false, reason: 'A rejected plan cannot be approved' };
   }
 
   return { success: true, plan };

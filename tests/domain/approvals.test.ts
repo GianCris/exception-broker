@@ -12,7 +12,11 @@ import {
   recordApproval,
   recordRejection,
 } from '../../src/domain/approvals.js';
-import { approvalSchema, planSchema } from '../../src/domain/schemas.js';
+import {
+  approvalSchema,
+  caseIdSchema,
+  planSchema,
+} from '../../src/domain/schemas.js';
 import type {
   ActorRole,
   Approval,
@@ -62,6 +66,11 @@ const allApproved = (plan: Plan): readonly Approval[] => [
   decision(plan, 'production', 'APPROVED'),
   decision(plan, 'client', 'APPROVED'),
 ];
+
+const alteredApproval = (
+  approval: Approval,
+  changes: Readonly<Record<string, unknown>>,
+): Approval => approvalSchema.parse({ ...approval, ...changes });
 
 describe('approval decisions', () => {
   it('rejects invalid decisions and the former approved boolean', () => {
@@ -138,10 +147,202 @@ describe('approval decisions', () => {
     expect(approvalsForPlan(history, validPlan.id)).toEqual([history[1]]);
   });
 
-  it('does not inherit approvals from PLAN-002 into PLAN-003', () => {
-    expect(hasAllRequiredApprovals(allApproved(plan002), validPlan.id)).toBe(
+  it('rejects a plan whose caseId differs from exceptionCase.id', () => {
+    const otherCase = {
+      ...case001Fixture,
+      id: caseIdSchema.parse('CASE-OTHER'),
+    };
+
+    expect(canApprovePlan(otherCase, validPlan, allApproved(validPlan))).toEqual({
+      success: false,
+      reason: 'Plan caseId does not match the case',
+    });
+  });
+
+  it('rejects an approval whose caseId differs from exceptionCase.id', () => {
+    const approvals = [...allApproved(validPlan)];
+    approvals[0] = alteredApproval(approvals[0]!, { caseId: 'CASE-OTHER' });
+
+    expect(canApprovePlan(case001Fixture, validPlan, approvals)).toEqual({
+      success: false,
+      reason: 'Approval caseId does not match the case',
+    });
+  });
+
+  it('does not count an approval whose planId differs from the plan', () => {
+    const approvals = [
+      decision(plan002, 'supplier', 'APPROVED'),
+      decision(validPlan, 'production', 'APPROVED'),
+      decision(validPlan, 'client', 'APPROVED'),
+    ];
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, approvals),
+    ).toBe(false);
+    expect(canApprovePlan(case001Fixture, validPlan, approvals).success).toBe(
       false,
     );
+  });
+
+  it('rejects an approval from an actorId absent from the case', () => {
+    const approvals = [...allApproved(validPlan)];
+    approvals[0] = alteredApproval(approvals[0]!, { actorId: 'unknown-actor' });
+
+    expect(canApprovePlan(case001Fixture, validPlan, approvals)).toEqual({
+      success: false,
+      reason: 'Approval actorId does not exist',
+    });
+  });
+
+  it('rejects a client actorId declared as supplier', () => {
+    const approvals = [...allApproved(validPlan)];
+    approvals[0] = alteredApproval(approvals[0]!, {
+      actorId: actorId('client'),
+      actorRole: 'supplier',
+    });
+
+    expect(canApprovePlan(case001Fixture, validPlan, approvals)).toEqual({
+      success: false,
+      reason: 'Approval actorRole does not match the actor identity',
+    });
+  });
+
+  it('rejects a supplier actorId declared as client', () => {
+    const approvals = [...allApproved(validPlan)];
+    approvals[2] = alteredApproval(approvals[2]!, {
+      actorId: actorId('supplier'),
+      actorRole: 'client',
+    });
+
+    expect(canApprovePlan(case001Fixture, validPlan, approvals)).toEqual({
+      success: false,
+      reason: 'Approval actorRole does not match the actor identity',
+    });
+  });
+
+  it('does not allow one actorId to cover three declared roles', () => {
+    const supplierId = actorId('supplier');
+    const approvals = allApproved(validPlan).map((approval) =>
+      alteredApproval(approval, { actorId: supplierId }),
+    );
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, approvals),
+    ).toBe(false);
+    expect(canApprovePlan(case001Fixture, validPlan, approvals).success).toBe(
+      false,
+    );
+  });
+
+  it('uses the newest decision by createdAt even when history is unordered', () => {
+    const history = [
+      decision(
+        validPlan,
+        'supplier',
+        'APPROVED',
+        '2026-08-04T14:00:00-05:00',
+      ),
+      decision(
+        validPlan,
+        'supplier',
+        'PENDING',
+        '2026-08-04T13:00:00-05:00',
+      ),
+      decision(validPlan, 'production', 'APPROVED'),
+      decision(validPlan, 'client', 'APPROVED'),
+    ];
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, history),
+    ).toBe(true);
+  });
+
+  it('does not count an old approval followed by a newer pending decision', () => {
+    const history = [
+      ...allApproved(validPlan),
+      decision(
+        validPlan,
+        'supplier',
+        'PENDING',
+        '2026-08-04T14:00:00-05:00',
+      ),
+    ];
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, history),
+    ).toBe(false);
+  });
+
+  it('counts a newer approval after an older pending decision', () => {
+    const history = [
+      decision(
+        validPlan,
+        'supplier',
+        'PENDING',
+        '2026-08-04T11:00:00-05:00',
+      ),
+      ...allApproved(validPlan),
+    ];
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, history),
+    ).toBe(true);
+  });
+
+  it('does not count an old approval followed by clarification', () => {
+    const history = [
+      ...allApproved(validPlan),
+      decision(
+        validPlan,
+        'client',
+        'NEEDS_CLARIFICATION',
+        '2026-08-04T14:00:00-05:00',
+      ),
+    ];
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, history),
+    ).toBe(false);
+  });
+
+  it('rejects different decisions sharing the latest timestamp', () => {
+    const history = [
+      ...allApproved(validPlan),
+      decision(validPlan, 'supplier', 'PENDING'),
+    ];
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, history),
+    ).toBe(false);
+    expect(canApprovePlan(case001Fixture, validPlan, history)).toEqual({
+      success: false,
+      reason: 'Conflicting decisions share the same timestamp',
+    });
+  });
+
+  it('treats identical decisions at the same timestamp as duplicates', () => {
+    const supplierApproval = decision(validPlan, 'supplier', 'APPROVED');
+    const history = [
+      supplierApproval,
+      structuredClone(supplierApproval),
+      decision(validPlan, 'production', 'APPROVED'),
+      decision(validPlan, 'client', 'APPROVED'),
+    ];
+
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, history),
+    ).toBe(true);
+    expect(canApprovePlan(case001Fixture, validPlan, history).success).toBe(true);
+  });
+
+  it('does not inherit approvals from PLAN-002 into PLAN-003', () => {
+    expect(
+      hasAllRequiredApprovals(
+        case001Fixture,
+        validPlan,
+        allApproved(plan002),
+      ),
+    ).toBe(false);
   });
 
   it('does not count PENDING or NEEDS_CLARIFICATION as approval', () => {
@@ -151,7 +352,9 @@ describe('approval decisions', () => {
       decision(validPlan, 'client', 'NEEDS_CLARIFICATION'),
     ];
 
-    expect(hasAllRequiredApprovals(pending, validPlan.id)).toBe(false);
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, pending),
+    ).toBe(false);
   });
 
   it('uses the latest active decision for each role', () => {
@@ -165,7 +368,9 @@ describe('approval decisions', () => {
       ),
     ];
 
-    expect(hasAllRequiredApprovals(history, validPlan.id)).toBe(false);
+    expect(
+      hasAllRequiredApprovals(case001Fixture, validPlan, history),
+    ).toBe(false);
   });
 
   it('requires all three actors to approve the same planId', () => {
@@ -174,8 +379,9 @@ describe('approval decisions', () => {
 
     expect(
       hasAllRequiredApprovals(
+        case001Fixture,
+        validPlan,
         [...twoForPlan003, clientForPlan002],
-        validPlan.id,
       ),
     ).toBe(false);
   });
@@ -279,5 +485,28 @@ describe('approval decisions', () => {
       success: false,
       reason: 'The plan has a recorded rejection',
     });
+  });
+
+  it('does not mutate the case, plan, approvals, or historical decisions', () => {
+    const approvals = [
+      decision(
+        validPlan,
+        'supplier',
+        'PENDING',
+        '2026-08-04T11:00:00-05:00',
+      ),
+      ...allApproved(validPlan),
+    ];
+    const caseBefore = structuredClone(case001Fixture);
+    const planBefore = structuredClone(validPlan);
+    const approvalsBefore = structuredClone(approvals);
+
+    hasAllRequiredApprovals(case001Fixture, validPlan, approvals);
+    canApprovePlan(case001Fixture, validPlan, approvals);
+    finalizePlanApproval(case001Fixture, validPlan, approvals);
+
+    expect(case001Fixture).toEqual(caseBefore);
+    expect(validPlan).toEqual(planBefore);
+    expect(approvals).toEqual(approvalsBefore);
   });
 });
