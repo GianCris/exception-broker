@@ -5,6 +5,8 @@ export interface CallProvider {
 }
 
 export const providerOperationalErrorKinds = [
+  'CONFIGURATION_MISSING',
+  'AUTHENTICATION_FAILED',
   'NETWORK_FAILURE',
   'TIMEOUT',
   'TEMPORARILY_UNAVAILABLE',
@@ -18,6 +20,8 @@ const operationalErrorDetails: Record<
   ProviderOperationalErrorKind,
   Readonly<{ reason: string; retryable: boolean }>
 > = {
+  CONFIGURATION_MISSING: { reason: 'Call provider configuration is unavailable', retryable: false },
+  AUTHENTICATION_FAILED: { reason: 'Call provider authentication failed', retryable: false },
   NETWORK_FAILURE: { reason: 'Call provider network failure', retryable: true },
   TIMEOUT: { reason: 'Call provider timed out', retryable: true },
   TEMPORARILY_UNAVAILABLE: { reason: 'Call provider is temporarily unavailable', retryable: true },
