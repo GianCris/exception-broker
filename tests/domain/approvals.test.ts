@@ -460,7 +460,13 @@ describe('approval decisions', () => {
     });
   });
 
-  it.each(['REJECTED', 'INVALIDATED'] as const)(
+  it.each([
+    'DRAFT',
+    'REJECTED',
+    'NO_SOLUTION',
+    'INVALIDATED',
+    'APPROVED',
+  ] as const)(
     'does not approve a plan with status %s',
     (status) => {
       const plan = { ...validPlan, status };
@@ -471,6 +477,10 @@ describe('approval decisions', () => {
       expect(
         finalizePlanApproval(case001Fixture, plan, allApproved(plan)).success,
       ).toBe(false);
+      expect(canApprovePlan(case001Fixture, plan, allApproved(plan))).toEqual({
+        success: false,
+        reason: `Plan status ${status} does not allow approval`,
+      });
     },
   );
 

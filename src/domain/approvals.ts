@@ -197,6 +197,13 @@ export const canApprovePlan = (
     return state;
   }
 
+  if (plan.status !== 'PENDING_APPROVAL') {
+    return {
+      success: false,
+      reason: `Plan status ${plan.status} does not allow approval`,
+    };
+  }
+
   if (
     state.planApprovals.some(
       ({ decision }) => decision === 'REJECTED',
@@ -215,14 +222,6 @@ export const canApprovePlan = (
 
   if (!validatePlan(exceptionCase, plan).valid) {
     return { success: false, reason: 'The plan violates active constraints' };
-  }
-
-  if (plan.status === 'INVALIDATED') {
-    return { success: false, reason: 'An invalidated plan cannot be approved' };
-  }
-
-  if (plan.status === 'REJECTED') {
-    return { success: false, reason: 'A rejected plan cannot be approved' };
   }
 
   return { success: true, plan };
