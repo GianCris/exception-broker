@@ -12,6 +12,9 @@ const PlanExplanation = ({ plan }: Readonly<{ plan: PlanViewModel }>) => {
   if (explanation.kind === 'final') {
     return <p className="unlock-message">Unlocked after client limit changed from <strong>{explanation.unlockPreviousValue}</strong> to <strong>{explanation.unlockNewValue}</strong></p>;
   }
+  if (explanation.kind === 'neutral') {
+    return <p className="neutral-evidence">{explanation.message}</p>;
+  }
   return <div className="rejection-evidence">
     <strong>{explanation.proposedSubstitutes} substitutes proposed</strong>
     <span>Client limit: {explanation.clientLimit}</span>
@@ -24,7 +27,7 @@ const PlanCard = ({ plan }: Readonly<{ plan: PlanViewModel }>) => (
     {plan.isFinal ? <p className="final-plan-label">Final approved plan</p> : null}
     <div className="plan-card-heading">
       <div><p className="plan-version">Version {plan.version}</p><h3>{plan.id}</h3></div>
-      <span className={`status-badge status-${plan.status.toLowerCase()}`}><span aria-hidden="true">●</span> {plan.statusLabel}</span>
+      <span className={`status-badge status-${plan.statusTone}`}><span aria-hidden="true">●</span> {plan.statusLabel}</span>
     </div>
     <PlanExplanation plan={plan} />
     <dl className="plan-summary">
@@ -42,9 +45,9 @@ const PlanCard = ({ plan }: Readonly<{ plan: PlanViewModel }>) => (
   </article>
 );
 
-export const PlanProgress = ({ plans }: Readonly<{ plans: readonly PlanViewModel[] }>) => (
+export const PlanProgress = ({ plans, heading, description }: Readonly<{ plans: readonly PlanViewModel[]; heading: string; description: string }>) => (
   <section className="section" aria-labelledby="plan-progress-title">
-    <div className="section-heading"><div><p className="eyebrow">Resolution path</p><h2 id="plan-progress-title">How the exception was resolved</h2></div><p>Each version preserves the decision that led to the approved recovery plan.</p></div>
+    <div className="section-heading"><div><p className="eyebrow">Resolution path</p><h2 id="plan-progress-title">{heading}</h2></div><p>{description}</p></div>
     <div className="plan-progress">{plans.map((plan) => <div className="plan-step" key={plan.id}><PlanCard plan={plan} /></div>)}</div>
   </section>
 );

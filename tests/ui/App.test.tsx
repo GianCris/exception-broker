@@ -89,8 +89,60 @@ describe('Exception Broker demo UI', () => {
 
     expect(screen.queryByText('Final approved plan')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Final approvals' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'No final resolution available' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Final resolution unavailable', level: 2 })).toBeInTheDocument();
     expect(screen.getAllByTestId('plan-card')).toHaveLength(simulation.plans.length);
+    expect(screen.queryByText(/shortage resolved/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Approved')).not.toBeInTheDocument();
+  });
+
+  it('renders incomplete approvals as neutral evidence only', () => {
+    const simulation = simulateCase001();
+    const approvals = simulation.approvals.filter(({ planId }) => planId === simulation.finalPlanId).slice(0, 2);
+    const viewModel = createCase001ViewModel({ ...simulation, approvals });
+    render(<Case001Demo viewModel={viewModel} />);
+
+    expect(screen.getByRole('heading', { name: 'Approval evidence incomplete', level: 2 })).toBeInTheDocument();
+    expect(screen.queryByText('Final approved plan')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Final approvals' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/One approved recovery plan/i)).not.toBeInTheDocument();
+  });
+
+  it('omits authorization claims when authorization history is absent', () => {
+    const simulation = simulateCase001();
+    const viewModel = createCase001ViewModel({ ...simulation, authorizationChanges: [] });
+    render(<Case001Demo viewModel={viewModel} />);
+
+    expect(screen.queryByRole('heading', { name: 'Constraint updated' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Unlocked after client limit changed/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Authorization history is unavailable.')).toBeInTheDocument();
+  });
+
+  it('renders empty plan collections without false success or unsafe values', () => {
+    const simulation = simulateCase001();
+    const viewModel = createCase001ViewModel({
+      ...simulation,
+      plans: [], approvals: [], authorizationChanges: [], validations: [], events: [], finalPlanId: null,
+    });
+    const before = structuredClone(viewModel);
+    const { container } = render(<Case001Demo viewModel={viewModel} />);
+
+    expect(screen.queryByTestId('plan-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Final resolution unavailable', level: 2 })).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/Infinity|NaN|undefined/);
+    expect(viewModel).toEqual(before);
+  });
+
+  it('renders an unexpected status with neutral text and no success presentation', () => {
+    const simulation = simulateCase001();
+    const plans = simulation.plans.map((plan) => plan.id === simulation.finalPlanId
+      ? { ...plan, status: 'UNEXPECTED_STATUS' as typeof plan.status }
+      : plan);
+    const viewModel = createCase001ViewModel({ ...simulation, plans });
+    render(<Case001Demo viewModel={viewModel} />);
+
+    expect(screen.getAllByText('Unavailable').some((element) => element.classList.contains('status-neutral'))).toBe(true);
+    expect(screen.queryByText('Final approved plan')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Final approvals' })).not.toBeInTheDocument();
   });
 
   it('starts Decision Trace closed and opens to show simulated events', () => {

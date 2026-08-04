@@ -25,6 +25,9 @@ describe('CASE-001 presentation model', () => {
     const viewModel = createCase001ViewModel(simulation);
 
     expect(viewModel.header.title).toBe(`${simulation.updatedCase.requestedQuantity}-unit shortage resolved`);
+    expect(viewModel.resolutionApproved).toBe(true);
+    expect(viewModel.header.statusLabel).toBe('Approved');
+    expect(viewModel.finalApprovals).toHaveLength(3);
     expect(viewModel.header.participantCount).toBe(simulation.updatedCase.actors.length);
   });
 
@@ -92,5 +95,103 @@ describe('CASE-001 presentation model', () => {
     expect(viewModel.priorPlans).toHaveLength(simulation.plans.length);
     expect(viewModel.finalApprovals).toEqual([]);
     expect(viewModel.resolutionAvailable).toBe(false);
+    expect(viewModel.resolutionApproved).toBe(false);
+    expect(viewModel.header.title).not.toContain('resolved');
+  });
+
+  it('does not approve a final plan whose status is not APPROVED', () => {
+    const simulation = simulateCase001();
+    const plans = simulation.plans.map((plan) => plan.id === simulation.finalPlanId ? { ...plan, status: 'PENDING_APPROVAL' as const } : plan);
+    const viewModel = createCase001ViewModel({ ...simulation, plans });
+
+    expect(viewModel.finalPlan?.statusLabel).toBe('Pending approval');
+    expect(viewModel.resolutionApproved).toBe(false);
+    expect(viewModel.finalApprovals).toEqual([]);
+    expect(viewModel.header.statusTone).toBe('neutral');
+  });
+
+  it('requires all three valid approvals for the exact final plan', () => {
+    const simulation = simulateCase001();
+    const finalApprovals = simulation.approvals.filter(({ planId }) => planId === simulation.finalPlanId);
+    const partial = createCase001ViewModel({ ...simulation, approvals: finalApprovals.slice(0, 2) });
+    const otherPlan = simulation.plans[0]!;
+    const wrongPlanApprovals = finalApprovals.map((approval) => ({ ...approval, planId: otherPlan.id }));
+    const wrongPlan = createCase001ViewModel({ ...simulation, approvals: wrongPlanApprovals });
+
+    expect(partial.resolutionApproved).toBe(false);
+    expect(partial.finalApprovals).toEqual([]);
+    expect(wrongPlan.resolutionApproved).toBe(false);
+    expect(wrongPlan.finalApprovals).toEqual([]);
+  });
+
+  it('fails closed when approval history cannot identify three presentable current records', () => {
+    const simulation = simulateCase001();
+    const finalApproval = simulation.approvals.find(({ planId }) => planId === simulation.finalPlanId)!;
+    const historical = { ...finalApproval, createdAt: '2026-08-04T12:00:00.000Z' };
+    const viewModel = createCase001ViewModel({ ...simulation, approvals: [historical, ...simulation.approvals] });
+
+    expect(viewModel.resolutionApproved).toBe(false);
+    expect(viewModel.finalApprovals).toEqual([]);
+    expect(viewModel.header.title).toBe('Approval evidence incomplete');
+  });
+
+  it('rejects mismatched actor identity and role from approval evidence', () => {
+    const simulation = simulateCase001();
+    const client = simulation.updatedCase.actors.find(({ role }) => role === 'client')!;
+    const approvals = simulation.approvals.map((approval) => approval.actorRole === 'supplier'
+      ? { ...approval, actorId: client.id }
+      : approval);
+    const viewModel = createCase001ViewModel({ ...simulation, approvals });
+
+    expect(viewModel.resolutionApproved).toBe(false);
+    expect(viewModel.finalApprovals).toEqual([]);
+    expect(viewModel.header.title).toBe('Approval evidence incomplete');
+  });
+
+  it('does not fabricate an authorization change when history is absent', () => {
+    const simulation = simulateCase001();
+    const viewModel = createCase001ViewModel({ ...simulation, authorizationChanges: [] });
+
+    expect(viewModel.authorizationChangeAvailable).toBe(false);
+    expect(viewModel.authorizationChanges).toEqual([]);
+    expect(viewModel.finalPlan?.explanation).toEqual({ kind: 'neutral', message: 'Authorization history is unavailable.' });
+    expect(viewModel.priorPlans.find(({ status }) => status === 'REJECTED')?.explanation.kind).toBe('neutral');
+  });
+
+  it('handles empty plan and evidence collections without invented values', () => {
+    const simulation = simulateCase001();
+    const before = structuredClone(simulation);
+    const viewModel = createCase001ViewModel({
+      ...simulation,
+      plans: [], approvals: [], authorizationChanges: [], validations: [], events: [], finalPlanId: null,
+    });
+
+    expect(viewModel.priorPlans).toEqual([]);
+    expect(viewModel.finalPlan).toBeNull();
+    expect(viewModel.finalApprovals).toEqual([]);
+    expect(viewModel.events).toEqual([]);
+    expect(JSON.stringify(viewModel)).not.toMatch(/Infinity|NaN|undefined/);
+    expect(simulation).toEqual(before);
+  });
+
+  it('maps an unexpected plan status to a neutral presentation', () => {
+    const simulation = simulateCase001();
+    const plans = simulation.plans.map((plan) => plan.id === simulation.finalPlanId
+      ? { ...plan, status: 'UNEXPECTED_STATUS' as typeof plan.status }
+      : plan);
+    const viewModel = createCase001ViewModel({ ...simulation, plans });
+
+    expect(viewModel.finalPlan).toMatchObject({ statusLabel: 'Unavailable', statusTone: 'neutral', isFinal: false });
+    expect(viewModel.resolutionApproved).toBe(false);
+  });
+
+  it('keeps prior plans ordered when input plans are disordered and does not mutate input', () => {
+    const simulation = simulateCase001();
+    const disordered = { ...simulation, plans: [...simulation.plans].reverse() };
+    const before = structuredClone(disordered);
+    const viewModel = createCase001ViewModel(disordered);
+
+    expect(viewModel.priorPlans.map(({ version }) => version)).toEqual([1, 2]);
+    expect(disordered).toEqual(before);
   });
 });

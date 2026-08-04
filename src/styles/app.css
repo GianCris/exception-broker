@@ -25,6 +25,11 @@ time { color: #737d79; font-size: .74rem; }
 .status-no_solution { color: #8a5c06; background: #fff8e6; }
 .status-approved { color: #217047; background: #eef9f2; }
 .status-pending_approval { color: #315e87; background: #f0f6fb; }
+.status-success { color: #217047; background: #eef9f2; }
+.status-danger { color: #a43d38; background: #fff4f2; }
+.status-warning { color: #8a5c06; background: #fff8e6; }
+.status-info { color: #315e87; background: #f0f6fb; }
+.status-neutral { color: #5f6965; background: #f3f4f4; }
 .case-metrics { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 -24px; border-top: 1px solid #e9eaee; background: #fafafb; }
 .case-metrics div { padding: 13px 24px 15px; border-right: 1px solid #e9eaee; }
 .case-metrics div:last-child { border-right: 0; }
@@ -55,6 +60,7 @@ time { color: #737d79; font-size: .74rem; }
 .no-solution-evidence span { color: #796b50; font-size: .68rem; font-weight: 750; text-transform: uppercase; }
 .no-solution-evidence p { grid-column: 1 / -1; margin: 0; padding: 8px 10px; border: 1px solid #efd59a; border-radius: 9px; color: #6f4a06; font-size: .8rem; }
 .unlock-message { padding: 10px 12px; border-left: 3px solid #36915d; color: #325a42; background: #eaf7ef; font-size: .8rem; line-height: 1.45; }
+.neutral-evidence { margin: 15px 0; padding: 10px 12px; border-left: 3px solid #9aa19e; color: #59635f; background: #f3f4f4; font-size: .8rem; line-height: 1.45; }
 .plan-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin: 14px 0 0; padding-top: 14px; border-top: 1px solid #eceeed; }
 .plan-summary dd { font-size: .87rem; }
 .final-details { margin-top: 16px; padding-top: 15px; border-top: 1px solid #cfe3d6; }
