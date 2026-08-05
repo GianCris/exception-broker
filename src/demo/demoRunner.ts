@@ -1,5 +1,6 @@
 import type { Approval, Plan } from '../domain/types.js';
 import { receivedAtSchema } from '../integrations/calle/schemas.js';
+import { createCase001ThreePartyFlowConfig } from '../integrations/calle/case001ThreePartyFlow.js';
 import {
   runThreePartyFlow,
   type FlowCallStep,
@@ -8,11 +9,27 @@ import {
   type ThreePartyFlowResult,
   type ThreePartyFlowState,
 } from '../integrations/calle/threePartyFlow.js';
-import type { DemoRunResult, DemoRunnerInput, DemoStep, DemoStepType } from './demoTypes.js';
+import type {
+  DemoApprover,
+  DemoCaseNarrative,
+  DemoRunResult,
+  DemoRunnerInput,
+  DemoStep,
+  DemoStepType,
+  PartialDemoCaseNarrative,
+} from './demoTypes.js';
 
 const unavailableModes = new Set(['LIVE_CALL_E', 'RECORDED_RUN']);
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 const iso = (value: unknown): value is string => receivedAtSchema.safeParse(value).success;
+
+export const createLocalSimulationInput = (): DemoRunnerInput => ({
+  mode: 'LOCAL_SIMULATION',
+  scenario: createCase001ThreePartyFlowConfig(),
+  runId: 'DEMO-RUN-001',
+  startedAt: '2026-08-04T07:55:00-05:00',
+  completedAt: '2026-08-04T13:05:00-05:00',
+});
 
 const blocked = (
   input: DemoRunnerInput,
@@ -160,6 +177,114 @@ export const isVerifiedCompleteDemoSequence = (steps: readonly DemoStep[]): bool
   return expected === demoSequence.length;
 };
 
+const uniqueMatch = <T>(values: readonly T[], predicate: (value: T) => boolean): T | null => {
+  const matches = values.filter(predicate);
+  return matches.length === 1 ? matches[0] ?? null : null;
+};
+
+export const deriveCaseNarrative = (
+  scenario: ThreePartyFlowConfig,
+  result: ThreePartyFlowResult,
+): PartialDemoCaseNarrative => {
+  const state = result.success ? result.value : result.lastSafeState;
+  const trace = result.success ? result.value.trace : result.partialTrace;
+  const narrative: {
+    plan001?: DemoCaseNarrative['plan001'];
+    plan002?: DemoCaseNarrative['plan002'];
+    authorization?: DemoCaseNarrative['authorization'];
+    plan003?: DemoCaseNarrative['plan003'];
+  } = {};
+
+  const rejection = state.planRejectionEvidence;
+  if (rejection !== null
+    && rejection.planId === scenario.initialPlan.id
+    && rejection.decision === 'REJECTED'
+    && rejection.validationIssues.length > 0
+    && rejection.validationIssues.map(({ ruleId }) => ruleId).join('|') === rejection.violatedRequirementIds.join('|')) {
+    narrative.plan001 = {
+      planId: rejection.planId, outcome: 'REJECTED', actorId: rejection.actorId,
+      reasonCodes: rejection.violatedRequirementIds,
+      validationIssues: rejection.validationIssues,
+      summary: rejection.summary,
+    };
+  }
+
+  const plan002 = state.plans.find(({ id }) => id === scenario.plan002.id);
+  const noSolution = result.success ? result.value.noSolutionEvidence : scenario.noSolutionEvidence;
+  if (plan002?.status === 'NO_SOLUTION'
+    && noSolution.compatible === false
+    && noSolution.availableUnitsTomorrow < noSolution.requiredMinimumUnitsTomorrow) {
+    narrative.plan002 = {
+      planId: plan002.id, outcome: 'NO_SOLUTION',
+      availableQuantity: noSolution.availableUnitsTomorrow,
+      requiredQuantity: noSolution.requiredMinimumUnitsTomorrow,
+    };
+  }
+
+  const authorizationTrace = uniqueMatch(trace, ({ requestId }) =>
+    requestId === scenario.caseAuthorization.request.requestId);
+  const authorizationEvent = authorizationTrace === null
+    ? null
+    : uniqueMatch(state.events, (event) =>
+        scenario.caseAuthorization.review.action === 'APPLY'
+        && event.eventId === scenario.caseAuthorization.review.eventId
+        && event.requestId === authorizationTrace.requestId
+        && event.operationId === scenario.caseAuthorization.review.operationId
+        && event.result === 'CASE_AUTHORIZATION_APPLIED');
+  if (authorizationTrace?.bridgeResult.ready === true
+    && authorizationTrace.bridgeResult.proposal.operationType === 'CASE_AUTHORIZATION'
+    && authorizationEvent !== null) {
+    const appliedFields = authorizationEvent.appliedAuthorizationFields;
+    const changes = authorizationTrace.bridgeResult.proposal.proposedAuthorizationChanges
+      .filter(({ field }) => appliedFields.includes(field));
+    if (changes.length === 1 && appliedFields.length === 1) {
+      const change = changes[0];
+      if (change !== undefined) narrative.authorization = {
+        field: change.field, previousValue: change.currentInternalValue,
+        newValue: change.proposedNewValue, actorId: authorizationEvent.actorId,
+        requestId: authorizationEvent.requestId, operationId: authorizationEvent.operationId,
+        ...(change.reason === undefined ? {} : { summary: change.reason }),
+      };
+    }
+  }
+
+  if (result.success) {
+    const finalPlan = result.value.plans.find(({ id }) => id === result.value.finalPlanId);
+    const approvers: DemoApprover[] = [];
+    for (const step of scenario.finalApprovals) {
+      const entry = uniqueMatch(result.value.trace, ({ requestId }) => requestId === step.request.requestId);
+      const event = entry === null ? null : uniqueMatch(result.value.events, (candidate) =>
+        step.review.action === 'APPLY'
+        && candidate.eventId === step.review.eventId
+        && candidate.requestId === entry.requestId
+        && candidate.operationId === step.review.operationId
+        && candidate.planId === finalPlan?.id
+        && (candidate.result === 'APPROVAL_RECORDED' || candidate.result === 'PLAN_APPROVED'));
+      const approval = event?.approvalId === undefined ? null : uniqueMatch(result.value.approvals, ({ approvalId }) =>
+        approvalId === event.approvalId && event.planId === finalPlan?.id);
+      if (entry === null || event === null || approval?.decision !== 'APPROVED') continue;
+      approvers.push({
+        actorId: approval.actorId, actorRole: approval.actorRole, approvalId: approval.approvalId,
+        requestId: entry.requestId, operationId: event.operationId,
+      });
+    }
+    const roles = new Set(approvers.map(({ actorRole }) => actorRole));
+    if (finalPlan?.status === 'APPROVED'
+      && approvers.length === 3
+      && roles.size === 3
+      && ['supplier', 'production', 'client'].every((role) => roles.has(role as DemoApprover['actorRole']))) {
+      narrative.plan003 = { planId: finalPlan.id, outcome: 'APPROVED', approvers };
+    }
+  }
+  return narrative;
+};
+
+const completeNarrative = (narrative: PartialDemoCaseNarrative): narrative is DemoCaseNarrative =>
+  narrative.plan001 !== undefined
+  && narrative.plan002 !== undefined
+  && narrative.authorization !== undefined
+  && narrative.plan003 !== undefined;
+
 export const runDemo = async (input: DemoRunnerInput): Promise<DemoRunResult> => {
   if (typeof input.mode !== 'string' || (!unavailableModes.has(input.mode) && input.mode !== 'LOCAL_SIMULATION')) {
     return blocked(input, 'INVALID_MODE');
@@ -180,19 +305,20 @@ export const runDemo = async (input: DemoRunnerInput): Promise<DemoRunResult> =>
   const trace = result.success ? result.value.trace : result.partialTrace;
   const state = result.success ? result.value : result.lastSafeState;
   const steps = deriveDemoSteps(input.scenario, trace, state, result);
+  const caseNarrative = deriveCaseNarrative(input.scenario, result);
   if (!result.success) return {
     status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: input.runId as string,
     startedAt: input.startedAt as string, completedAt: input.completedAt as string,
     failedStep: result.failedStep, reason: result.reason, partialState: state,
-    steps, summary: 'CASE_NOT_RESOLVED',
+    steps, caseNarrative, summary: 'CASE_NOT_RESOLVED',
   };
   const finalPlan: Plan | undefined = result.value.plans.find(({ id }) => id === result.value.finalPlanId);
-  if (finalPlan?.status !== 'APPROVED' || !isVerifiedCompleteDemoSequence(steps)) {
+  if (finalPlan?.status !== 'APPROVED' || !isVerifiedCompleteDemoSequence(steps) || !completeNarrative(caseNarrative)) {
     return {
       status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: input.runId as string,
       startedAt: input.startedAt as string, completedAt: input.completedAt as string,
       failedStep: 'DEMO_COMPLETION', reason: 'The flow did not provide verified resolution evidence',
-      partialState: state, steps, summary: 'CASE_NOT_RESOLVED',
+      partialState: state, steps, caseNarrative, summary: 'CASE_NOT_RESOLVED',
     };
   }
   return {
@@ -200,6 +326,6 @@ export const runDemo = async (input: DemoRunnerInput): Promise<DemoRunResult> =>
     startedAt: input.startedAt as string, completedAt: input.completedAt as string,
     finalCase: result.value.exceptionCase, finalPlans: result.value.plans,
     approvals: result.value.approvals, operationHistory: result.value.operationHistory,
-    steps, summary: 'CASE_RESOLVED',
+    steps, caseNarrative, summary: 'CASE_RESOLVED',
   };
 };

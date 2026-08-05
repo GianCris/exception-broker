@@ -9,7 +9,7 @@ type CaseHeaderProps = Readonly<{
   summary: string;
 }>;
 
-const BrokerMark = () => (
+export const BrokerMark = () => (
   <svg className="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="3" cy="5" r="1.5" /><circle cx="3" cy="12" r="1.5" /><circle cx="3" cy="19" r="1.5" />
     <path d="M4.5 5 10 11.1M4.5 12H10M4.5 19 10 12.9" />
