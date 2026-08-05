@@ -3,6 +3,7 @@ import {
   recordApproval,
   recordRejection,
 } from './approvals.js';
+import { applyAuthorizationChanges } from './authorizationOperations.js';
 import {
   case001Fixture,
   case001FridayAtFive,
@@ -128,19 +129,16 @@ const applyOfficialClientAuthorization = (
       'Client authorizes up to 100 substitute units to preserve the minimum delivery',
     createdAt: '2026-08-04T10:00:00-05:00',
   };
-  const actors = exceptionCase.actors.map((actor) =>
-    actor.role === 'client'
-      ? {
-          ...actor,
-          authorization: {
-            ...actor.authorization,
-            maxSubstituteQuantity: change.newValue,
-          },
-        }
-      : actor,
-  );
+  const applied = applyAuthorizationChanges(exceptionCase, [{
+    actorId: client.id,
+    field: change.field,
+    expectedCurrentValue: change.previousValue,
+    newValue: change.newValue,
+    reviewedAction: 'APPLY',
+  }]);
+  if (!applied.success) throw new Error(applied.reason);
 
-  return { updatedCase: { ...exceptionCase, actors }, change };
+  return { updatedCase: applied.updatedCase, change };
 };
 
 const approvalAttempt = (
