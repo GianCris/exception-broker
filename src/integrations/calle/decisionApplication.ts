@@ -47,11 +47,11 @@ export type DecisionApplicationContext = Readonly<{
 
 export type DecisionApplicationEvent = Readonly<{
   eventId: string; operationId: string; requestId: string; caseId: string;
-  planId: string; actorId: string; actorRole: string; decision: string;
+  planId?: string; actorId: string; actorRole: string; decision: string;
   reviewedBy: string; reviewedAt: string;
   appliedAuthorizationFields: readonly AuthorizationField[];
   discardedAuthorizationFields: readonly AuthorizationField[];
-  result: 'APPROVAL_RECORDED' | 'PLAN_APPROVED' | 'REJECTION_RECORDED';
+  result: 'APPROVAL_RECORDED' | 'PLAN_APPROVED' | 'REJECTION_RECORDED' | 'CASE_AUTHORIZATION_APPLIED';
 }>;
 
 export type DecisionApplicationResult =
@@ -62,7 +62,7 @@ export type DecisionApplicationResult =
       discardedAuthorizationChanges: readonly AuthorizationField[];
       updatedOperationHistory: readonly ProcessedOperation[];
       proposedEvents: readonly DecisionApplicationEvent[];
-      resolutionStatus: 'PENDING_APPROVALS' | 'PLAN_APPROVED' | 'PLAN_REJECTED';
+      resolutionStatus: 'PENDING_APPROVALS' | 'PLAN_APPROVED' | 'PLAN_REJECTED' | 'CASE_AUTHORIZATION_APPLIED';
     }> }>
   | Readonly<{ applied: false; reason: string; issues?: readonly string[];
       unchangedCase: ExceptionCase; unchangedPlans: readonly Plan[];
@@ -80,7 +80,9 @@ const fields = new Set<AuthorizationField>(['maxAbsorbableAdditionalCost', 'maxS
 
 const proposalIssue = (proposal: DecisionProposal): string | undefined => {
   if (typeof proposal !== 'object' || proposal === null) return 'Proposal is incomplete';
-  if (![proposal.requestId, proposal.caseId, proposal.planId, proposal.actorId, proposal.summary, proposal.receivedAt].every(nonEmpty)) return 'Proposal is incomplete';
+  if (![proposal.requestId, proposal.caseId, proposal.actorId, proposal.summary, proposal.receivedAt].every(nonEmpty)) return 'Proposal is incomplete';
+  if (proposal.operationType !== 'PLAN_DECISION' && proposal.operationType !== 'CASE_AUTHORIZATION') return 'Proposal operation type is invalid';
+  if (proposal.operationType === 'PLAN_DECISION' && !nonEmpty(proposal.planId)) return 'Proposal is incomplete';
   if (!iso(proposal.receivedAt) || proposal.requiresReview !== true) return 'Proposal is invalid';
   if (!['APPROVED', 'REJECTED', 'PENDING', 'NEEDS_CLARIFICATION'].includes(proposal.decision as string)) return 'Decision is unknown';
   if (!Array.isArray(proposal.proposedAuthorizationChanges) || !Array.isArray(proposal.evidence)) return 'Proposal is incomplete';
@@ -117,10 +119,16 @@ export const applyReviewedDecision = (
   const actor = context.exceptionCase.actors.find(({ id }) => id === proposal.actorId);
   if (actor === undefined) return fail(context, 'ACTOR_NOT_FOUND');
   if (actor.role !== proposal.actorRole) return fail(context, 'ACTOR_ROLE_MISMATCH');
-  const plan = context.plans.find(({ id }) => id === proposal.planId);
-  if (plan === undefined) return fail(context, 'PLAN_NOT_FOUND');
-  if (plan.caseId !== context.exceptionCase.id) return fail(context, 'PLAN_CASE_MISMATCH');
-  if (plan.status !== 'PENDING_APPROVAL') return fail(context, 'PLAN_NOT_APPLICABLE');
+  const plan = proposal.operationType === 'PLAN_DECISION'
+    ? context.plans.find(({ id }) => id === proposal.planId)
+    : undefined;
+  if (proposal.operationType === 'PLAN_DECISION') {
+    if (plan === undefined) return fail(context, 'PLAN_NOT_FOUND');
+    if (plan.caseId !== context.exceptionCase.id) return fail(context, 'PLAN_CASE_MISMATCH');
+    if (plan.status !== 'PENDING_APPROVAL') return fail(context, 'PLAN_NOT_APPLICABLE');
+  } else if (proposal.proposedAuthorizationChanges.length === 0) {
+    return fail(context, 'CASE_AUTHORIZATION_CHANGES_REQUIRED');
+  }
 
   const changes = proposal.proposedAuthorizationChanges;
   const changeFields = changes.map(({ field }) => field);
@@ -147,6 +155,34 @@ export const applyReviewedDecision = (
   }
   const validated = validateAuthorizationChanges(context.exceptionCase, domainChanges);
   if (!validated.success) return fail(context, 'AUTHORIZATION_VALIDATION_FAILED', validated.issues);
+
+  if (proposal.operationType === 'CASE_AUTHORIZATION') {
+    if (proposal.decision === 'REJECTED') return fail(context, 'CASE_AUTHORIZATION_REJECTED');
+    if (domainChanges.every(({ reviewedAction }) => reviewedAction === 'DISCARD')) {
+      return fail(context, 'CASE_AUTHORIZATION_DISCARDED');
+    }
+    const authorization = applyAuthorizationChanges(context.exceptionCase, domainChanges);
+    if (!authorization.success) return fail(context, 'AUTHORIZATION_APPLICATION_FAILED', authorization.issues);
+    const processed = recordProcessedOperation(context.operationHistory, { operationId: command.operationId, caseId: context.exceptionCase.id, processedAt: command.reviewedAt });
+    if (!processed.success) return fail(context, 'OPERATION_RECORDING_FAILED', processed.issues);
+    const appliedFields = authorization.appliedChanges.map(({ field }) => field);
+    const discardedFields = authorization.discardedChanges.map(({ field }) => field);
+    const event: DecisionApplicationEvent = {
+      eventId: command.eventId, operationId: command.operationId, requestId: proposal.requestId,
+      caseId: proposal.caseId, actorId: proposal.actorId, actorRole: proposal.actorRole,
+      decision: proposal.decision, reviewedBy: command.reviewedBy, reviewedAt: command.reviewedAt,
+      appliedAuthorizationFields: appliedFields, discardedAuthorizationFields: discardedFields,
+      result: 'CASE_AUTHORIZATION_APPLIED',
+    };
+    return { applied: true, value: {
+      updatedCase: authorization.updatedCase, updatedPlans: context.plans, approvals: context.approvals,
+      appliedAuthorizationChanges: appliedFields, discardedAuthorizationChanges: discardedFields,
+      updatedOperationHistory: processed.history, proposedEvents: [event],
+      resolutionStatus: 'CASE_AUTHORIZATION_APPLIED',
+    } };
+  }
+
+  if (plan === undefined) return fail(context, 'PLAN_NOT_FOUND');
 
   if (context.approvals.some((item) => item.planId === proposal.planId && item.actorId === proposal.actorId && item.decision === proposal.decision)) return fail(context, 'DUPLICATE_DECISION');
 
