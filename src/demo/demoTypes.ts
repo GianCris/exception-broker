@@ -1,6 +1,7 @@
 import type { Approval, ExceptionCase, Plan } from '../domain/types.js';
 import type { ProcessedOperation } from '../domain/operationHistory.js';
 import type { ThreePartyFlowConfig, ThreePartyFlowState } from '../integrations/calle/threePartyFlow.js';
+import type { RuleId, RuleViolation } from '../domain/rules.js';
 
 export type DemoMode = 'LOCAL_SIMULATION';
 export type KnownUnavailableDemoMode = 'LIVE_CALL_E' | 'RECORDED_RUN';
@@ -36,6 +37,33 @@ export type DemoStep = Readonly<{
   approvalId?: string;
 }>;
 
+export type DemoApprover = Readonly<{
+  actorId: string;
+  actorRole: 'supplier' | 'production' | 'client';
+  approvalId: string;
+  requestId: string;
+  operationId: string;
+}>;
+
+export type DemoCaseNarrative = Readonly<{
+  plan001: Readonly<{
+    planId: string; outcome: 'REJECTED'; actorId: string;
+    reasonCodes: readonly RuleId[]; validationIssues: readonly RuleViolation[]; summary: string;
+  }>;
+  plan002: Readonly<{
+    planId: string; outcome: 'NO_SOLUTION'; availableQuantity: number; requiredQuantity: number;
+  }>;
+  authorization: Readonly<{
+    field: string; previousValue: string | number; newValue: string | number | boolean;
+    actorId: string; requestId: string; operationId: string; summary?: string;
+  }>;
+  plan003: Readonly<{
+    planId: string; outcome: 'APPROVED'; approvers: readonly DemoApprover[];
+  }>;
+}>;
+
+export type PartialDemoCaseNarrative = Readonly<Partial<DemoCaseNarrative>>;
+
 export type DemoCompletedResult = Readonly<{
   status: 'COMPLETED';
   mode: DemoMode;
@@ -47,6 +75,7 @@ export type DemoCompletedResult = Readonly<{
   approvals: readonly Approval[];
   operationHistory: readonly ProcessedOperation[];
   steps: readonly DemoStep[];
+  caseNarrative: DemoCaseNarrative;
   summary: 'CASE_RESOLVED';
 }>;
 
@@ -60,6 +89,7 @@ export type DemoFailedResult = Readonly<{
   reason: string;
   partialState: ThreePartyFlowState;
   steps: readonly DemoStep[];
+  caseNarrative: PartialDemoCaseNarrative;
   summary: 'CASE_NOT_RESOLVED';
 }>;
 

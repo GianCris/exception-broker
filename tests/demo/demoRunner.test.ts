@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
+  deriveCaseNarrative,
   deriveDemoSteps,
   isVerifiedCompleteDemoSequence,
   runDemo,
@@ -77,6 +78,82 @@ describe('safe deterministic demo runner', () => {
     const approvalIds = result.steps.flatMap(({ approvalId }) => approvalId === undefined ? [] : [approvalId]);
     expect(new Set([...requestIds, ...operationIds, ...approvalIds]).size)
       .toBe(requestIds.length + operationIds.length + approvalIds.length);
+  });
+
+  it('exposes a complete narrative from W3-08 evidence', async () => {
+    const result = await runDemo(input());
+    expect(result.status).toBe('COMPLETED');
+    if (result.status !== 'COMPLETED') return;
+    expect(result.caseNarrative.plan001).toMatchObject({
+      planId: 'PLAN-001', outcome: 'REJECTED', reasonCodes: ['R-04'],
+      validationIssues: [expect.objectContaining({ ruleId: 'R-04', expected: 50, actual: 100 })],
+    });
+    expect(result.caseNarrative.plan002).toMatchObject({
+      planId: 'PLAN-002', outcome: 'NO_SOLUTION', availableQuantity: 250, requiredQuantity: 300,
+    });
+    expect(result.caseNarrative.authorization).toMatchObject({
+      field: 'maxSubstituteQuantity', previousValue: 50, newValue: 100,
+      requestId: 'REQUEST-002', operationId: 'OPERATION-002',
+    });
+    expect(result.caseNarrative.plan003.approvers).toHaveLength(3);
+    expect(new Set(result.caseNarrative.plan003.approvers.map(({ actorId }) => actorId)).size).toBe(3);
+    for (const approver of result.caseNarrative.plan003.approvers) {
+      expect(approver.approvalId).not.toBe(approver.requestId);
+      expect(approver.operationId).not.toBe(approver.requestId);
+    }
+  });
+
+  it('fails narrative completion when evidence is missing, duplicated, or contradictory', async () => {
+    const scenario = createCase001ThreePartyFlowConfig();
+    const flow = await import('../../src/integrations/calle/threePartyFlow.js');
+    const valid = await flow.runThreePartyFlow(scenario);
+    expect(valid.success).toBe(true);
+    if (!valid.success) return;
+    expect(deriveCaseNarrative(scenario, valid).plan003).toBeDefined();
+
+    const missing = { ...valid, value: { ...valid.value, planRejectionEvidence: null } };
+    expect(deriveCaseNarrative(scenario, missing).plan001).toBeUndefined();
+
+    const authorizationEvent = valid.value.events.find(({ result }) => result === 'CASE_AUTHORIZATION_APPLIED');
+    expect(authorizationEvent).toBeDefined();
+    if (authorizationEvent === undefined) return;
+    const duplicated = { ...valid, value: { ...valid.value, events: [...valid.value.events, { ...authorizationEvent }] } };
+    expect(deriveCaseNarrative(scenario, duplicated).authorization).toBeUndefined();
+
+    const contradictory = {
+      ...valid,
+      value: {
+        ...valid.value,
+        planRejectionEvidence: valid.value.planRejectionEvidence === null ? null : {
+          ...valid.value.planRejectionEvidence,
+          violatedRequirementIds: [],
+        },
+      },
+    };
+    expect(deriveCaseNarrative(scenario, contradictory).plan001).toBeUndefined();
+  });
+
+  it('derives narrative by semantic identity when events are reordered or unrelated events are inserted', async () => {
+    const scenario = createCase001ThreePartyFlowConfig();
+    const flow = await import('../../src/integrations/calle/threePartyFlow.js');
+    const valid = await flow.runThreePartyFlow(scenario);
+    expect(valid.success).toBe(true);
+    if (!valid.success) return;
+    const expected = deriveCaseNarrative(scenario, valid);
+    const unrelatedSource = valid.value.events.find(({ result }) => result === 'REJECTION_RECORDED');
+    expect(unrelatedSource).toBeDefined();
+    if (unrelatedSource === undefined) return;
+    const reordered = {
+      ...valid,
+      value: {
+        ...valid.value,
+        events: [
+          { ...unrelatedSource, eventId: 'EVENT-UNRELATED', requestId: 'REQUEST-UNRELATED', operationId: 'OPERATION-UNRELATED' },
+          ...[...valid.value.events].reverse(),
+        ],
+      },
+    };
+    expect(deriveCaseNarrative(scenario, reordered)).toEqual(expected);
   });
 
   it('selects the required application event by identity despite insertion or reordering', async () => {
@@ -309,5 +386,6 @@ describe('safe deterministic demo runner', () => {
       .map((file) => readFileSync(file, 'utf8')).join('\n');
     expect(source).not.toMatch(/CallEProvider|CALLE_API_KEY|process\.env|fetch\s*\(|axios|react|@call-e\/calle/i);
     expect(source).not.toMatch(/Date\.now|new Date\(\)|Math\.random|randomUUID|setTimeout/);
+    expect(readFileSync('src/demo/demoRunner.ts', 'utf8')).not.toContain("'R-04'");
   });
 });
