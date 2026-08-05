@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -70,6 +70,30 @@ describe('Exception Broker safe demo UI', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('renders the verified causal sequence once and in runner order', async () => {
+    const result = await completed();
+    render(<DemoExperience runner={vi.fn(async () => result)} createInput={createLocalSimulationInput} />);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
+    const renderedSteps = screen.getAllByRole('listitem').map((item) => within(item).getByRole('strong').textContent);
+    expect(renderedSteps).toEqual(result.steps.map(({ type }) => type.replaceAll('_', ' ')));
+    expect(new Set(renderedSteps).size).toBe(9);
+  });
+
+  it('links every displayed final approval to PLAN-003 and distinct trace identifiers', async () => {
+    const result = await completed();
+    render(<DemoExperience runner={vi.fn(async () => result)} createInput={createLocalSimulationInput} />);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
+    fireEvent.click(screen.getByRole('button', { name: /view decision trace/i }));
+    for (const approver of result.caseNarrative.plan003.approvers) {
+      const approval = screen.getByText(`Approval ${approver.approvalId}`);
+      const traceItem = approval.closest('li');
+      expect(traceItem).not.toBeNull();
+      expect(within(traceItem!).getByText(`Plan ${result.caseNarrative.plan003.planId}`)).toBeInTheDocument();
+      expect(within(traceItem!).getByText(`Request ${approver.requestId}`)).toBeInTheDocument();
+      expect(within(traceItem!).getByText(`Operation ${approver.operationId}`)).toBeInTheDocument();
+    }
+  });
+
   it('renders FAILED without success or future invented steps', async () => {
     const full = await completed();
     const failure: DemoRunResult = {
@@ -112,6 +136,88 @@ describe('Exception Broker safe demo UI', () => {
     expect(screen.getByText(/No calls were made/i)).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /Resolution steps/i })).not.toBeInTheDocument();
     expect(runner).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps incomplete approvals neutral and omits future success steps', async () => {
+    const full = await completed();
+    const partialSteps = full.steps.filter(({ type }) => !['CLIENT_APPROVED', 'PLAN-003_FINALIZED', 'CASE_RESOLVED'].includes(type));
+    const failure: DemoRunResult = {
+      status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: full.runId,
+      startedAt: full.startedAt, completedAt: full.completedAt,
+      failedStep: 'CLIENT_APPROVAL', reason: 'Approval evidence incomplete',
+      partialState: { exceptionCase: full.finalCase, plans: full.finalPlans,
+        approvals: full.approvals.filter(({ actorRole }) => actorRole !== 'client'),
+        operationHistory: full.operationHistory, events: [], planRejectionEvidence: null },
+      steps: partialSteps,
+      caseNarrative: { plan001: full.caseNarrative.plan001, plan002: full.caseNarrative.plan002, authorization: full.caseNarrative.authorization },
+      summary: 'CASE_NOT_RESOLVED',
+    };
+    render(<DemoExperience runner={vi.fn(async () => failure)} createInput={createLocalSimulationInput} />);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
+    expect(screen.getByRole('heading', { name: 'Simulation stopped safely' })).toBeInTheDocument();
+    expect(screen.queryByText(/CLIENT APPROVED|PLAN-003 FINALIZED|CASE RESOLVED/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Case resolved safely' })).not.toBeInTheDocument();
+  });
+
+  it('does not invent authorization evidence when the partial narrative lacks it', async () => {
+    const full = await completed();
+    const failure: DemoRunResult = {
+      status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: full.runId,
+      startedAt: full.startedAt, completedAt: full.completedAt,
+      failedStep: 'CASE_AUTHORIZATION', reason: 'Authorization evidence unavailable',
+      partialState: { exceptionCase: full.finalCase, plans: full.finalPlans.slice(0, 2), approvals: [],
+        operationHistory: [], events: [], planRejectionEvidence: null },
+      steps: full.steps.slice(0, 2),
+      caseNarrative: { plan001: full.caseNarrative.plan001, plan002: full.caseNarrative.plan002 },
+      summary: 'CASE_NOT_RESOLVED',
+    };
+    render(<DemoExperience runner={vi.fn(async () => failure)} createInput={createLocalSimulationInput} />);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
+    expect(screen.queryByLabelText('50 changed to 100')).not.toBeInTheDocument();
+    expect(screen.queryByText('maxSubstituteQuantity')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Case resolved safely' })).not.toBeInTheDocument();
+  });
+
+  it('renders an empty last-safe state without unsafe values or false success', async () => {
+    const full = await completed();
+    const failure: DemoRunResult = {
+      status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: full.runId,
+      startedAt: full.startedAt, completedAt: full.completedAt,
+      failedStep: 'CONFIGURATION', reason: 'No safe plan state available',
+      partialState: { exceptionCase: full.finalCase, plans: [], approvals: [], operationHistory: [], events: [], planRejectionEvidence: null },
+      steps: [], caseNarrative: {}, summary: 'CASE_NOT_RESOLVED',
+    };
+    const { container } = render(<DemoExperience runner={vi.fn(async () => failure)} createInput={createLocalSimulationInput} />);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
+    expect(screen.getByText(/0 plan versions and 0 recorded decisions/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/Infinity|NaN|undefined/);
+    expect(screen.queryByRole('heading', { name: 'Case resolved safely' })).not.toBeInTheDocument();
+  });
+
+  it('does not mutate the explicit demo configuration passed by the UI', async () => {
+    const explicitInput = createLocalSimulationInput();
+    const before = structuredClone(explicitInput);
+    const runner = vi.fn(async () => runDemo(explicitInput));
+    render(<DemoExperience runner={runner} createInput={() => explicitInput} />);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
+    expect(explicitInput).toEqual(before);
+    expect(runner).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues to reference the SVG favicon and its established symbol', () => {
+    const html = readFileSync('index.html', 'utf8');
+    const favicon = readFileSync('public/favicon.svg', 'utf8');
+    expect(html).toContain('type="image/svg+xml" href="/favicon.svg"');
+    expect(html).not.toContain('/favicon.ico');
+    expect(favicon).toContain('<svg');
+    expect(favicon.match(/<circle/g)).toHaveLength(4);
+  });
+
+  it('keeps scenario identifiers and historical values out of React source', () => {
+    const sources = ['src/App.tsx', 'src/ui/DemoExperience.tsx', 'src/ui/DemoDecisionTrace.tsx']
+      .map((file) => readFileSync(file, 'utf8')).join('\n');
+    expect(sources).not.toMatch(/PLAN-001|PLAN-002|PLAN-003|REQUEST-00|OPERATION-00|APPROVAL-00/);
+    expect(sources).not.toMatch(/>\s*(50|100|250|300)\s*</);
   });
 
   it('keeps React isolated from domain, CALL-E, environment, network, IDs, dates, and phones', () => {
