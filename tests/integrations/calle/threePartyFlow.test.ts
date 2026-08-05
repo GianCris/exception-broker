@@ -3,9 +3,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { case001Fixture } from '../../../src/domain/case-001.fixture.js';
+import { validatePlan } from '../../../src/domain/validator.js';
 import { createCase001ThreePartyFlowConfig } from '../../../src/integrations/calle/case001ThreePartyFlow.js';
 import { MockProvider } from '../../../src/integrations/calle/mockProvider.js';
 import {
+  buildPlanRejectionEvidence,
   runThreePartyFlow,
   type FlowCallStep,
   type ThreePartyFlowConfig,
@@ -91,6 +93,109 @@ describe('CASE-001 three-party integration flow', () => {
       expect(authorization.value.approvals[0]?.decision).toBe('REJECTED');
     }
     expect(case001Fixture.actors.find(({ role }) => role === 'client')?.authorization.maxSubstituteQuantity).toBe(50);
+  });
+
+  it('preserves the domain validation evidence linked to the exact PLAN-001 rejection', async () => {
+    const config = createCase001ThreePartyFlowConfig();
+    const domainValidation = validatePlan(config.initialCase, config.initialPlan);
+    const result = await runThreePartyFlow(config);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.value.planRejectionEvidence).toEqual({
+      planId: config.initialPlan.id,
+      actorId: config.plan001Rejection.expected.actorId,
+      decision: 'REJECTED',
+      violatedRequirementIds: domainValidation.violations.map(({ ruleId }) => ruleId),
+      validationIssues: domainValidation.violations,
+      summary: domainValidation.violations.map(({ message }) => message).join('; '),
+    });
+    expect(result.value.planRejectionEvidence?.violatedRequirementIds).toEqual(['R-04']);
+    expect(result.value.planRejectionEvidence?.validationIssues).toEqual([
+      expect.objectContaining({
+        ruleId: 'R-04', field: 'substituteQuantityTomorrow', actorRole: 'client',
+        expected: 50, actual: 100,
+      }),
+    ]);
+  });
+
+  it('finds rejection evidence by semantic event identity despite insertion and reordering', async () => {
+    const config = createCase001ThreePartyFlowConfig();
+    const result = await runThreePartyFlow(config);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const trace = result.value.trace.find(({ requestId }) =>
+      requestId === config.plan001Rejection.request.requestId);
+    const appliedResult = trace?.applicationResult;
+    expect(appliedResult?.applied).toBe(true);
+    if (trace === undefined || appliedResult?.applied !== true) return;
+    const required = appliedResult.value.proposedEvents.find(({ eventId }) =>
+      config.plan001Rejection.review.action === 'APPLY'
+      && eventId === config.plan001Rejection.review.eventId);
+    expect(required).toBeDefined();
+    if (required === undefined) return;
+    const unrelated = {
+      ...required,
+      eventId: 'OTHER-REJECTION-EVENT', operationId: 'OTHER-REJECTION-OPERATION',
+      requestId: 'OTHER-REJECTION-REQUEST', planId: config.plan002.id,
+    };
+    const validation = validatePlan(config.initialCase, config.initialPlan);
+    const withEvents = (events: typeof appliedResult.value.proposedEvents) => ({
+      ...trace,
+      applicationResult: {
+        applied: true as const,
+        value: { ...appliedResult.value, proposedEvents: events },
+      },
+    });
+    const expected = result.value.planRejectionEvidence;
+    expect(buildPlanRejectionEvidence(config.initialPlan, validation, config.plan001Rejection, withEvents([unrelated, required]))).toEqual(expected);
+    expect(buildPlanRejectionEvidence(config.initialPlan, validation, config.plan001Rejection, withEvents([required, unrelated]))).toEqual(expected);
+  });
+
+  it('fails conservatively when domain rejection evidence is absent', async () => {
+    const base = createCase001ThreePartyFlowConfig();
+    const config = {
+      ...base,
+      initialPlan: {
+        ...base.initialPlan,
+        originalQuantityTomorrow: 250,
+        substituteQuantityTomorrow: 50,
+        originalQuantityLater: 100,
+        supplierAbsorbedCost: 25,
+      },
+    };
+    expect(validatePlan(config.initialCase, config.initialPlan).valid).toBe(true);
+    expect(await runThreePartyFlow(config)).toMatchObject({
+      success: false, failedStep: 'PLAN_001_VALIDATION_EVIDENCE',
+      lastSafeState: { planRejectionEvidence: null },
+    });
+    expect(providers(config).every(({ invocationCount }) => invocationCount === 0)).toBe(true);
+  });
+
+  it('rejects contradictory rejection evidence instead of associating another event', async () => {
+    const config = createCase001ThreePartyFlowConfig();
+    const result = await runThreePartyFlow(config);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const trace = result.value.trace.find(({ requestId }) => requestId === config.plan001Rejection.request.requestId);
+    if (trace?.applicationResult?.applied !== true) throw new Error('Expected applied rejection trace');
+    const contradictory = {
+      ...trace,
+      applicationResult: {
+        applied: true as const,
+        value: {
+          ...trace.applicationResult.value,
+          proposedEvents: trace.applicationResult.value.proposedEvents.map((event) => ({
+            ...event, actorId: 'ACTOR-CONTRADICTORY',
+          })),
+        },
+      },
+    };
+    expect(buildPlanRejectionEvidence(
+      config.initialPlan,
+      validatePlan(config.initialCase, config.initialPlan),
+      config.plan001Rejection,
+      contradictory,
+    )).toBeNull();
   });
 
   it('never finalizes PLAN-003 before the third real actor approval', async () => {
@@ -247,5 +352,6 @@ describe('CASE-001 three-party integration flow', () => {
     ].map((file) => readFileSync(file, 'utf8')).join('\n');
     expect(source).not.toMatch(/CallEProvider|@call-e\/calle|CALLE_API_KEY|fetch\s*\(|axios|react/i);
     expect(source).not.toMatch(/Date\.now|new Date\(\)|Math\.random|randomUUID|setTimeout/);
+    expect(readFileSync('src/integrations/calle/threePartyFlow.ts', 'utf8')).not.toContain("'R-04'");
   });
 });
