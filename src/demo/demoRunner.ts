@@ -38,8 +38,13 @@ const scenarioIssues = (scenario: unknown): readonly string[] => {
   return issues;
 };
 
-const eventFor = (trace: FlowTraceEntry | undefined) =>
-  trace?.applicationResult?.applied === true ? trace.applicationResult.value.proposedEvents[0] : undefined;
+const eventFor = (trace: FlowTraceEntry | undefined, step: FlowCallStep) =>
+  trace?.applicationResult?.applied === true
+    ? trace.applicationResult.value.proposedEvents.find((event) =>
+        event.eventId === (step.review.action === 'APPLY' ? step.review.eventId : undefined)
+        && event.operationId === step.review.operationId
+        && event.requestId === step.request.requestId)
+    : undefined;
 
 const traceFor = (trace: readonly FlowTraceEntry[], step: FlowCallStep): FlowTraceEntry | undefined =>
   trace.find(({ requestId }) => requestId === step.request.requestId);
@@ -59,7 +64,7 @@ const approvalStep = (
   caseId: string,
 ): DemoStep | undefined => {
   const entry = traceFor(trace, scenarioStep);
-  const event = eventFor(entry);
+  const event = eventFor(entry, scenarioStep);
   const approval = event?.approvalId === undefined
     ? undefined
     : approvals.find(({ approvalId }) => approvalId === event.approvalId);
@@ -70,7 +75,7 @@ const approvalStep = (
   });
 };
 
-const deriveSteps = (
+export const deriveDemoSteps = (
   scenario: ThreePartyFlowConfig,
   trace: readonly FlowTraceEntry[],
   state: ThreePartyFlowState,
@@ -79,7 +84,7 @@ const deriveSteps = (
   const steps: DemoStep[] = [];
   const caseId = state.exceptionCase.id;
   const rejectionTrace = traceFor(trace, scenario.plan001Rejection);
-  const rejectionEvent = eventFor(rejectionTrace);
+  const rejectionEvent = eventFor(rejectionTrace, scenario.plan001Rejection);
   const rejectedPlan = state.plans.find(({ id }) => id === scenario.initialPlan.id);
   const rejection = rejectionEvent?.approvalId === undefined ? undefined
     : state.approvals.find(({ approvalId }) => approvalId === rejectionEvent.approvalId);
@@ -98,7 +103,7 @@ const deriveSteps = (
   }
 
   const authorizationTrace = traceFor(trace, scenario.caseAuthorization);
-  const authorizationEvent = eventFor(authorizationTrace);
+  const authorizationEvent = eventFor(authorizationTrace, scenario.caseAuthorization);
   if (authorizationTrace?.applicationResult?.applied === true
     && authorizationEvent?.result === 'CASE_AUTHORIZATION_APPLIED'
     && authorizationEvent.appliedAuthorizationFields.includes('maxSubstituteQuantity')) {
@@ -134,6 +139,27 @@ const deriveSteps = (
   return steps;
 };
 
+const demoSequence = [
+  'PLAN-001_REJECTED', 'PLAN-002_NO_SOLUTION', 'CASE_AUTHORIZATION_APPLIED',
+  'PLAN-003_CREATED', 'SUPPLIER_APPROVED', 'PRODUCTION_APPROVED', 'CLIENT_APPROVED',
+  'PLAN-003_FINALIZED', 'CASE_RESOLVED',
+] as const;
+
+export const isVerifiedCompleteDemoSequence = (steps: readonly DemoStep[]): boolean => {
+  const resolved = steps.find(({ type }) => type === 'CASE_RESOLVED');
+  if (resolved === undefined || steps.length !== demoSequence.length) return false;
+  const counts = new Map<DemoStepType, number>();
+  for (const { type } of steps) counts.set(type, (counts.get(type) ?? 0) + 1);
+  if (demoSequence.some((type) => counts.get(type) !== 1)) return false;
+
+  let expected = 0;
+  for (const { type } of steps) {
+    if (type !== demoSequence[expected]) return false;
+    expected += 1;
+  }
+  return expected === demoSequence.length;
+};
+
 export const runDemo = async (input: DemoRunnerInput): Promise<DemoRunResult> => {
   if (typeof input.mode !== 'string' || (!unavailableModes.has(input.mode) && input.mode !== 'LOCAL_SIMULATION')) {
     return blocked(input, 'INVALID_MODE');
@@ -153,7 +179,7 @@ export const runDemo = async (input: DemoRunnerInput): Promise<DemoRunResult> =>
   const result = await runThreePartyFlow(input.scenario);
   const trace = result.success ? result.value.trace : result.partialTrace;
   const state = result.success ? result.value : result.lastSafeState;
-  const steps = deriveSteps(input.scenario, trace, state, result);
+  const steps = deriveDemoSteps(input.scenario, trace, state, result);
   if (!result.success) return {
     status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: input.runId as string,
     startedAt: input.startedAt as string, completedAt: input.completedAt as string,
@@ -161,7 +187,7 @@ export const runDemo = async (input: DemoRunnerInput): Promise<DemoRunResult> =>
     steps, summary: 'CASE_NOT_RESOLVED',
   };
   const finalPlan: Plan | undefined = result.value.plans.find(({ id }) => id === result.value.finalPlanId);
-  if (finalPlan?.status !== 'APPROVED' || steps.at(-1)?.type !== 'CASE_RESOLVED') {
+  if (finalPlan?.status !== 'APPROVED' || !isVerifiedCompleteDemoSequence(steps)) {
     return {
       status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: input.runId as string,
       startedAt: input.startedAt as string, completedAt: input.completedAt as string,

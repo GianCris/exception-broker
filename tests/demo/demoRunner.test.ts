@@ -2,10 +2,19 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { runDemo } from '../../src/demo/demoRunner.js';
+import {
+  deriveDemoSteps,
+  isVerifiedCompleteDemoSequence,
+  runDemo,
+} from '../../src/demo/demoRunner.js';
+import type { DemoStep } from '../../src/demo/demoTypes.js';
 import { createCase001ThreePartyFlowConfig } from '../../src/integrations/calle/case001ThreePartyFlow.js';
 import { MockProvider } from '../../src/integrations/calle/mockProvider.js';
-import type { FlowCallStep, ThreePartyFlowConfig } from '../../src/integrations/calle/threePartyFlow.js';
+import type {
+  FlowCallStep,
+  FlowTraceEntry,
+  ThreePartyFlowConfig,
+} from '../../src/integrations/calle/threePartyFlow.js';
 
 const input = (scenario = createCase001ThreePartyFlowConfig()) => ({
   mode: 'LOCAL_SIMULATION', scenario, runId: 'DEMO-RUN-001',
@@ -68,6 +77,65 @@ describe('safe deterministic demo runner', () => {
     const approvalIds = result.steps.flatMap(({ approvalId }) => approvalId === undefined ? [] : [approvalId]);
     expect(new Set([...requestIds, ...operationIds, ...approvalIds]).size)
       .toBe(requestIds.length + operationIds.length + approvalIds.length);
+  });
+
+  it('selects the required application event by identity despite insertion or reordering', async () => {
+    const scenario = createCase001ThreePartyFlowConfig();
+    const flow = await import('../../src/integrations/calle/threePartyFlow.js');
+    const result = await flow.runThreePartyFlow(scenario);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const expected = deriveDemoSteps(scenario, result.value.trace, result.value, result);
+    const firstTrace = result.value.trace[0];
+    const appliedResult = firstTrace?.applicationResult;
+    expect(appliedResult?.applied).toBe(true);
+    if (firstTrace === undefined || appliedResult?.applied !== true) return;
+    const requiredEvent = appliedResult.value.proposedEvents.find(({ eventId }) =>
+      eventId === (scenario.plan001Rejection.review.action === 'APPLY'
+        ? scenario.plan001Rejection.review.eventId : undefined));
+    expect(requiredEvent).toBeDefined();
+    if (requiredEvent === undefined) return;
+    const unrelatedEvent = {
+      ...requiredEvent,
+      eventId: 'UNRELATED-EVENT', operationId: 'UNRELATED-OPERATION', requestId: 'UNRELATED-REQUEST',
+    };
+    const withEvents = (events: typeof appliedResult.value.proposedEvents): readonly FlowTraceEntry[] =>
+      result.value.trace.map((entry): FlowTraceEntry => entry.requestId === firstTrace.requestId
+        ? {
+            ...entry,
+            applicationResult: {
+              applied: true,
+              value: { ...appliedResult.value, proposedEvents: events },
+            },
+          }
+        : entry);
+    const alteredTrace = withEvents([unrelatedEvent, requiredEvent]);
+    const reorderedTrace = withEvents([requiredEvent, unrelatedEvent]);
+    expect(deriveDemoSteps(scenario, alteredTrace, result.value, result)).toEqual(expected);
+    expect(deriveDemoSteps(scenario, reorderedTrace, result.value, result)).toEqual(expected);
+  });
+
+  it('validates CASE_RESOLVED by identity and rejects added or reordered steps', async () => {
+    const result = await runDemo(input());
+    expect(result.status).toBe('COMPLETED');
+    if (result.status !== 'COMPLETED') return;
+    expect(result.steps.find(({ type }) => type === 'CASE_RESOLVED')).toBeDefined();
+    expect(isVerifiedCompleteDemoSequence(result.steps)).toBe(true);
+
+    const additional: DemoStep = {
+      type: 'PLAN-003_CREATED', status: 'COMPLETED', caseId: result.finalCase.id,
+      message: 'Adulterated duplicate step.',
+    };
+    expect(isVerifiedCompleteDemoSequence([...result.steps, additional])).toBe(false);
+    const reordered = [...result.steps];
+    const supplierIndex = reordered.findIndex(({ type }) => type === 'SUPPLIER_APPROVED');
+    const productionIndex = reordered.findIndex(({ type }) => type === 'PRODUCTION_APPROVED');
+    const supplier = reordered[supplierIndex];
+    const production = reordered[productionIndex];
+    if (supplier === undefined || production === undefined) throw new Error('Expected approval steps');
+    reordered[supplierIndex] = production;
+    reordered[productionIndex] = supplier;
+    expect(isVerifiedCompleteDemoSequence(reordered)).toBe(false);
   });
 
   it.each([
