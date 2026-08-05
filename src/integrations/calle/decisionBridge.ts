@@ -8,12 +8,9 @@ import type {
   NormalizedCallDecision,
 } from './types.js';
 
-export type ExpectedDecisionReference = Readonly<{
-  caseId: string;
-  planId?: string;
-  actorId: string;
-  actorRole: ActorRole;
-}>;
+export type ExpectedDecisionReference =
+  | Readonly<{ operationType: 'PLAN_DECISION'; caseId: string; planId: string; actorId: string; actorRole: ActorRole }>
+  | Readonly<{ operationType: 'CASE_AUTHORIZATION'; caseId: string; actorId: string; actorRole: ActorRole }>;
 
 export type DecisionBridgeContext = Readonly<{
   exceptionCase: ExceptionCase;
@@ -29,10 +26,9 @@ export type ReviewableAuthorizationChange = Readonly<{
   requiresReview: true;
 }>;
 
-export type DecisionProposal = Readonly<{
+type DecisionProposalBase = Readonly<{
   requestId: string;
   caseId: string;
-  planId: string;
   actorId: string;
   actorRole: ActorRole;
   decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CLARIFICATION';
@@ -44,6 +40,10 @@ export type DecisionProposal = Readonly<{
   requiresReview: true;
   reviewState: 'DECISION_REVIEW_REQUIRED' | 'CLARIFICATION_REQUIRED';
 }>;
+
+export type DecisionProposal =
+  | (DecisionProposalBase & Readonly<{ operationType: 'PLAN_DECISION'; planId: string }>)
+  | (DecisionProposalBase & Readonly<{ operationType: 'CASE_AUTHORIZATION' }>);
 
 export type DecisionBridgeResult =
   | Readonly<{ ready: true; proposal: DecisionProposal }>
@@ -95,6 +95,7 @@ const normalizedDecisionIssues = (input: unknown): string[] => {
   if (typeof input !== 'object' || input === null) return ['normalized decision is missing'];
   const value = input as Partial<NormalizedCallDecision> & Record<string, unknown>;
   if (typeof value.requestId !== 'string' || value.requestId.trim() === '') issues.push('requestId is missing');
+  if (typeof value.planId !== 'string' || value.planId.trim() === '') issues.push('planId is invalid');
   if (typeof value.summary !== 'string' || value.summary.trim() === '') issues.push('summary is missing');
   if (!approvalDecisionSchema.safeParse(value.decision).success) issues.push('decision is invalid');
   if (!actorRoleSchema.safeParse(value.actorRole).success) issues.push('actorRole is invalid');
@@ -179,6 +180,9 @@ export const prepareDecisionProposal = (
   expected: ExpectedDecisionReference,
 ): DecisionBridgeResult => {
   if (!callResult.success) return failure('Normalized CALL-E result is not successful');
+  if (expected.operationType !== 'PLAN_DECISION' && expected.operationType !== 'CASE_AUTHORIZATION') {
+    return failure('Expected operation type is invalid');
+  }
 
   const value = callResult.value;
   const structuralIssues = normalizedDecisionIssues(value);
@@ -189,10 +193,6 @@ export const prepareDecisionProposal = (
     return failure('Expected operation caseId does not match the current case');
   }
   if (value.caseId !== expected.caseId) return failure('Result caseId does not match the expected operation');
-  if (expected.planId === undefined) {
-    return failure('Expected operation does not identify a plan');
-  }
-  if (value.planId !== expected.planId) return failure('Result planId does not match the expected operation');
   if (value.actorId !== expected.actorId) return failure('Result actorId does not match the expected operation');
   if (value.actorRole !== expected.actorRole) return failure('Result actorRole does not match the expected operation');
 
@@ -200,19 +200,29 @@ export const prepareDecisionProposal = (
   if (actor === undefined) return failure('Expected actor does not exist in the current case');
   if (actor.role !== expected.actorRole) return failure('Expected actor role does not match the current case');
 
-  const plan = context.plans.find(({ id }) => id === expected.planId);
-  if (plan === undefined) return failure('Expected plan does not exist in the current context');
-  if (plan.caseId !== context.exceptionCase.id) return failure('Expected plan does not belong to the current case');
+  if (expected.operationType === 'PLAN_DECISION') {
+    if (value.planId !== expected.planId) return failure('Result planId does not match the expected operation');
+    const plan = context.plans.find(({ id }) => id === expected.planId);
+    if (plan === undefined) return failure('Expected plan does not exist in the current context');
+    if (plan.caseId !== context.exceptionCase.id) return failure('Expected plan does not belong to the current case');
+  } else {
+    // W3-01 currently requires planId in the normalized external contract.
+    // It is validated structurally above, but is deliberately not trusted,
+    // matched to a plan, or propagated into a case-authorization proposal.
+    if (value.authorizationChanges.length === 0) {
+      return failure('CASE_AUTHORIZATION requires at least one authorization change');
+    }
+    if (value.decision !== 'APPROVED' && value.decision !== 'REJECTED' && value.decision !== 'NEEDS_CLARIFICATION') {
+      return failure('Decision is not compatible with CASE_AUTHORIZATION');
+    }
+  }
 
   const changes = reviewableChanges(value.authorizationChanges, actor);
   if (!changes.success) return changes.result;
 
-  return {
-    ready: true,
-    proposal: {
+  const proposalBase: DecisionProposalBase = {
       requestId: value.requestId,
       caseId: expected.caseId,
-      planId: expected.planId,
       actorId: expected.actorId,
       actorRole: expected.actorRole,
       decision: value.decision,
@@ -225,6 +235,8 @@ export const prepareDecisionProposal = (
       reviewState: value.decision === 'NEEDS_CLARIFICATION'
         ? 'CLARIFICATION_REQUIRED'
         : 'DECISION_REVIEW_REQUIRED',
-    },
   };
+  return expected.operationType === 'PLAN_DECISION'
+    ? { ready: true, proposal: { ...proposalBase, operationType: 'PLAN_DECISION', planId: expected.planId } }
+    : { ready: true, proposal: { ...proposalBase, operationType: 'CASE_AUTHORIZATION' } };
 };

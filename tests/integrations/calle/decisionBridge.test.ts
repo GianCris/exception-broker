@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { simulateCase001 } from '../../../src/domain/case-001.simulation.js';
+import { case001Fixture } from '../../../src/domain/case-001.fixture.js';
 import type { ExceptionCase, Plan } from '../../../src/domain/types.js';
 import {
   prepareDecisionProposal,
@@ -24,6 +25,7 @@ const context = (): DecisionBridgeContext => ({
 });
 
 const expected = (): ExpectedDecisionReference => ({
+  operationType: 'PLAN_DECISION',
   caseId: simulation.updatedCase.id,
   planId: finalPlan.id,
   actorId: 'client',
@@ -66,6 +68,20 @@ const deepFreeze = <T>(value: T): T => {
   return value;
 };
 
+const caseAuthorizationExpected = (): ExpectedDecisionReference => ({
+  operationType: 'CASE_AUTHORIZATION', caseId: case001Fixture.id,
+  actorId: 'client', actorRole: 'client',
+});
+
+const caseAuthorizationResult = (updates: Record<string, unknown> = {}): CallMappingResult => ({
+  success: true,
+  value: {
+    ...normalizedDecision('APPROVED'), caseId: case001Fixture.id, planId: 'PLAN-002',
+    authorizationChanges: [{ field: 'maxSubstituteQuantity', newValue: 100, externalPreviousValue: 999 }],
+    ...updates,
+  } as NormalizedCallDecision,
+});
+
 describe('CALL-E normalized decision bridge', () => {
   it.each(['APPROVED', 'REJECTED'] as const)(
     'produces a reviewable %s proposal without applying it',
@@ -74,6 +90,7 @@ describe('CALL-E normalized decision bridge', () => {
       expect(result).toMatchObject({
         ready: true,
         proposal: {
+          operationType: 'PLAN_DECISION',
           requestId: 'REQ-BRIDGE-001',
           caseId: simulation.updatedCase.id,
           planId: finalPlan.id,
@@ -173,10 +190,10 @@ describe('CALL-E normalized decision bridge', () => {
       .toMatchObject({ ready: false, reason: 'Expected operation caseId does not match the current case' });
   });
 
-  it('rejects a plan-bearing result when the trusted reference has no plan', () => {
-    const { planId: _planId, ...referenceWithoutPlan } = expected();
-    expect(prepareDecisionProposal(success(), context(), referenceWithoutPlan))
-      .toMatchObject({ ready: false, reason: 'Expected operation does not identify a plan' });
+  it('does not infer an operation type from a missing planId', () => {
+    const { planId: _planId, ...incomplete } = expected() as Extract<ExpectedDecisionReference, { operationType: 'PLAN_DECISION' }>;
+    expect(prepareDecisionProposal(success(), context(), incomplete as ExpectedDecisionReference).ready)
+      .toBe(false);
   });
 
   it.each([
@@ -288,6 +305,51 @@ describe('CALL-E normalized decision bridge', () => {
       actorId: 'ACTOR-EXTERNAL',
     });
     expect(prepareDecisionProposal(externalOnlyReference, context(), expected()).ready).toBe(false);
+  });
+
+  describe('CASE_AUTHORIZATION', () => {
+    const caseContext = (): DecisionBridgeContext => ({ exceptionCase: structuredClone(case001Fixture), plans: [] });
+
+    it('prepares a case-level proposal without inventing or propagating planId', () => {
+      const result = prepareDecisionProposal(caseAuthorizationResult(), caseContext(), caseAuthorizationExpected());
+      expect(result).toMatchObject({ ready: true, proposal: {
+        operationType: 'CASE_AUTHORIZATION', decision: 'APPROVED',
+        proposedAuthorizationChanges: [{ currentInternalValue: 50, proposedNewValue: 100, externalPreviousValue: 999 }],
+      } });
+      if (result.ready) expect(result.proposal).not.toHaveProperty('planId');
+    });
+
+    it('rejects empty changes and unknown authorization fields', () => {
+      expect(prepareDecisionProposal(caseAuthorizationResult({ authorizationChanges: [] }), caseContext(), caseAuthorizationExpected()))
+        .toMatchObject({ ready: false, reason: 'CASE_AUTHORIZATION requires at least one authorization change' });
+      expect(prepareDecisionProposal(caseAuthorizationResult({ authorizationChanges: [{ field: 'unknown', newValue: 1 }] }), caseContext(), caseAuthorizationExpected()).ready)
+        .toBe(false);
+    });
+
+    it.each([
+      ['caseId', { caseId: 'CASE-OTHER' }, caseAuthorizationExpected()],
+      ['actorId', { actorId: 'missing' }, caseAuthorizationExpected()],
+      ['actorRole', { actorRole: 'supplier' }, caseAuthorizationExpected()],
+      ['expected actor', { actorId: 'missing' }, { ...caseAuthorizationExpected(), actorId: 'missing' }],
+    ] as const)('rejects an invalid %s', (_label, updates, reference) => {
+      expect(prepareDecisionProposal(caseAuthorizationResult(updates), caseContext(), reference).ready).toBe(false);
+    });
+
+    it('rejects the contract-required external planId when it is empty', () => {
+      expect(prepareDecisionProposal(caseAuthorizationResult({ planId: '' }), caseContext(), caseAuthorizationExpected()).ready).toBe(false);
+    });
+
+    it('does not infer CASE_AUTHORIZATION from omitted operationType', () => {
+      const { operationType: _operationType, ...invalid } = caseAuthorizationExpected();
+      expect(prepareDecisionProposal(caseAuthorizationResult(), caseContext(), invalid as ExpectedDecisionReference).ready).toBe(false);
+    });
+
+    it('does not mutate the case while preparing the proposal', () => {
+      const current = deepFreeze(caseContext());
+      const before = structuredClone(current);
+      prepareDecisionProposal(caseAuthorizationResult(), current, caseAuthorizationExpected());
+      expect(current).toEqual(before);
+    });
   });
 
   it('has no SDK, network, React, ID generation, timestamp generation, or domain mutation dependency', () => {

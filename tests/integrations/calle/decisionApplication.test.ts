@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { simulateCase001 } from '../../../src/domain/case-001.simulation.js';
+import { case001Fixture } from '../../../src/domain/case-001.fixture.js';
 import type { Approval, Plan } from '../../../src/domain/types.js';
 import type { DecisionBridgeResult, DecisionProposal } from '../../../src/integrations/calle/decisionBridge.js';
 import {
@@ -27,7 +28,7 @@ const context = (overrides: Partial<DecisionApplicationContext> = {}): DecisionA
 const proposal = (overrides: Partial<DecisionProposal> = {}): DecisionBridgeResult => ({
   ready: true,
   proposal: {
-    requestId: 'REQ-APPLICATION-001', caseId: simulation.caseId, planId: plan.id,
+    operationType: 'PLAN_DECISION', requestId: 'REQ-APPLICATION-001', caseId: simulation.caseId, planId: plan.id,
     actorId: client.id, actorRole: client.role, decision: 'APPROVED', summary: 'Reviewed decision',
     proposedAuthorizationChanges: [], evidence: ['Sanitized evidence'],
     completionConfidence: { score: 0.9, label: 'high' }, receivedAt: '2026-08-04T18:00:00-05:00',
@@ -43,6 +44,36 @@ const command = (overrides: Partial<Extract<ReviewCommand, { action: 'APPLY' }>>
 const approval = (actor: typeof client): Approval => ({
   caseId: simulation.caseId, planId: plan.id, actorId: actor.id, actorRole: actor.role,
   decision: 'APPROVED', createdAt: '2026-08-04T18:01:00-05:00',
+});
+
+type CaseAuthorizationProposal = Extract<DecisionProposal, { operationType: 'CASE_AUTHORIZATION' }>;
+const caseAuthorizationProposal = (
+  overrides: Partial<CaseAuthorizationProposal> = {},
+): DecisionBridgeResult => ({
+  ready: true,
+  proposal: {
+    operationType: 'CASE_AUTHORIZATION', requestId: 'REQ-AUTH-001', caseId: case001Fixture.id,
+    actorId: 'client', actorRole: 'client', decision: 'APPROVED', summary: 'Client confirmed the limit.',
+    proposedAuthorizationChanges: [{
+      field: 'maxSubstituteQuantity', currentInternalValue: 50, proposedNewValue: 100,
+      externalPreviousValue: 999, requiresReview: true,
+    }],
+    evidence: ['Explicit authorization'], completionConfidence: { score: 0.95, label: 'high' },
+    receivedAt: '2026-08-04T10:00:00-05:00', requiresReview: true,
+    reviewState: 'DECISION_REVIEW_REQUIRED', ...overrides,
+  },
+});
+
+const caseContext = (overrides: Partial<DecisionApplicationContext> = {}): DecisionApplicationContext => ({
+  exceptionCase: structuredClone(case001Fixture), plans: [plan], approvals: [],
+  operationHistory: [], existingEventIds: [], ...overrides,
+});
+
+const authorizationCommand = (
+  overrides: Partial<Extract<ReviewCommand, { action: 'APPLY' }>> = {},
+): ReviewCommand => command({
+  operationId: 'OP-AUTH-001', eventId: 'EVENT-AUTH-001',
+  authorizationReviews: [{ field: 'maxSubstituteQuantity', action: 'APPLY' }], ...overrides,
 });
 
 describe('Decision Application', () => {
@@ -148,5 +179,104 @@ describe('Decision Application', () => {
     expect(applyReviewedDecision(proposal(), context(), command({ reviewedBy: '' }))).toMatchObject({ applied: false, reason: 'REVIEWER_REQUIRED' });
     expect(applyReviewedDecision(proposal(), context(), command({ reviewedAt: 'invalid' }))).toMatchObject({ applied: false, reason: 'REVIEWED_AT_INVALID' });
     expect(applyReviewedDecision(proposal(), context({ operationHistory: undefined as never }), command())).toMatchObject({ applied: false, reason: 'OPERATION_HISTORY_INSUFFICIENT' });
+  });
+
+  describe('CASE_AUTHORIZATION', () => {
+    it('applies 50 to 100 through domain primitives without approvals, rejection, or plan finalization', () => {
+      const ctx = caseContext();
+      const result = applyReviewedDecision(caseAuthorizationProposal(), ctx, authorizationCommand());
+      expect(result.applied).toBe(true);
+      if (!result.applied) return;
+      const updatedClient = result.value.updatedCase.actors.find(({ id }) => id === 'client')!;
+      expect(updatedClient.authorization.maxSubstituteQuantity).toBe(100);
+      expect(result.value.approvals).toEqual([]);
+      expect(result.value).not.toHaveProperty('createdApproval');
+      expect(result.value).not.toHaveProperty('createdRejection');
+      expect(result.value.updatedPlans).toEqual(ctx.plans);
+      expect(result.value.resolutionStatus).toBe('CASE_AUTHORIZATION_APPLIED');
+      expect(result.value.updatedOperationHistory).toHaveLength(1);
+      expect(result.value.proposedEvents[0]).not.toHaveProperty('planId');
+    });
+
+    it('does not trust externalPreviousValue and rejects stale internal state', () => {
+      const stale = caseAuthorizationProposal({
+        proposedAuthorizationChanges: [{
+          field: 'maxSubstituteQuantity', currentInternalValue: 49, proposedNewValue: 100,
+          externalPreviousValue: 50, requiresReview: true,
+        }],
+      });
+      expect(applyReviewedDecision(stale, caseContext(), authorizationCommand()))
+        .toMatchObject({ applied: false, reason: 'STALE_PROPOSAL' });
+    });
+
+    it('requires exactly one explicit review and rolls back all changes when one is invalid', () => {
+      const bridge = caseAuthorizationProposal({ proposedAuthorizationChanges: [
+        { field: 'maxSubstituteQuantity', currentInternalValue: 50, proposedNewValue: 100, requiresReview: true },
+        { field: 'maxAbsorbableAdditionalCost', currentInternalValue: 0, proposedNewValue: -1, requiresReview: true },
+      ] });
+      const ctx = caseContext();
+      const result = applyReviewedDecision(bridge, ctx, authorizationCommand({ authorizationReviews: [
+        { field: 'maxSubstituteQuantity', action: 'APPLY' },
+        { field: 'maxAbsorbableAdditionalCost', action: 'APPLY' },
+      ] }));
+      expect(result.applied).toBe(false);
+      expect(ctx.exceptionCase.actors.find(({ id }) => id === 'client')?.authorization.maxSubstituteQuantity).toBe(50);
+      expect(ctx.operationHistory).toEqual([]);
+    });
+
+    it('does not apply a duplicate operationId', () => {
+      const ctx = caseContext({ operationHistory: [{
+        operationId: 'OP-AUTH-001', caseId: case001Fixture.id,
+        processedAt: '2026-08-04T09:00:00-05:00',
+      }] });
+      expect(applyReviewedDecision(caseAuthorizationProposal(), ctx, authorizationCommand()))
+        .toMatchObject({ applied: false, reason: 'DUPLICATE_OPERATION' });
+      expect(ctx.exceptionCase.actors.find(({ id }) => id === 'client')?.authorization.maxSubstituteQuantity).toBe(50);
+    });
+
+    it('does not report an application when every individual change is discarded', () => {
+      const ctx = caseContext();
+      const result = applyReviewedDecision(caseAuthorizationProposal(), ctx, authorizationCommand({
+        authorizationReviews: [{ field: 'maxSubstituteQuantity', action: 'DISCARD' }],
+      }));
+      expect(result).toMatchObject({ applied: false, reason: 'CASE_AUTHORIZATION_DISCARDED' });
+      expect(ctx.operationHistory).toEqual([]);
+      expect(ctx.approvals).toEqual([]);
+    });
+
+    it.each([
+      ['case mismatch', caseAuthorizationProposal({ caseId: 'CASE-OTHER' }), 'CASE_MISMATCH'],
+      ['actor missing', caseAuthorizationProposal({ actorId: 'missing' }), 'ACTOR_NOT_FOUND'],
+      ['role mismatch', caseAuthorizationProposal({ actorRole: 'supplier' }), 'ACTOR_ROLE_MISMATCH'],
+      ['rejected', caseAuthorizationProposal({ decision: 'REJECTED' }), 'CASE_AUTHORIZATION_REJECTED'],
+      ['clarification', caseAuthorizationProposal({ decision: 'NEEDS_CLARIFICATION', reviewState: 'CLARIFICATION_REQUIRED' }), 'NEEDS_CLARIFICATION'],
+    ] as const)('fails safely for %s', (_label, bridge, reason) => {
+      expect(applyReviewedDecision(bridge, caseContext(), authorizationCommand()))
+        .toMatchObject({ applied: false, reason });
+    });
+
+    it('DISCARD and adulterated PENDING do not modify the case or history', () => {
+      const ctx = caseContext();
+      const discard = applyReviewedDecision(caseAuthorizationProposal(), ctx, {
+        action: 'DISCARD', operationId: 'OP-DISCARD', reviewedBy: 'reviewer',
+        reviewedAt: '2026-08-04T10:05:00-05:00',
+      });
+      const pending = applyReviewedDecision(
+        caseAuthorizationProposal({ decision: 'PENDING' as never }), ctx, authorizationCommand(),
+      );
+      expect(discard).toMatchObject({ applied: false, reason: 'DISCARDED_BY_REVIEWER' });
+      expect(pending).toMatchObject({ applied: false, reason: 'PENDING_NOT_APPLICABLE' });
+      expect(ctx.exceptionCase.actors.find(({ id }) => id === 'client')?.authorization.maxSubstituteQuantity).toBe(50);
+      expect(ctx.operationHistory).toEqual([]);
+    });
+
+    it('is deterministic and does not mutate frozen inputs', () => {
+      const bridge = Object.freeze(caseAuthorizationProposal());
+      const ctx = Object.freeze(caseContext());
+      const review = Object.freeze(authorizationCommand());
+      const before = JSON.stringify({ bridge, ctx, review });
+      expect(applyReviewedDecision(bridge, ctx, review)).toEqual(applyReviewedDecision(bridge, ctx, review));
+      expect(JSON.stringify({ bridge, ctx, review })).toBe(before);
+    });
   });
 });
