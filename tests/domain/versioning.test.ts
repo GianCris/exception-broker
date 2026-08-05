@@ -23,6 +23,7 @@ const plan001 = planSchema.parse({
 });
 
 const historicalApproval: Approval = {
+  approvalId: 'APPROVAL-HISTORICAL-001' as Approval['approvalId'],
   caseId: plan001.caseId,
   planId: plan001.id,
   actorId: 'client' as Approval['actorId'],

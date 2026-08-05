@@ -28,24 +28,27 @@ const validationFor = (id: string) => {
 const threeApprovalsFor = (plan: Plan): readonly Approval[] => {
   let history: readonly Approval[] = [];
 
-  for (const [role, createdAt] of [
-    ['supplier', '2026-08-04T14:00:00-05:00'],
-    ['production', '2026-08-04T14:01:00-05:00'],
-    ['client', '2026-08-04T14:02:00-05:00'],
+  for (const [role, createdAt, approvalId] of [
+    ['supplier', '2026-08-04T14:00:00-05:00', 'APPROVAL-ARTIFICIAL-001'],
+    ['production', '2026-08-04T14:01:00-05:00', 'APPROVAL-ARTIFICIAL-002'],
+    ['client', '2026-08-04T14:02:00-05:00', 'APPROVAL-ARTIFICIAL-003'],
   ] as const) {
     const actor = case001Fixture.actors.find(
       (candidate) => candidate.role === role,
     );
     if (actor === undefined) throw new Error(`Missing actor ${role}`);
 
-    history = recordApproval(history, {
+    const recorded = recordApproval(history, {
+      approvalId,
       caseId: case001Fixture.id,
       planId: plan.id,
       actorId: actor.id,
       actorRole: actor.role,
       decision: 'APPROVED',
       createdAt,
-    }).approvals;
+    });
+    if (!recorded.success) throw new Error(recorded.reason);
+    history = recorded.approvals;
   }
 
   return history;

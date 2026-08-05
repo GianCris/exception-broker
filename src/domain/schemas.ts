@@ -8,6 +8,7 @@ const deliveryDateSchema = z.string().datetime({ offset: true });
 export const caseIdSchema = idSchema.brand<'CaseId'>();
 export const planIdSchema = idSchema.brand<'PlanId'>();
 export const actorIdSchema = idSchema.brand<'ActorId'>();
+export const approvalIdSchema = idSchema.brand<'ApprovalId'>();
 
 export const actorRoleSchema = z.enum(['supplier', 'production', 'client']);
 
@@ -132,6 +133,7 @@ export const approvalDecisionSchema = z.enum([
 
 export const approvalSchema = z
   .object({
+    approvalId: approvalIdSchema,
     caseId: caseIdSchema,
     planId: planIdSchema,
     actorId: actorIdSchema,

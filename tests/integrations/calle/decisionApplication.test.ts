@@ -38,10 +38,11 @@ const proposal = (overrides: Partial<DecisionProposal> = {}): DecisionBridgeResu
 
 const command = (overrides: Partial<Extract<ReviewCommand, { action: 'APPLY' }>> = {}): ReviewCommand => ({
   action: 'APPLY', operationId: 'OP-001', reviewedBy: 'reviewer-001',
-  reviewedAt: '2026-08-04T18:05:00-05:00', eventId: 'EVENT-001', authorizationReviews: [], ...overrides,
+  reviewedAt: '2026-08-04T18:05:00-05:00', eventId: 'EVENT-001', approvalId: 'APPROVAL-APPLICATION-001', authorizationReviews: [], ...overrides,
 });
 
-const approval = (actor: typeof client): Approval => ({
+const approval = (actor: typeof client, approvalId: string): Approval => ({
+  approvalId: approvalId as Approval['approvalId'],
   caseId: simulation.caseId, planId: plan.id, actorId: actor.id, actorRole: actor.role,
   decision: 'APPROVED', createdAt: '2026-08-04T18:01:00-05:00',
 });
@@ -71,8 +72,9 @@ const caseContext = (overrides: Partial<DecisionApplicationContext> = {}): Decis
 
 const authorizationCommand = (
   overrides: Partial<Extract<ReviewCommand, { action: 'APPLY' }>> = {},
-): ReviewCommand => command({
-  operationId: 'OP-AUTH-001', eventId: 'EVENT-AUTH-001',
+): ReviewCommand => ({
+  action: 'APPLY', operationId: 'OP-AUTH-001', reviewedBy: 'reviewer-001',
+  reviewedAt: '2026-08-04T18:05:00-05:00', eventId: 'EVENT-AUTH-001',
   authorizationReviews: [{ field: 'maxSubstituteQuantity', action: 'APPLY' }], ...overrides,
 });
 
@@ -82,14 +84,22 @@ describe('Decision Application', () => {
     expect(result.applied).toBe(true);
     if (!result.applied) return;
     expect(result.value.createdApproval?.decision).toBe('APPROVED');
+    expect(result.value.createdApproval?.approvalId).toBe('APPROVAL-APPLICATION-001');
     expect(result.value.resolutionStatus).toBe('PENDING_APPROVALS');
     expect(result.value.updatedPlans[0]?.status).toBe('PENDING_APPROVAL');
     expect(result.value.updatedOperationHistory).toHaveLength(1);
-    expect(result.value.proposedEvents[0]).toMatchObject({ requestId: 'REQ-APPLICATION-001', reviewedBy: 'reviewer-001' });
+    expect(result.value.proposedEvents[0]).toMatchObject({
+      requestId: 'REQ-APPLICATION-001', operationId: 'OP-001',
+      approvalId: 'APPROVAL-APPLICATION-001', reviewedBy: 'reviewer-001',
+    });
+    expect(new Set(['REQ-APPLICATION-001', 'OP-001', 'APPROVAL-APPLICATION-001']).size).toBe(3);
   });
 
   it('finalizes only after the other real actors approved the same plan', () => {
-    const result = applyReviewedDecision(proposal(), context({ approvals: [approval(supplier), approval(production)] }), command());
+    const result = applyReviewedDecision(proposal(), context({ approvals: [
+      approval(supplier, 'APPROVAL-EXISTING-001'),
+      approval(production, 'APPROVAL-EXISTING-002'),
+    ] }), command());
     expect(result.applied).toBe(true);
     if (result.applied) {
       expect(result.value.resolutionStatus).toBe('PLAN_APPROVED');
@@ -121,9 +131,26 @@ describe('Decision Application', () => {
     expect(result.applied).toBe(true);
     if (result.applied) {
       expect(result.value.createdRejection?.decision).toBe('REJECTED');
+      expect(result.value.createdRejection?.approvalId).toBe('APPROVAL-APPLICATION-001');
       expect(result.value.updatedPlans[0]?.status).toBe('REJECTED');
       expect(result.value.createdApproval).toBeUndefined();
     }
+  });
+
+  it('requires an explicit approvalId and rejects a duplicate without partial output', () => {
+    const complete = command() as Extract<ReviewCommand, { action: 'APPLY' }>;
+    const { approvalId: _approvalId, ...withoutApprovalId } = complete;
+    const missing = applyReviewedDecision(proposal(), context(), withoutApprovalId);
+    expect(missing).toMatchObject({ applied: false, reason: 'APPROVAL_ID_REQUIRED' });
+
+    const existing = { ...approval(client, 'APPROVAL-APPLICATION-001'), decision: 'PENDING' as const };
+    const duplicate = applyReviewedDecision(
+      proposal(),
+      context({ approvals: [existing] }),
+      command(),
+    );
+    expect(duplicate.applied).toBe(false);
+    if (!duplicate.applied) expect(duplicate.unchangedApprovals).toEqual([existing]);
   });
 
   it('DISCARD is a normal no-op and does not record the operation', () => {

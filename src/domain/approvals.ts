@@ -12,6 +12,7 @@ import type {
 } from './types.js';
 
 export type ApprovalInput = Readonly<{
+  approvalId: string;
   caseId: CaseId;
   planId: PlanId;
   actorId: ActorId;
@@ -20,11 +21,9 @@ export type ApprovalInput = Readonly<{
   createdAt: string;
 }>;
 
-export type RecordApprovalResult = Readonly<{
-  success: true;
-  approval: Approval;
-  approvals: readonly Approval[];
-}>;
+export type RecordApprovalResult =
+  | Readonly<{ success: true; approval: Approval; approvals: readonly Approval[] }>
+  | Readonly<{ success: false; reason: string }>;
 
 export type RecordRejectionResult =
   | Readonly<{
@@ -153,6 +152,14 @@ export const recordApproval = (
   input: ApprovalInput,
 ): RecordApprovalResult => {
   const approval = approvalSchema.parse(input);
+  if (approvals.some(({ approvalId }) => approvalId === approval.approvalId)) {
+    return { success: false, reason: 'approvalId has already been recorded' };
+  }
+
+  const approvalIds = approvals.map(({ approvalId }) => approvalId);
+  if (new Set(approvalIds).size !== approvalIds.length) {
+    return { success: false, reason: 'Approval history contains duplicate approvalId' };
+  }
 
   return {
     success: true,
@@ -177,6 +184,8 @@ export const recordRejection = (
     ...input,
     decision: 'REJECTED',
   });
+
+  if (!recorded.success) return recorded;
 
   return {
     success: true,
