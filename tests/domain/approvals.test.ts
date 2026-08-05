@@ -11,9 +11,11 @@ import {
   hasAllRequiredApprovals,
   recordApproval,
   recordRejection,
+  type ApprovalInput,
 } from '../../src/domain/approvals.js';
 import {
   approvalSchema,
+  approvalIdSchema,
   caseIdSchema,
   planSchema,
 } from '../../src/domain/schemas.js';
@@ -50,21 +52,23 @@ const decision = (
   plan: Plan,
   role: ActorRole,
   value: ApprovalDecision,
+  approvalId: string,
   createdAt = '2026-08-04T12:00:00-05:00',
 ): Approval =>
-  recordApproval([], {
+  approvalSchema.parse({
+    approvalId,
     caseId: plan.caseId,
     planId: plan.id,
     actorId: actorId(role),
     actorRole: role,
     decision: value,
     createdAt,
-  }).approval;
+  });
 
 const allApproved = (plan: Plan): readonly Approval[] => [
-  decision(plan, 'supplier', 'APPROVED'),
-  decision(plan, 'production', 'APPROVED'),
-  decision(plan, 'client', 'APPROVED'),
+  decision(plan, 'supplier', 'APPROVED', 'APPROVAL-ALL-SUPPLIER'),
+  decision(plan, 'production', 'APPROVED', 'APPROVAL-ALL-PRODUCTION'),
+  decision(plan, 'client', 'APPROVED', 'APPROVAL-ALL-CLIENT'),
 ];
 
 const alteredApproval = (
@@ -73,8 +77,23 @@ const alteredApproval = (
 ): Approval => approvalSchema.parse({ ...approval, ...changes });
 
 describe('approval decisions', () => {
+  it('requires one explicit non-empty approvalId and never generates it', () => {
+    const valid = {
+      approvalId: 'APPROVAL-MODEL-001', caseId: 'CASE-001', planId: 'PLAN-003',
+      actorId: 'supplier', actorRole: 'supplier', decision: 'APPROVED',
+      createdAt: '2026-08-04T12:00:00-05:00',
+    };
+    const { approvalId: _approvalId, ...withoutApprovalId } = valid;
+    expect(approvalSchema.parse(valid).approvalId).toBe('APPROVAL-MODEL-001');
+    expect(approvalSchema.safeParse(withoutApprovalId).success).toBe(false);
+    expect(approvalSchema.safeParse({ ...valid, approvalId: '' }).success).toBe(false);
+    expect(approvalSchema.safeParse({ ...valid, approvalId: '   ' }).success).toBe(false);
+    expect(approvalSchema.safeParse({ ...valid, id: 'SECOND-ID' }).success).toBe(false);
+  });
+
   it('rejects invalid decisions and the former approved boolean', () => {
     const base = {
+      approvalId: 'APPROVAL-BASE',
       caseId: 'CASE-001',
       planId: 'PLAN-003',
       actorId: 'supplier',
@@ -95,12 +114,13 @@ describe('approval decisions', () => {
   });
 
   it.each([
-    'APPROVED',
-    'REJECTED',
-    'PENDING',
-    'NEEDS_CLARIFICATION',
-  ] as const)('records decision %s with explicit plan and actor data', (value) => {
+    ['APPROVED', 'APPROVAL-RECORD-001'],
+    ['REJECTED', 'APPROVAL-RECORD-002'],
+    ['PENDING', 'APPROVAL-RECORD-003'],
+    ['NEEDS_CLARIFICATION', 'APPROVAL-RECORD-004'],
+  ] as const)('records decision %s with explicit plan and actor data', (value, approvalId) => {
     const result = recordApproval([], {
+      approvalId,
       caseId: validPlan.caseId,
       planId: validPlan.id,
       actorId: actorId('supplier'),
@@ -108,10 +128,13 @@ describe('approval decisions', () => {
       decision: value,
       createdAt: '2026-08-04T12:00:00-05:00',
     });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
 
     expect(result).toMatchObject({
       success: true,
       approval: {
+        approvalId,
         caseId: 'CASE-001',
         planId: 'PLAN-003',
         actorRole: 'supplier',
@@ -122,10 +145,11 @@ describe('approval decisions', () => {
   });
 
   it('appends a decision without mutating approval history', () => {
-    const history = [decision(plan002, 'client', 'REJECTED')];
+    const history = [decision(plan002, 'client', 'REJECTED', 'APPROVAL-HISTORY-001')];
     const before = structuredClone(history);
 
     const result = recordApproval(history, {
+      approvalId: 'APPROVAL-HISTORY-002',
       caseId: validPlan.caseId,
       planId: validPlan.id,
       actorId: actorId('supplier'),
@@ -133,15 +157,49 @@ describe('approval decisions', () => {
       decision: 'PENDING',
       createdAt: '2026-08-04T12:00:00-05:00',
     });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
 
     expect(history).toEqual(before);
     expect(result.approvals).toHaveLength(2);
   });
 
+  it.each([
+    ['same actor', {}],
+    ['another actor', { actorId: actorId('production'), actorRole: 'production' }],
+    ['another plan', { planId: plan002.id }],
+    ['another case', { caseId: caseIdSchema.parse('CASE-OTHER') }],
+  ])('rejects a reused approvalId for %s without overwriting history', (_label, changes) => {
+    const existing = decision(validPlan, 'supplier', 'APPROVED', 'APPROVAL-UNIQUE-001');
+    const history = [existing];
+    const before = structuredClone(history);
+    const result = recordApproval(history, {
+      approvalId: existing.approvalId,
+      caseId: validPlan.caseId, planId: validPlan.id,
+      actorId: actorId('supplier'), actorRole: 'supplier', decision: 'PENDING',
+      createdAt: '2026-08-04T13:00:00-05:00', ...(changes as Partial<ApprovalInput>),
+    });
+    expect(result).toEqual({ success: false, reason: 'approvalId has already been recorded' });
+    expect(history).toEqual(before);
+  });
+
+  it('allows distinct approvalId values for historical decisions', () => {
+    const first = decision(validPlan, 'supplier', 'PENDING', 'APPROVAL-HISTORY-DISTINCT-001');
+    const result = recordApproval([first], {
+      approvalId: 'APPROVAL-HISTORY-DISTINCT-002', caseId: validPlan.caseId,
+      planId: validPlan.id, actorId: actorId('supplier'), actorRole: 'supplier',
+      decision: 'APPROVED', createdAt: '2026-08-04T13:00:00-05:00',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.approvals.map(({ approvalId }) => approvalId)).toEqual([
+      'APPROVAL-HISTORY-DISTINCT-001', 'APPROVAL-HISTORY-DISTINCT-002',
+    ]);
+  });
+
   it('filters approvals by exact planId', () => {
     const history = [
-      decision(plan002, 'supplier', 'APPROVED'),
-      decision(validPlan, 'supplier', 'PENDING'),
+      decision(plan002, 'supplier', 'APPROVED', 'APPROVAL-FILTER-001'),
+      decision(validPlan, 'supplier', 'PENDING', 'APPROVAL-FILTER-002'),
     ];
 
     expect(approvalsForPlan(history, validPlan.id)).toEqual([history[1]]);
@@ -171,9 +229,9 @@ describe('approval decisions', () => {
 
   it('does not count an approval whose planId differs from the plan', () => {
     const approvals = [
-      decision(plan002, 'supplier', 'APPROVED'),
-      decision(validPlan, 'production', 'APPROVED'),
-      decision(validPlan, 'client', 'APPROVED'),
+      decision(plan002, 'supplier', 'APPROVED', 'APPROVAL-PLAN-MISMATCH-001'),
+      decision(validPlan, 'production', 'APPROVED', 'APPROVAL-PLAN-MISMATCH-002'),
+      decision(validPlan, 'client', 'APPROVED', 'APPROVAL-PLAN-MISMATCH-003'),
     ];
 
     expect(
@@ -240,16 +298,18 @@ describe('approval decisions', () => {
         validPlan,
         'supplier',
         'APPROVED',
+        'APPROVAL-UNORDERED-NEW',
         '2026-08-04T14:00:00-05:00',
       ),
       decision(
         validPlan,
         'supplier',
         'PENDING',
+        'APPROVAL-UNORDERED-OLD',
         '2026-08-04T13:00:00-05:00',
       ),
-      decision(validPlan, 'production', 'APPROVED'),
-      decision(validPlan, 'client', 'APPROVED'),
+      decision(validPlan, 'production', 'APPROVED', 'APPROVAL-UNORDERED-PRODUCTION'),
+      decision(validPlan, 'client', 'APPROVED', 'APPROVAL-UNORDERED-CLIENT'),
     ];
 
     expect(
@@ -264,6 +324,7 @@ describe('approval decisions', () => {
         validPlan,
         'supplier',
         'PENDING',
+        'APPROVAL-NEWER-PENDING',
         '2026-08-04T14:00:00-05:00',
       ),
     ];
@@ -279,6 +340,7 @@ describe('approval decisions', () => {
         validPlan,
         'supplier',
         'PENDING',
+        'APPROVAL-OLDER-PENDING',
         '2026-08-04T11:00:00-05:00',
       ),
       ...allApproved(validPlan),
@@ -296,6 +358,7 @@ describe('approval decisions', () => {
         validPlan,
         'client',
         'NEEDS_CLARIFICATION',
+        'APPROVAL-NEWER-CLARIFICATION',
         '2026-08-04T14:00:00-05:00',
       ),
     ];
@@ -308,7 +371,7 @@ describe('approval decisions', () => {
   it('rejects different decisions sharing the latest timestamp', () => {
     const history = [
       ...allApproved(validPlan),
-      decision(validPlan, 'supplier', 'PENDING'),
+      decision(validPlan, 'supplier', 'PENDING', 'APPROVAL-CONFLICT-PENDING'),
     ];
 
     expect(
@@ -321,12 +384,12 @@ describe('approval decisions', () => {
   });
 
   it('treats identical decisions at the same timestamp as duplicates', () => {
-    const supplierApproval = decision(validPlan, 'supplier', 'APPROVED');
+    const supplierApproval = decision(validPlan, 'supplier', 'APPROVED', 'APPROVAL-DUPLICATE-SUPPLIER');
     const history = [
       supplierApproval,
-      structuredClone(supplierApproval),
-      decision(validPlan, 'production', 'APPROVED'),
-      decision(validPlan, 'client', 'APPROVED'),
+      { ...structuredClone(supplierApproval), approvalId: approvalIdSchema.parse('APPROVAL-DUPLICATE-SUPPLIER-COPY') },
+      decision(validPlan, 'production', 'APPROVED', 'APPROVAL-DUPLICATE-PRODUCTION'),
+      decision(validPlan, 'client', 'APPROVED', 'APPROVAL-DUPLICATE-CLIENT'),
     ];
 
     expect(
@@ -347,9 +410,9 @@ describe('approval decisions', () => {
 
   it('does not count PENDING or NEEDS_CLARIFICATION as approval', () => {
     const pending = [
-      decision(validPlan, 'supplier', 'APPROVED'),
-      decision(validPlan, 'production', 'PENDING'),
-      decision(validPlan, 'client', 'NEEDS_CLARIFICATION'),
+      decision(validPlan, 'supplier', 'APPROVED', 'APPROVAL-MIXED-SUPPLIER'),
+      decision(validPlan, 'production', 'PENDING', 'APPROVAL-MIXED-PRODUCTION'),
+      decision(validPlan, 'client', 'NEEDS_CLARIFICATION', 'APPROVAL-MIXED-CLIENT'),
     ];
 
     expect(
@@ -364,6 +427,7 @@ describe('approval decisions', () => {
         validPlan,
         'client',
         'NEEDS_CLARIFICATION',
+        'APPROVAL-LATEST-CLARIFICATION',
         '2026-08-04T13:00:00-05:00',
       ),
     ];
@@ -375,7 +439,7 @@ describe('approval decisions', () => {
 
   it('requires all three actors to approve the same planId', () => {
     const twoForPlan003 = allApproved(validPlan).slice(0, 2);
-    const clientForPlan002 = decision(plan002, 'client', 'APPROVED');
+    const clientForPlan002 = decision(plan002, 'client', 'APPROVED', 'APPROVAL-PLAN002-CLIENT');
 
     expect(
       hasAllRequiredApprovals(
@@ -392,6 +456,7 @@ describe('approval decisions', () => {
     const beforeHistory = structuredClone(history);
 
     const result = recordRejection(validPlan, history, {
+      approvalId: 'APPROVAL-REJECTION-001',
       caseId: validPlan.caseId,
       planId: validPlan.id,
       actorId: actorId('client'),
@@ -404,6 +469,7 @@ describe('approval decisions', () => {
 
     expect(result.plan.status).toBe('REJECTED');
     expect(result.approval.decision).toBe('REJECTED');
+    expect(result.approval.approvalId).toBe('APPROVAL-REJECTION-001');
     expect(result.approvals.slice(0, history.length)).toEqual(history);
     expect(validPlan).toEqual(beforePlan);
     expect(history).toEqual(beforeHistory);
@@ -412,6 +478,7 @@ describe('approval decisions', () => {
   it('does not record a rejection against another planId', () => {
     expect(
       recordRejection(validPlan, [], {
+        approvalId: 'APPROVAL-REJECTION-WRONG-PLAN',
         caseId: validPlan.caseId,
         planId: plan002.id,
         actorId: actorId('client'),
@@ -487,8 +554,8 @@ describe('approval decisions', () => {
   it('never approves a plan with a recorded rejection', () => {
     const approvals = [
       ...allApproved(validPlan),
-      decision(validPlan, 'client', 'REJECTED'),
-      decision(validPlan, 'client', 'APPROVED', '2026-08-04T14:00:00-05:00'),
+      decision(validPlan, 'client', 'REJECTED', 'APPROVAL-HISTORICAL-REJECTION'),
+      decision(validPlan, 'client', 'APPROVED', 'APPROVAL-AFTER-REJECTION', '2026-08-04T14:00:00-05:00'),
     ];
 
     expect(canApprovePlan(case001Fixture, validPlan, approvals)).toEqual({
@@ -503,6 +570,7 @@ describe('approval decisions', () => {
         validPlan,
         'supplier',
         'PENDING',
+        'APPROVAL-IMMUTABILITY-PENDING',
         '2026-08-04T11:00:00-05:00',
       ),
       ...allApproved(validPlan),

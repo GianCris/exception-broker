@@ -18,6 +18,7 @@ import {
   type ProcessedOperation,
 } from '../../domain/operationHistory.js';
 import type { Approval, ExceptionCase, Plan } from '../../domain/types.js';
+import { approvalIdSchema } from '../../domain/schemas.js';
 import { validatePlan } from '../../domain/validator.js';
 import type { DecisionBridgeResult, DecisionProposal } from './decisionBridge.js';
 
@@ -30,7 +31,7 @@ export type AuthorizationReview = Readonly<{
 export type ReviewCommand =
   | Readonly<{
       action: 'APPLY'; operationId: string; reviewedBy: string; reviewedAt: string;
-      eventId: string; authorizationReviews: readonly AuthorizationReview[];
+      eventId: string; approvalId?: string; authorizationReviews: readonly AuthorizationReview[];
     }>
   | Readonly<{
       action: 'DISCARD'; operationId: string; reviewedBy: string; reviewedAt: string;
@@ -47,7 +48,7 @@ export type DecisionApplicationContext = Readonly<{
 
 export type DecisionApplicationEvent = Readonly<{
   eventId: string; operationId: string; requestId: string; caseId: string;
-  planId?: string; actorId: string; actorRole: string; decision: string;
+  planId?: string; approvalId?: string; actorId: string; actorRole: string; decision: string;
   reviewedBy: string; reviewedAt: string;
   appliedAuthorizationFields: readonly AuthorizationField[];
   discardedAuthorizationFields: readonly AuthorizationField[];
@@ -183,6 +184,8 @@ export const applyReviewedDecision = (
   }
 
   if (plan === undefined) return fail(context, 'PLAN_NOT_FOUND');
+  const approvalId = approvalIdSchema.safeParse(command.approvalId);
+  if (!approvalId.success) return fail(context, 'APPROVAL_ID_REQUIRED');
 
   if (context.approvals.some((item) => item.planId === proposal.planId && item.actorId === proposal.actorId && item.decision === proposal.decision)) return fail(context, 'DUPLICATE_DECISION');
 
@@ -196,7 +199,7 @@ export const applyReviewedDecision = (
 
   if (proposal.decision === 'REJECTED') {
     if (domainChanges.some(({ reviewedAction }) => reviewedAction === 'APPLY')) return fail(context, 'REJECTION_CANNOT_APPLY_AUTHORIZATION');
-    const rejected = recordRejection(plan, approvals, { caseId: context.exceptionCase.id, planId: plan.id, actorId: actor.id, actorRole: actor.role, createdAt: command.reviewedAt });
+    const rejected = recordRejection(plan, approvals, { approvalId: approvalId.data, caseId: context.exceptionCase.id, planId: plan.id, actorId: actor.id, actorRole: actor.role, createdAt: command.reviewedAt });
     if (!rejected.success) return fail(context, 'REJECTION_RECORDING_FAILED');
     created = rejected.approval; approvals = rejected.approvals;
     updatedPlans = context.plans.map((item) => item.id === plan.id ? rejected.plan : item);
@@ -208,7 +211,8 @@ export const applyReviewedDecision = (
     if (!validatePlan(updatedCase, plan).valid) return fail(context, 'PLAN_NOT_APPLICABLE_AFTER_AUTHORIZATION_REVIEW');
     appliedFields = authorization.appliedChanges.map(({ field }) => field);
     discardedFields = authorization.discardedChanges.map(({ field }) => field);
-    const recorded = recordApproval(approvals, { caseId: updatedCase.id, planId: plan.id, actorId: actor.id, actorRole: actor.role, decision: 'APPROVED', createdAt: command.reviewedAt });
+    const recorded = recordApproval(approvals, { approvalId: approvalId.data, caseId: updatedCase.id, planId: plan.id, actorId: actor.id, actorRole: actor.role, decision: 'APPROVED', createdAt: command.reviewedAt });
+    if (!recorded.success) return fail(context, 'APPROVAL_RECORDING_FAILED', [recorded.reason]);
     created = recorded.approval; approvals = recorded.approvals;
     const allApproved = hasAllRequiredApprovals(updatedCase, plan, approvals);
     const approvable = canApprovePlan(updatedCase, plan, approvals);
@@ -226,6 +230,6 @@ export const applyReviewedDecision = (
 
   const processed = recordProcessedOperation(context.operationHistory, { operationId: command.operationId, caseId: context.exceptionCase.id, processedAt: command.reviewedAt });
   if (!processed.success) return fail(context, 'OPERATION_RECORDING_FAILED', processed.issues);
-  const event: DecisionApplicationEvent = { eventId: command.eventId, operationId: command.operationId, requestId: proposal.requestId, caseId: proposal.caseId, planId: proposal.planId, actorId: proposal.actorId, actorRole: proposal.actorRole, decision: proposal.decision, reviewedBy: command.reviewedBy, reviewedAt: command.reviewedAt, appliedAuthorizationFields: appliedFields, discardedAuthorizationFields: discardedFields, result: resolutionStatus === 'PLAN_APPROVED' ? 'PLAN_APPROVED' : resolutionStatus === 'PLAN_REJECTED' ? 'REJECTION_RECORDED' : 'APPROVAL_RECORDED' };
+  const event: DecisionApplicationEvent = { eventId: command.eventId, operationId: command.operationId, requestId: proposal.requestId, caseId: proposal.caseId, planId: proposal.planId, approvalId: approvalId.data, actorId: proposal.actorId, actorRole: proposal.actorRole, decision: proposal.decision, reviewedBy: command.reviewedBy, reviewedAt: command.reviewedAt, appliedAuthorizationFields: appliedFields, discardedAuthorizationFields: discardedFields, result: resolutionStatus === 'PLAN_APPROVED' ? 'PLAN_APPROVED' : resolutionStatus === 'PLAN_REJECTED' ? 'REJECTION_RECORDED' : 'APPROVAL_RECORDED' };
   return { applied: true, value: { updatedCase, updatedPlans, approvals, ...(proposal.decision === 'REJECTED' ? { createdRejection: created } : { createdApproval: created }), appliedAuthorizationChanges: appliedFields, discardedAuthorizationChanges: discardedFields, updatedOperationHistory: processed.history, proposedEvents: [event], resolutionStatus } };
 };

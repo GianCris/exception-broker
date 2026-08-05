@@ -161,6 +161,7 @@ export const simulateCase001 = (
   const plan001Validation = validatePlan(sourceCase, case001Plan001);
   const client = actorByRole(sourceCase, 'client');
   const rejected = recordRejection(case001Plan001, [], {
+    approvalId: 'APPROVAL-001',
     caseId: sourceCase.id,
     planId: case001Plan001.id,
     actorId: client.id,
@@ -224,17 +225,18 @@ export const simulateCase001 = (
     plan003,
   );
   const approvalDefinitions = [
-    ['supplier', '2026-08-04T11:00:00-05:00', 'EVENT-010'],
-    ['production', '2026-08-04T12:00:00-05:00', 'EVENT-011'],
-    ['client', '2026-08-04T13:00:00-05:00', 'EVENT-012'],
+    ['supplier', '2026-08-04T11:00:00-05:00', 'EVENT-010', 'APPROVAL-002'],
+    ['production', '2026-08-04T12:00:00-05:00', 'EVENT-011', 'APPROVAL-003'],
+    ['client', '2026-08-04T13:00:00-05:00', 'EVENT-012', 'APPROVAL-004'],
   ] as const;
   let approvals: readonly Approval[] = rejected.approvals;
   const plan003Approvals: Approval[] = [];
   const approvalEvents: SimulationEvent[] = [];
 
-  for (const [role, createdAt, eventId] of approvalDefinitions) {
+  for (const [role, createdAt, eventId, approvalId] of approvalDefinitions) {
     const actor = actorByRole(authorizationUpdate.updatedCase, role);
     const recorded = recordApproval(approvals, {
+      approvalId,
       caseId: authorizationUpdate.updatedCase.id,
       planId: plan003.id,
       actorId: actor.id,
@@ -242,6 +244,7 @@ export const simulateCase001 = (
       decision: 'APPROVED',
       createdAt,
     });
+    if (!recorded.success) throw new Error(recorded.reason);
     approvals = recorded.approvals;
     plan003Approvals.push(recorded.approval);
     approvalEvents.push({

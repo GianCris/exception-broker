@@ -5,6 +5,7 @@ import type {
   actorRoleSchema,
   actorSchema,
   approvalDecisionSchema,
+  approvalIdSchema,
   approvalSchema,
   authorizationSchema,
   callResultSchema,
@@ -21,6 +22,7 @@ import type {
 export type CaseId = z.infer<typeof caseIdSchema>;
 export type PlanId = z.infer<typeof planIdSchema>;
 export type ActorId = z.infer<typeof actorIdSchema>;
+export type ApprovalId = z.infer<typeof approvalIdSchema>;
 export type ActorRole = z.infer<typeof actorRoleSchema>;
 export type CaseStatus = z.infer<typeof caseStatusSchema>;
 export type PlanStatus = z.infer<typeof planStatusSchema>;
