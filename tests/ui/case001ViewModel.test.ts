@@ -52,9 +52,11 @@ describe('CASE-001 presentation model', () => {
 
     expect(noSolution?.explanation).toEqual({
       kind: 'no-solution',
+      outcome: 'NO_SOLUTION_UNPROVEN',
       requiredTomorrow: evidence.requiredMinimumUnitsTomorrow,
       availableTomorrow: evidence.availableUnitsTomorrow,
       shortfall: evidence.requiredMinimumUnitsTomorrow - evidence.availableUnitsTomorrow,
+      message: 'No compatible plan was found in the evaluated scenario; global infeasibility was not proven.',
     });
   });
 

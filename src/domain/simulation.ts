@@ -1,4 +1,5 @@
 import type { ValidationResult } from './rules.js';
+import type { NoSolutionAssessment } from './outcomes.js';
 import type {
   ActorId,
   ActorRole,
@@ -69,6 +70,7 @@ export type Case001SimulationResult = Readonly<{
   authorizationChanges: readonly AuthorizationChange[];
   validations: readonly PlanValidationAudit[];
   noSolutionEvidence: NoSolutionEvidence;
+  noSolutionAssessment: NoSolutionAssessment;
   approvalAttempts: readonly ApprovalAttempt[];
   updatedCase: ExceptionCase;
   finalPlanId: PlanId | null;

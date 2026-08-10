@@ -66,6 +66,11 @@ describe('CASE-001 three-party integration flow', () => {
     expect(result.value.noSolutionEvidence).toEqual({
       availableUnitsTomorrow: 250, requiredMinimumUnitsTomorrow: 300, compatible: false,
     });
+    expect(result.value.noSolutionAssessment).toEqual({
+      outcome: 'NO_SOLUTION_UNPROVEN',
+      reason: 'LEGACY_EVIDENCE_NOT_EXHAUSTIVE',
+      evidence: result.value.noSolutionEvidence,
+    });
     expect(result.value.planVersionCreations).toEqual([
       { planId: 'PLAN-002', version: 2, createdAt: '2026-08-04T09:00:00-05:00' },
       { planId: 'PLAN-003', version: 3, createdAt: '2026-08-04T10:01:00-05:00' },

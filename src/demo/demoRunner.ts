@@ -116,7 +116,7 @@ export const deriveDemoSteps = (
   if (plan002?.status === 'NO_SOLUTION'
     && scenario.noSolutionEvidence.compatible === false
     && scenario.noSolutionEvidence.availableUnitsTomorrow < scenario.noSolutionEvidence.requiredMinimumUnitsTomorrow) {
-    steps.push(completedStep('PLAN-002_NO_SOLUTION', caseId, 'Active constraints produced no compatible solution.', { planId: plan002.id }));
+    steps.push(completedStep('PLAN-002_NO_SOLUTION', caseId, 'No compatible plan was found; global infeasibility was not proven.', { planId: plan002.id }));
   }
 
   const authorizationTrace = traceFor(trace, scenario.caseAuthorization);
@@ -211,13 +211,16 @@ export const deriveCaseNarrative = (
 
   const plan002 = state.plans.find(({ id }) => id === scenario.plan002.id);
   const noSolution = result.success ? result.value.noSolutionEvidence : scenario.noSolutionEvidence;
+  const noSolutionAssessment = result.success ? result.value.noSolutionAssessment : undefined;
   if (plan002?.status === 'NO_SOLUTION'
     && noSolution.compatible === false
-    && noSolution.availableUnitsTomorrow < noSolution.requiredMinimumUnitsTomorrow) {
+    && noSolution.availableUnitsTomorrow < noSolution.requiredMinimumUnitsTomorrow
+    && noSolutionAssessment?.outcome === 'NO_SOLUTION_UNPROVEN') {
     narrative.plan002 = {
-      planId: plan002.id, outcome: 'NO_SOLUTION',
+      planId: plan002.id, outcome: 'NO_SOLUTION_UNPROVEN',
       availableQuantity: noSolution.availableUnitsTomorrow,
       requiredQuantity: noSolution.requiredMinimumUnitsTomorrow,
+      explanation: 'No compatible plan was found in the evaluated scenario; global infeasibility was not proven.',
     };
   }
 

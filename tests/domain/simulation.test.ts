@@ -100,7 +100,20 @@ describe('official CASE-001 simulation', () => {
     ).toMatchObject({
       planId: 'PLAN-002',
       message:
-        'With the current limit of 50 substitute units, only 250 units can be delivered tomorrow, below the required minimum of 300.',
+        'No compatible plan was found in the evaluated scenario; global infeasibility was not proven.',
+    });
+  });
+
+  it('keeps raw no-solution evidence while classifying it as unproven', () => {
+    expect(simulation.noSolutionEvidence).toMatchObject({
+      availableUnitsTomorrow: 250,
+      requiredMinimumUnitsTomorrow: 300,
+      compatible: false,
+    });
+    expect(simulation.noSolutionAssessment).toEqual({
+      outcome: 'NO_SOLUTION_UNPROVEN',
+      reason: 'LEGACY_EVIDENCE_NOT_EXHAUSTIVE',
+      evidence: simulation.noSolutionEvidence,
     });
   });
 

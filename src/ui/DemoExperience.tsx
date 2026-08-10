@@ -19,8 +19,9 @@ const Narrative = ({ narrative }: Readonly<{ narrative: PartialDemoCaseNarrative
       <div className="demo-code-list">{narrative.plan001.reasonCodes.map((code) => <strong key={code}>{code}</strong>)}</div>
     </article> : null}
     {narrative.plan002 ? <article className="demo-evidence evidence-warning">
-      <p className="eyebrow">Constraint deadlock</p><h3>{narrative.plan002.planId} · No solution</h3>
+      <p className="eyebrow">Unproven deadlock</p><h3>{narrative.plan002.planId} · No compatible plan found</h3>
       <div className="quantity-comparison"><span><strong>{narrative.plan002.availableQuantity}</strong> available</span><span><strong>{narrative.plan002.requiredQuantity}</strong> required</span></div>
+      <p>{narrative.plan002.explanation}</p>
     </article> : null}
     {narrative.authorization ? <article className="demo-evidence evidence-authorization">
       <p className="eyebrow">Authorization reviewed</p><h3>{narrative.authorization.field}</h3>

@@ -14,7 +14,7 @@ The expected flow is:
 
 ```text
 PLAN-001 rejected
-→ PLAN-002 no solution
+→ PLAN-002 no compatible plan found (global infeasibility unproven)
 → authorization reviewed 50 → 100
 → PLAN-003 created
 → Supplier, Production and Client approved
@@ -52,7 +52,7 @@ Open the `Local` URL reported by Vite in a browser. On the screen:
 ## What the jury should observe
 
 - PLAN-001 is rejected with evidence of the violated rule.
-- PLAN-002 reaches no solution with 250 units available against 300 required.
+- PLAN-002 records that no compatible plan was found in the evaluated scenario with 250 units available against 300 required; it does not claim proven global infeasibility.
 - The reviewed authorization changes the limit from 50 to 100.
 - PLAN-003 is created after the authorization is applied.
 - Supplier, Production, and Client record three distinct approvals.
