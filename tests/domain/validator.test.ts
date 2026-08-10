@@ -75,6 +75,19 @@ describe('validatePlan', () => {
     ).toContain('R-03');
   });
 
+  it('matches R-02 and R-03 minimums by chronological instant across offsets', () => {
+    const equivalent = structuredClone(case001Fixture);
+    equivalent.actors = equivalent.actors.map((actor) => ({
+      ...actor,
+      constraints: actor.constraints.map((constraint) => constraint.type === 'MINIMUM_DELIVERY'
+        && constraint.deliveryDate === equivalent.targetDeliveryDate
+        ? { ...constraint, deliveryDate: '2026-08-04T22:00:00Z' }
+        : constraint),
+    })) as typeof equivalent.actors;
+    const belowMinimum = planWith({ originalQuantityTomorrow: 249, originalQuantityLater: 101 });
+    expect(validatePlan(equivalent, belowMinimum).violations.map(({ ruleId }) => ruleId)).toEqual(expect.arrayContaining(['R-02', 'R-03']));
+  });
+
   it('rejects substitutes above the client maximum', () => {
     expect(
       ruleIds(
@@ -106,8 +119,23 @@ describe('validatePlan', () => {
     ).toContain('R-08');
   });
 
+  it('preserves R-08 chronological comparison across equivalent offsets', () => {
+    expect(ruleIds(planWith({ laterDeliveryDate: '2026-08-07T22:00:00Z' }))).not.toContain('R-08');
+  });
+
   it('accepts 50 substitutes when the supplier absorbs the full S/25 cost', () => {
     expect(ruleIds(validPlan)).not.toContain('R-09');
+  });
+
+  it('matches R-09 supply cost by chronological instant across offsets', () => {
+    const equivalent = structuredClone(case001Fixture);
+    equivalent.actors = equivalent.actors.map((actor) => actor.role !== 'supplier' ? actor : ({
+      ...actor,
+      constraints: actor.constraints.map((constraint) => constraint.type === 'SUPPLY' && constraint.substituteQuantity > 0
+        ? { ...constraint, deliveryDate: '2026-08-04T22:00:00Z' }
+        : constraint),
+    })) as typeof equivalent.actors;
+    expect(validatePlan(equivalent, validPlan).violations.map(({ ruleId }) => ruleId)).not.toContain('R-09');
   });
 
   it('accepts 50 substitutes when supplier and production split S/25', () => {

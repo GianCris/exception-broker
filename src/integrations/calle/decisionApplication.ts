@@ -19,6 +19,10 @@ import {
 } from '../../domain/operationHistory.js';
 import type { Approval, ExceptionCase, Plan } from '../../domain/types.js';
 import {
+  assessPhysicalFeasibility,
+  type PhysicalFeasibilityAssessment,
+} from '../../domain/physicalFeasibility.js';
+import {
   validatePlanDecisionFreshness,
   type PlanLineage,
 } from '../../domain/planLineage.js';
@@ -71,11 +75,18 @@ export type DecisionApplicationResult =
       resolutionStatus: 'PENDING_APPROVALS' | 'PLAN_APPROVED' | 'PLAN_REJECTED' | 'CASE_AUTHORIZATION_APPLIED';
     }> }>
   | Readonly<{ applied: false; reason: string; issues?: readonly string[];
+      physicalFeasibilityAssessment?: PhysicalFeasibilityAssessment;
       unchangedCase: ExceptionCase; unchangedPlans: readonly Plan[];
       unchangedApprovals: readonly Approval[]; unchangedOperationHistory: readonly ProcessedOperation[] }>;
 
-const fail = (context: DecisionApplicationContext, reason: string, issues?: readonly string[]): DecisionApplicationResult => ({
+const fail = (
+  context: DecisionApplicationContext,
+  reason: string,
+  issues?: readonly string[],
+  physicalFeasibilityAssessment?: PhysicalFeasibilityAssessment,
+): DecisionApplicationResult => ({
   applied: false, reason, ...(issues === undefined ? {} : { issues }),
+  ...(physicalFeasibilityAssessment === undefined ? {} : { physicalFeasibilityAssessment }),
   unchangedCase: context.exceptionCase, unchangedPlans: context.plans,
   unchangedApprovals: context.approvals, unchangedOperationHistory: context.operationHistory,
 });
@@ -138,6 +149,15 @@ export const applyReviewedDecision = (
     );
     if (!freshness.valid) return fail(context, freshness.reason, freshness.issues);
     if (plan.status !== 'PENDING_APPROVAL') return fail(context, 'PLAN_NOT_APPLICABLE');
+    if (proposal.decision === 'APPROVED') {
+      const physicalFeasibility = assessPhysicalFeasibility(context.exceptionCase, plan);
+      if (physicalFeasibility.outcome === 'PHYSICALLY_INFEASIBLE') {
+        return fail(context, 'PLAN_PHYSICALLY_INFEASIBLE', physicalFeasibility.violations.map(({ code }) => code), physicalFeasibility);
+      }
+      if (physicalFeasibility.outcome === 'PHYSICAL_FEASIBILITY_UNPROVEN') {
+        return fail(context, 'PHYSICAL_FEASIBILITY_UNPROVEN', physicalFeasibility.issues.map(({ code }) => code), physicalFeasibility);
+      }
+    }
   } else if (proposal.proposedAuthorizationChanges.length === 0) {
     return fail(context, 'CASE_AUTHORIZATION_CHANGES_REQUIRED');
   }

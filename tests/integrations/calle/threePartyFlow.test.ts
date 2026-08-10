@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { case001Fixture } from '../../../src/domain/case-001.fixture.js';
 import { validatePlan } from '../../../src/domain/validator.js';
+import { assessPhysicalFeasibility } from '../../../src/domain/physicalFeasibility.js';
 import { createCase001ThreePartyFlowConfig } from '../../../src/integrations/calle/case001ThreePartyFlow.js';
 import { MockProvider } from '../../../src/integrations/calle/mockProvider.js';
 import {
@@ -68,6 +69,8 @@ describe('CASE-001 three-party integration flow', () => {
       caseId: config.initialCase.id,
       planIds: ['PLAN-001', 'PLAN-002', 'PLAN-003'],
     }]);
+    const finalPlan = result.value.plans.find(({ id }) => id === 'PLAN-003')!;
+    expect(assessPhysicalFeasibility(result.value.exceptionCase, finalPlan)).toMatchObject({ outcome: 'PHYSICALLY_FEASIBLE' });
     expect(result.value.noSolutionEvidence).toEqual({
       availableUnitsTomorrow: 250, requiredMinimumUnitsTomorrow: 300, compatible: false,
     });
