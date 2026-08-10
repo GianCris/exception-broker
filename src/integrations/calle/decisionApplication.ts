@@ -18,6 +18,10 @@ import {
   type ProcessedOperation,
 } from '../../domain/operationHistory.js';
 import type { Approval, ExceptionCase, Plan } from '../../domain/types.js';
+import {
+  validatePlanDecisionFreshness,
+  type PlanLineage,
+} from '../../domain/planLineage.js';
 import { approvalIdSchema } from '../../domain/schemas.js';
 import { validatePlan } from '../../domain/validator.js';
 import type { DecisionBridgeResult, DecisionProposal } from './decisionBridge.js';
@@ -41,6 +45,7 @@ export type ReviewCommand =
 export type DecisionApplicationContext = Readonly<{
   exceptionCase: ExceptionCase;
   plans: readonly Plan[];
+  planLineages: readonly PlanLineage[];
   approvals: readonly Approval[];
   operationHistory: readonly ProcessedOperation[];
   existingEventIds: readonly string[];
@@ -125,7 +130,13 @@ export const applyReviewedDecision = (
     : undefined;
   if (proposal.operationType === 'PLAN_DECISION') {
     if (plan === undefined) return fail(context, 'PLAN_NOT_FOUND');
-    if (plan.caseId !== context.exceptionCase.id) return fail(context, 'PLAN_CASE_MISMATCH');
+    const freshness = validatePlanDecisionFreshness(
+      context.planLineages,
+      context.plans,
+      context.exceptionCase.id,
+      plan.id,
+    );
+    if (!freshness.valid) return fail(context, freshness.reason, freshness.issues);
     if (plan.status !== 'PENDING_APPROVAL') return fail(context, 'PLAN_NOT_APPLICABLE');
   } else if (proposal.proposedAuthorizationChanges.length === 0) {
     return fail(context, 'CASE_AUTHORIZATION_CHANGES_REQUIRED');

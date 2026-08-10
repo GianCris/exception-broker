@@ -28,6 +28,41 @@ export type CreatePlanVersionResult =
       reason: string;
     }>;
 
+export type CreatePlanResult =
+  | Readonly<{
+      success: true;
+      plan: Plan;
+    }>
+  | Readonly<{
+      success: false;
+      reason: string;
+    }>;
+
+export const createPlanVersion = (
+  previousPlan: Plan,
+  newPlanId: PlanId,
+  changes: PlanConditionChanges,
+): CreatePlanResult => {
+  if (newPlanId === previousPlan.id) {
+    return {
+      success: false,
+      reason: 'A new plan version requires a new planId',
+    };
+  }
+
+  const parsed = planSchema.safeParse({
+    ...previousPlan,
+    ...changes,
+    id: newPlanId,
+    caseId: previousPlan.caseId,
+    version: previousPlan.version + 1,
+  });
+
+  return parsed.success
+    ? { success: true, plan: parsed.data }
+    : { success: false, reason: 'The successor plan is invalid' };
+};
+
 export const createNextPlanVersion = (
   previousPlan: Plan,
   newPlanId: PlanId,

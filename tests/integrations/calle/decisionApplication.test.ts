@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { simulateCase001 } from '../../../src/domain/case-001.simulation.js';
 import { case001Fixture } from '../../../src/domain/case-001.fixture.js';
 import type { Approval, Plan } from '../../../src/domain/types.js';
+import { createSuccessorPlan, type PlanLineage } from '../../../src/domain/planLineage.js';
 import type { DecisionBridgeResult, DecisionProposal } from '../../../src/integrations/calle/decisionBridge.js';
 import {
   applyReviewedDecision,
@@ -15,10 +16,14 @@ const plan = { ...simulation.plans.find(({ id }) => id === simulation.finalPlanI
 const client = simulation.updatedCase.actors.find(({ role }) => role === 'client')!;
 const supplier = simulation.updatedCase.actors.find(({ role }) => role === 'supplier')!;
 const production = simulation.updatedCase.actors.find(({ role }) => role === 'production')!;
+const planLineage: PlanLineage = {
+  lineageId: 'TEST-LINEAGE', caseId: plan.caseId, planIds: [plan.id],
+};
 
 const context = (overrides: Partial<DecisionApplicationContext> = {}): DecisionApplicationContext => ({
   exceptionCase: simulation.updatedCase,
   plans: [plan],
+  planLineages: [planLineage],
   approvals: [],
   operationHistory: [],
   existingEventIds: [],
@@ -67,7 +72,7 @@ const caseAuthorizationProposal = (
 
 const caseContext = (overrides: Partial<DecisionApplicationContext> = {}): DecisionApplicationContext => ({
   exceptionCase: structuredClone(case001Fixture), plans: [plan], approvals: [],
-  operationHistory: [], existingEventIds: [], ...overrides,
+  planLineages: [], operationHistory: [], existingEventIds: [], ...overrides,
 });
 
 const authorizationCommand = (
@@ -79,6 +84,51 @@ const authorizationCommand = (
 });
 
 describe('Decision Application', () => {
+  it.each(['APPROVED', 'REJECTED'] as const)('rejects delayed %s on a superseded plan without recording anything', (decision) => {
+    const successor = createSuccessorPlan(
+      planLineage.lineageId, [planLineage], [plan], plan.id,
+      'PLAN-GENERAL-SUCCESSOR' as Plan['id'], { status: 'PENDING_APPROVAL' },
+    );
+    expect(successor.success).toBe(true);
+    if (!successor.success) return;
+    const ctx = context({ plans: successor.plans, planLineages: successor.lineages });
+    const result = applyReviewedDecision(proposal({ decision }), ctx, command());
+    expect(result).toMatchObject({
+      applied: false, reason: 'PLAN_SUPERSEDED', unchangedApprovals: [], unchangedOperationHistory: [],
+    });
+    expect(ctx.plans.find(({ id }) => id === plan.id)?.status).toBe('INVALIDATED');
+  });
+
+  it('accepts a decision for the current pending tip and does not inherit predecessor approvals', () => {
+    const priorApproval = approval(supplier, 'APPROVAL-PREDECESSOR');
+    const successor = createSuccessorPlan(
+      planLineage.lineageId, [planLineage], [plan], plan.id,
+      'PLAN-GENERAL-SUCCESSOR' as Plan['id'], { status: 'PENDING_APPROVAL' },
+    );
+    expect(successor.success).toBe(true);
+    if (!successor.success) return;
+    const current = successor.plan;
+    const result = applyReviewedDecision(
+      proposal({ planId: current.id }),
+      context({ plans: successor.plans, planLineages: successor.lineages, approvals: [priorApproval] }),
+      command(),
+    );
+    expect(result).toMatchObject({ applied: true, value: { resolutionStatus: 'PENDING_APPROVALS' } });
+    if (!result.applied) return;
+    expect(result.value.approvals.filter(({ planId }) => planId === current.id)).toHaveLength(1);
+    expect(result.value.updatedPlans.find(({ id }) => id === current.id)?.status).toBe('PENDING_APPROVAL');
+  });
+
+  it('keeps currentness separate from lifecycle approvability', () => {
+    const noSolution = { ...plan, status: 'NO_SOLUTION' as const };
+    const currentLineage: PlanLineage = { ...planLineage, planIds: [noSolution.id] };
+    expect(applyReviewedDecision(
+      proposal(),
+      context({ plans: [noSolution], planLineages: [currentLineage] }),
+      command(),
+    )).toMatchObject({ applied: false, reason: 'PLAN_NOT_APPLICABLE' });
+  });
+
   it('records APPROVED through the domain without finalizing early', () => {
     const result = applyReviewedDecision(proposal(), context(), command());
     expect(result.applied).toBe(true);

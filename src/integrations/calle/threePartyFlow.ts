@@ -2,8 +2,14 @@ import { canApprovePlan } from '../../domain/approvals.js';
 import type { ProcessedOperation } from '../../domain/operationHistory.js';
 import type { RuleId, RuleViolation, ValidationResult } from '../../domain/rules.js';
 import type { Approval, ExceptionCase, Plan, PlanId } from '../../domain/types.js';
+import {
+  createPlanLineage,
+  createSuccessorPlan,
+  type PlanLineage,
+  type PlanLineageId,
+} from '../../domain/planLineage.js';
 import { validatePlan } from '../../domain/validator.js';
-import { createNextPlanVersion, type PlanConditionChanges } from '../../domain/versioning.js';
+import type { PlanConditionChanges } from '../../domain/versioning.js';
 import { assessNoSolution, type NoSolutionAssessment } from '../../domain/outcomes.js';
 import { executeCall } from './adapter.js';
 import {
@@ -32,6 +38,7 @@ export type FlowCallStep = Readonly<{
 export type ThreePartyFlowConfig = Readonly<{
   initialCase: ExceptionCase;
   initialPlan: Plan;
+  lineageId: PlanLineageId;
   plan002: Readonly<{ id: PlanId; createdAt: string; changes: PlanConditionChanges }>;
   plan003: Readonly<{ id: PlanId; createdAt: string; changes: PlanConditionChanges }>;
   plan001Rejection: FlowCallStep;
@@ -67,6 +74,7 @@ export type PlanRejectionEvidence = Readonly<{
 export type ThreePartyFlowState = Readonly<{
   exceptionCase: ExceptionCase;
   plans: readonly Plan[];
+  planLineages: readonly PlanLineage[];
   approvals: readonly Approval[];
   operationHistory: readonly ProcessedOperation[];
   events: readonly DecisionApplicationEvent[];
@@ -161,6 +169,7 @@ const runCallStep = async (
   const applicationResult = applyReviewedDecision(bridgeResult, {
     exceptionCase: state.exceptionCase,
     plans: state.plans,
+    planLineages: state.planLineages,
     approvals: state.approvals,
     operationHistory: state.operationHistory,
     existingEventIds: state.events.map(({ eventId }) => eventId),
@@ -173,6 +182,7 @@ const runCallStep = async (
     state: {
       exceptionCase: applicationResult.value.updatedCase,
       plans: applicationResult.value.updatedPlans,
+      planLineages: state.planLineages,
       approvals: applicationResult.value.approvals,
       operationHistory: applicationResult.value.updatedOperationHistory,
       events: [...state.events, ...applicationResult.value.proposedEvents],
@@ -185,15 +195,18 @@ const runCallStep = async (
 export const runThreePartyFlow = async (
   config: ThreePartyFlowConfig,
 ): Promise<ThreePartyFlowResult> => {
+  const initialLineage = createPlanLineage([], [config.initialPlan], config.lineageId, config.initialPlan.id);
   let state: ThreePartyFlowState = {
     exceptionCase: config.initialCase,
     plans: [config.initialPlan],
+    planLineages: initialLineage.success ? initialLineage.lineages : [],
     approvals: [],
     operationHistory: [],
     events: [],
     planRejectionEvidence: null,
   };
   const trace: FlowTraceEntry[] = [];
+  if (!initialLineage.success) return failure('CONFIGURATION', initialLineage.reason, trace, state);
   const steps = [config.plan001Rejection, config.caseAuthorization, ...config.finalApprovals];
   const operationIds = steps.map(({ review }) => review.operationId);
   const requestIds = steps.map(({ request }) => request.requestId);
@@ -229,8 +242,9 @@ export const runThreePartyFlow = async (
   }
   state = { ...rejection.state, planRejectionEvidence: rejectionEvidence };
 
-  const plan002Result = createNextPlanVersion(
-    rejectedPlan, config.plan002.id, config.plan002.createdAt, config.plan002.changes,
+  const plan002Result = createSuccessorPlan(
+    config.lineageId, state.planLineages, state.plans,
+    rejectedPlan.id, config.plan002.id, config.plan002.changes,
   );
   if (!plan002Result.success) return failure('PLAN_002_CREATION', plan002Result.reason, trace, state);
   const plan002 = plan002Result.plan;
@@ -242,21 +256,22 @@ export const runThreePartyFlow = async (
   if (canApprovePlan(state.exceptionCase, plan002, state.approvals).success) {
     return failure('PLAN_002_NO_SOLUTION', 'PLAN-002 unexpectedly allows approval', trace, state);
   }
-  state = { ...state, plans: [...state.plans, plan002] };
+  state = { ...state, plans: plan002Result.plans, planLineages: plan002Result.lineages };
 
   const authorization = await runCallStep(config.caseAuthorization, state);
   trace.push(authorization.trace);
   if (!authorization.success) return failure(config.caseAuthorization.stepId, authorization.reason, trace, state);
   state = authorization.state;
 
-  const plan003Result = createNextPlanVersion(
-    plan002, config.plan003.id, config.plan003.createdAt, config.plan003.changes,
+  const plan003Result = createSuccessorPlan(
+    config.lineageId, state.planLineages, state.plans,
+    plan002.id, config.plan003.id, config.plan003.changes,
   );
   if (!plan003Result.success) return failure('PLAN_003_CREATION', plan003Result.reason, trace, state);
   const plan003 = plan003Result.plan;
   const validation = validatePlan(state.exceptionCase, plan003);
   if (!validation.valid) return failure('PLAN_003_VALIDATION', 'PLAN-003 violates active constraints', trace, state);
-  state = { ...state, plans: [...state.plans, plan003] };
+  state = { ...state, plans: plan003Result.plans, planLineages: plan003Result.lineages };
 
   for (const approvalStep of config.finalApprovals) {
     const approval = await runCallStep(approvalStep, state);
@@ -279,8 +294,8 @@ export const runThreePartyFlow = async (
       noSolutionEvidence: config.noSolutionEvidence,
       noSolutionAssessment: assessNoSolution(config.noSolutionEvidence, 'LEGACY_CASE_001'),
       planVersionCreations: [
-        { planId: plan002.id, version: plan002.version, createdAt: plan002Result.createdAt },
-        { planId: finalPlan.id, version: finalPlan.version, createdAt: plan003Result.createdAt },
+        { planId: plan002.id, version: plan002.version, createdAt: config.plan002.createdAt },
+        { planId: finalPlan.id, version: finalPlan.version, createdAt: config.plan003.createdAt },
       ],
     },
   };
