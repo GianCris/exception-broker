@@ -63,6 +63,11 @@ describe('CASE-001 three-party integration flow', () => {
     ]);
     expect(result.value.finalPlanId).toBe('PLAN-003');
     expect(result.value.finalStatus).toBe('APPROVED');
+    expect(result.value.planLineages).toEqual([{
+      lineageId: config.lineageId,
+      caseId: config.initialCase.id,
+      planIds: ['PLAN-001', 'PLAN-002', 'PLAN-003'],
+    }]);
     expect(result.value.noSolutionEvidence).toEqual({
       availableUnitsTomorrow: 250, requiredMinimumUnitsTomorrow: 300, compatible: false,
     });

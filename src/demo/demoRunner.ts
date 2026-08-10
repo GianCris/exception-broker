@@ -48,6 +48,7 @@ const scenarioIssues = (scenario: unknown): readonly string[] => {
   const candidate = scenario as Partial<ThreePartyFlowConfig>;
   const issues: string[] = [];
   if (candidate.initialCase === undefined || candidate.initialPlan === undefined) issues.push('initial case and plan are required');
+  if (!nonEmpty(candidate.lineageId)) issues.push('lineage ID is required');
   if (candidate.plan002 === undefined || candidate.plan003 === undefined) issues.push('plan version configuration is required');
   if (candidate.plan001Rejection === undefined || candidate.caseAuthorization === undefined) issues.push('initial call steps are required');
   if (!Array.isArray(candidate.finalApprovals) || candidate.finalApprovals.length !== 3) issues.push('three final approval steps are required');

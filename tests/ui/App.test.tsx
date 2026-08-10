@@ -107,7 +107,7 @@ describe('Exception Broker safe demo UI', () => {
         plans: full.finalPlans.map((plan) => plan.id === full.caseNarrative.plan003.planId ? { ...plan, status: 'PENDING_APPROVAL' } : plan),
         approvals: full.approvals.filter(({ actorRole }) => actorRole !== 'client'),
         operationHistory: full.operationHistory,
-        events: [], planRejectionEvidence: {
+        planLineages: [], events: [], planRejectionEvidence: {
           planId: full.caseNarrative.plan001.planId as never,
           actorId: full.caseNarrative.plan001.actorId, decision: 'REJECTED',
           violatedRequirementIds: full.caseNarrative.plan001.reasonCodes,
@@ -149,7 +149,7 @@ describe('Exception Broker safe demo UI', () => {
       failedStep: 'CLIENT_APPROVAL', reason: 'Approval evidence incomplete',
       partialState: { exceptionCase: full.finalCase, plans: full.finalPlans,
         approvals: full.approvals.filter(({ actorRole }) => actorRole !== 'client'),
-        operationHistory: full.operationHistory, events: [], planRejectionEvidence: null },
+        operationHistory: full.operationHistory, planLineages: [], events: [], planRejectionEvidence: null },
       steps: partialSteps,
       caseNarrative: { plan001: full.caseNarrative.plan001, plan002: full.caseNarrative.plan002, authorization: full.caseNarrative.authorization },
       summary: 'CASE_NOT_RESOLVED',
@@ -168,7 +168,7 @@ describe('Exception Broker safe demo UI', () => {
       startedAt: full.startedAt, completedAt: full.completedAt,
       failedStep: 'CASE_AUTHORIZATION', reason: 'Authorization evidence unavailable',
       partialState: { exceptionCase: full.finalCase, plans: full.finalPlans.slice(0, 2), approvals: [],
-        operationHistory: [], events: [], planRejectionEvidence: null },
+        operationHistory: [], planLineages: [], events: [], planRejectionEvidence: null },
       steps: full.steps.slice(0, 2),
       caseNarrative: { plan001: full.caseNarrative.plan001, plan002: full.caseNarrative.plan002 },
       summary: 'CASE_NOT_RESOLVED',
@@ -186,7 +186,7 @@ describe('Exception Broker safe demo UI', () => {
       status: 'FAILED', mode: 'LOCAL_SIMULATION', runId: full.runId,
       startedAt: full.startedAt, completedAt: full.completedAt,
       failedStep: 'CONFIGURATION', reason: 'No safe plan state available',
-      partialState: { exceptionCase: full.finalCase, plans: [], approvals: [], operationHistory: [], events: [], planRejectionEvidence: null },
+      partialState: { exceptionCase: full.finalCase, plans: [], approvals: [], operationHistory: [], planLineages: [], events: [], planRejectionEvidence: null },
       steps: [], caseNarrative: {}, summary: 'CASE_NOT_RESOLVED',
     };
     const { container } = render(<DemoExperience runner={vi.fn(async () => failure)} createInput={createLocalSimulationInput} />);

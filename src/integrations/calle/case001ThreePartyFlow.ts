@@ -106,6 +106,7 @@ export const createCase001ThreePartyFlowConfig = (): ThreePartyFlowConfig => {
   return {
     initialCase: structuredClone(case001Fixture),
     initialPlan: structuredClone(case001Plan001),
+    lineageId: 'CASE-001-PRIMARY-LINEAGE',
     plan002: {
       id: PLAN_002_ID, createdAt: '2026-08-04T09:00:00-05:00',
       changes: {
