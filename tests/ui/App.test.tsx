@@ -49,6 +49,8 @@ describe('Exception Broker safe demo UI', () => {
     expect(screen.getByText('R-04')).toBeInTheDocument();
     expect(screen.getByText('250')).toBeInTheDocument();
     expect(screen.getByText('300')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /No compatible plan found/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/global infeasibility was not proven/i).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('50 changed to 100')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /PLAN-003 · Approved/i })).toBeInTheDocument();
     expect(screen.getByText('✓ supplier')).toBeInTheDocument();

@@ -4,6 +4,7 @@ import type { RuleId, RuleViolation, ValidationResult } from '../../domain/rules
 import type { Approval, ExceptionCase, Plan, PlanId } from '../../domain/types.js';
 import { validatePlan } from '../../domain/validator.js';
 import { createNextPlanVersion, type PlanConditionChanges } from '../../domain/versioning.js';
+import { assessNoSolution, type NoSolutionAssessment } from '../../domain/outcomes.js';
 import { executeCall } from './adapter.js';
 import {
   prepareDecisionProposal,
@@ -78,6 +79,7 @@ export type ThreePartyFlowResult =
       finalPlanId: PlanId;
       finalStatus: 'APPROVED';
       noSolutionEvidence: ThreePartyFlowConfig['noSolutionEvidence'];
+      noSolutionAssessment: NoSolutionAssessment;
       planVersionCreations: readonly Readonly<{ planId: PlanId; version: number; createdAt: string }>[];
     }> }>
   | Readonly<{ success: false; failedStep: string; reason: string;
@@ -275,6 +277,7 @@ export const runThreePartyFlow = async (
       finalPlanId: finalPlan.id,
       finalStatus: 'APPROVED',
       noSolutionEvidence: config.noSolutionEvidence,
+      noSolutionAssessment: assessNoSolution(config.noSolutionEvidence, 'LEGACY_CASE_001'),
       planVersionCreations: [
         { planId: plan002.id, version: plan002.version, createdAt: plan002Result.createdAt },
         { planId: finalPlan.id, version: finalPlan.version, createdAt: plan003Result.createdAt },

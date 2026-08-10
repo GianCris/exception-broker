@@ -25,6 +25,7 @@ import type {
 } from './types.js';
 import { validatePlan } from './validator.js';
 import { createNextPlanVersion } from './versioning.js';
+import { assessNoSolution } from './outcomes.js';
 
 const PLAN_002_ID = planIdSchema.parse('PLAN-002');
 const PLAN_003_ID = planIdSchema.parse('PLAN-003');
@@ -174,6 +175,7 @@ export const simulateCase001 = (
   }
 
   const evidence = noSolutionEvidence(sourceCase);
+  const noSolutionAssessment = assessNoSolution(evidence, 'LEGACY_CASE_001');
   const plan002Creation = createNextPlanVersion(
     rejected.plan,
     PLAN_002_ID,
@@ -322,7 +324,7 @@ export const simulateCase001 = (
       type: 'NO_SOLUTION_DETECTED',
       planId: plan002.id,
       message:
-        'With the current limit of 50 substitute units, only 250 units can be delivered tomorrow, below the required minimum of 300.',
+        'No compatible plan was found in the evaluated scenario; global infeasibility was not proven.',
       createdAt: '2026-08-04T09:02:00-05:00',
     },
     {
@@ -377,6 +379,7 @@ export const simulateCase001 = (
       { planId: plan003.id, result: plan003Validation },
     ],
     noSolutionEvidence: evidence,
+    noSolutionAssessment,
     approvalAttempts,
     updatedCase: authorizationUpdate.updatedCase,
     finalPlanId: finalized.plan.id,

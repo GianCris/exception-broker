@@ -18,7 +18,7 @@ const planStatusPresentation: Record<PlanStatus, Readonly<{ label: string; tone:
   DRAFT: { label: 'Draft', tone: 'neutral' },
   PENDING_APPROVAL: { label: 'Pending approval', tone: 'info' },
   REJECTED: { label: 'Rejected', tone: 'danger' },
-  NO_SOLUTION: { label: 'No solution', tone: 'warning' },
+  NO_SOLUTION: { label: 'No compatible plan found', tone: 'warning' },
   INVALIDATED: { label: 'Invalidated', tone: 'neutral' },
   APPROVED: { label: 'Approved', tone: 'success' },
 };
@@ -32,7 +32,7 @@ const authorizationFieldLabels = { maxSubstituteQuantity: 'Client substitute lim
 
 type PlanExplanation =
   | Readonly<{ kind: 'rejected'; proposedSubstitutes: number; clientLimit: number; reason: string }>
-  | Readonly<{ kind: 'no-solution'; requiredTomorrow: number; availableTomorrow: number; shortfall: number }>
+  | Readonly<{ kind: 'no-solution'; outcome: 'NO_SOLUTION_UNPROVEN'; requiredTomorrow: number; availableTomorrow: number; shortfall: number; message: string }>
   | Readonly<{ kind: 'final'; unlockPreviousValue: number; unlockNewValue: number }>
   | Readonly<{ kind: 'neutral'; message: string }>;
 
@@ -102,9 +102,11 @@ export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
     } else if (plan.status === 'NO_SOLUTION') {
       explanation = {
         kind: 'no-solution',
+        outcome: 'NO_SOLUTION_UNPROVEN',
         requiredTomorrow: simulation.noSolutionEvidence.requiredMinimumUnitsTomorrow,
         availableTomorrow: simulation.noSolutionEvidence.availableUnitsTomorrow,
         shortfall: simulation.noSolutionEvidence.requiredMinimumUnitsTomorrow - simulation.noSolutionEvidence.availableUnitsTomorrow,
+        message: 'No compatible plan was found in the evaluated scenario; global infeasibility was not proven.',
       };
     } else if (plan.status === 'REJECTED' && authorizationChange !== undefined) {
       const r04 = validation?.result.violations.find(({ ruleId }) => ruleId === 'R-04');

@@ -51,7 +51,8 @@ export type DemoCaseNarrative = Readonly<{
     reasonCodes: readonly RuleId[]; validationIssues: readonly RuleViolation[]; summary: string;
   }>;
   plan002: Readonly<{
-    planId: string; outcome: 'NO_SOLUTION'; availableQuantity: number; requiredQuantity: number;
+    planId: string; outcome: 'NO_SOLUTION_UNPROVEN'; availableQuantity: number; requiredQuantity: number;
+    explanation: string;
   }>;
   authorization: Readonly<{
     field: string; previousValue: string | number; newValue: string | number | boolean;

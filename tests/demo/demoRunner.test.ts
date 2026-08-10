@@ -89,7 +89,8 @@ describe('safe deterministic demo runner', () => {
       validationIssues: [expect.objectContaining({ ruleId: 'R-04', expected: 50, actual: 100 })],
     });
     expect(result.caseNarrative.plan002).toMatchObject({
-      planId: 'PLAN-002', outcome: 'NO_SOLUTION', availableQuantity: 250, requiredQuantity: 300,
+      planId: 'PLAN-002', outcome: 'NO_SOLUTION_UNPROVEN', availableQuantity: 250, requiredQuantity: 300,
+      explanation: expect.stringMatching(/global infeasibility was not proven/i),
     });
     expect(result.caseNarrative.authorization).toMatchObject({
       field: 'maxSubstituteQuantity', previousValue: 50, newValue: 100,
