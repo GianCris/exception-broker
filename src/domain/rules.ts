@@ -5,6 +5,7 @@ import type {
   ExceptionCase,
   Plan,
 } from './types.js';
+import { sameIsoInstant } from './dateTime.js';
 
 export type RuleId =
   | 'R-01'
@@ -77,7 +78,7 @@ const minimumTomorrowQuantity = (
   Math.max(
     ...actor.constraints
       .filter(isMinimumDeliveryConstraint)
-      .filter((constraint) => constraint.deliveryDate === targetDeliveryDate)
+      .filter((constraint) => sameIsoInstant(constraint.deliveryDate, targetDeliveryDate))
       .map((constraint) => constraint.minimumRequiredQuantity),
   );
 
@@ -199,7 +200,7 @@ const validateR09: Rule = (exceptionCase, plan) => {
     (constraint): constraint is SupplyConstraint =>
       isSupplyConstraint(constraint) &&
       constraint.substituteQuantity > 0 &&
-      constraint.deliveryDate === exceptionCase.targetDeliveryDate,
+      sameIsoInstant(constraint.deliveryDate, exceptionCase.targetDeliveryDate),
   )?.substituteUnitAdditionalCost;
 
   if (substituteUnitAdditionalCost === undefined) {

@@ -20,6 +20,17 @@ const planLineage: PlanLineage = {
   lineageId: 'TEST-LINEAGE', caseId: plan.caseId, planIds: [plan.id],
 };
 
+const withSupply = (originalQuantity: number, substituteQuantity: number) => {
+  const exceptionCase = structuredClone(simulation.updatedCase);
+  const supplierActor = exceptionCase.actors.find(({ role }) => role === 'supplier')!;
+  supplierActor.constraints = supplierActor.constraints.map((constraint) => constraint.type === 'SUPPLY'
+    ? { ...constraint,
+        originalQuantity: constraint.deliveryDate === exceptionCase.targetDeliveryDate && constraint.originalQuantity > 0 ? originalQuantity : constraint.originalQuantity,
+        substituteQuantity: constraint.deliveryDate === exceptionCase.targetDeliveryDate && constraint.substituteQuantity > 0 ? substituteQuantity : constraint.substituteQuantity }
+    : constraint);
+  return exceptionCase;
+};
+
 const context = (overrides: Partial<DecisionApplicationContext> = {}): DecisionApplicationContext => ({
   exceptionCase: simulation.updatedCase,
   plans: [plan],
@@ -127,6 +138,45 @@ describe('Decision Application', () => {
       context({ plans: [noSolution], planLineages: [currentLineage] }),
       command(),
     )).toMatchObject({ applied: false, reason: 'PLAN_NOT_APPLICABLE' });
+  });
+
+  it.each([
+    ['PLAN_PHYSICALLY_INFEASIBLE', withSupply(100, 50)],
+    ['PHYSICAL_FEASIBILITY_UNPROVEN', withSupply(0, 0)],
+  ] as const)('blocks APPROVED with %s before every side effect', (reason, exceptionCase) => {
+    const ctx = context({ exceptionCase });
+    const result = applyReviewedDecision(
+      proposal({ proposedAuthorizationChanges: [{ field: 'maxSubstituteQuantity', currentInternalValue: 100, proposedNewValue: 200, requiresReview: true }] }),
+      ctx,
+      command({ authorizationReviews: [{ field: 'maxSubstituteQuantity', action: 'APPLY' }] }),
+    );
+    expect(result).toMatchObject({
+      applied: false, reason, unchangedCase: ctx.exceptionCase, unchangedPlans: ctx.plans,
+      unchangedApprovals: [], unchangedOperationHistory: [], physicalFeasibilityAssessment: expect.any(Object),
+    });
+    if (result.applied) return;
+    expect(result).not.toHaveProperty('proposedEvents');
+    expect(result).not.toHaveProperty('createdApproval');
+    expect(result).not.toHaveProperty('createdRejection');
+    expect(ctx.exceptionCase.actors.find(({ role }) => role === 'client')?.authorization.maxSubstituteQuantity).toBe(100);
+    expect(ctx.plans[0]?.status).toBe('PENDING_APPROVAL');
+  });
+
+  it.each([
+    ['physically infeasible', withSupply(100, 50)],
+    ['physical feasibility unproven', withSupply(0, 0)],
+  ])('keeps REJECTED recordable when %s', (_label, exceptionCase) => {
+    const result = applyReviewedDecision(proposal({ decision: 'REJECTED' }), context({ exceptionCase }), command());
+    expect(result).toMatchObject({ applied: true, value: { resolutionStatus: 'PLAN_REJECTED', createdRejection: { decision: 'REJECTED' } } });
+  });
+
+  it('rejects a superseded plan before physical feasibility even when supply evidence is missing', () => {
+    const successor = createSuccessorPlan(planLineage.lineageId, [planLineage], [plan], plan.id, 'PLAN-FRESHNESS-FIRST' as Plan['id'], { status: 'PENDING_APPROVAL' });
+    expect(successor.success).toBe(true);
+    if (!successor.success) return;
+    const result = applyReviewedDecision(proposal(), context({ exceptionCase: withSupply(0, 0), plans: successor.plans, planLineages: successor.lineages }), command());
+    expect(result).toMatchObject({ applied: false, reason: 'PLAN_SUPERSEDED' });
+    expect(result).not.toHaveProperty('physicalFeasibilityAssessment');
   });
 
   it('records APPROVED through the domain without finalizing early', () => {
@@ -273,6 +323,18 @@ describe('Decision Application', () => {
       expect(result.value.resolutionStatus).toBe('CASE_AUTHORIZATION_APPLIED');
       expect(result.value.updatedOperationHistory).toHaveLength(1);
       expect(result.value.proposedEvents[0]).not.toHaveProperty('planId');
+    });
+
+    it('bypasses physical feasibility when trusted supply evidence is absent', () => {
+      const exceptionCase = structuredClone(case001Fixture);
+      const supplierActor = exceptionCase.actors.find(({ role }) => role === 'supplier')!;
+      supplierActor.constraints = supplierActor.constraints.map((constraint) => constraint.type === 'SUPPLY'
+        ? { ...constraint, originalQuantity: 0, substituteQuantity: 0 }
+        : constraint);
+      const result = applyReviewedDecision(
+        caseAuthorizationProposal(), caseContext({ exceptionCase }), authorizationCommand(),
+      );
+      expect(result).toMatchObject({ applied: true, value: { resolutionStatus: 'CASE_AUTHORIZATION_APPLIED' } });
     });
 
     it('does not trust externalPreviousValue and rejects stale internal state', () => {
