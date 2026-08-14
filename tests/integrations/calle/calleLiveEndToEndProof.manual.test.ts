@@ -1,0 +1,502 @@
+import { createReadStream, createWriteStream } from 'node:fs';
+import { createInterface } from 'node:readline/promises';
+
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  executeOrchestrationAction,
+  type OrchestrationAction,
+  type OrchestrationState,
+} from '../../../src/application/adaptiveOrchestrator.js';
+import { assessPhysicalFeasibility } from '../../../src/domain/physicalFeasibility.js';
+import { exceptionCaseSchema, planSchema } from '../../../src/domain/schemas.js';
+import type { ActorRole, ExceptionCase } from '../../../src/domain/types.js';
+import { validatePlan } from '../../../src/domain/validator.js';
+import { executeCall } from '../../../src/integrations/calle/adapter.js';
+import { CallEProvider } from '../../../src/integrations/calle/callEProvider.js';
+import { PHONE_DECISION_SCHEMA, createCallRequest } from '../../../src/integrations/calle/contract.js';
+import {
+  prepareDecisionProposal,
+  type DecisionBridgeResult,
+} from '../../../src/integrations/calle/decisionBridge.js';
+import type { CallProvider } from '../../../src/integrations/calle/provider.js';
+import type { CallRequest } from '../../../src/integrations/calle/types.js';
+
+const LIVE_MODE = 'MANUAL_LIVE_RUN';
+const LIVE_CONFIRMATION = 'YES_RUN_REAL_CALL_E_E2E';
+const CASE_ID = 'CASE-CALLE-LIVE-E2E';
+const PLAN_ID = 'PLAN-CALLE-LIVE-E2E';
+const LINEAGE_ID = 'LINEAGE-CALLE-LIVE-E2E';
+const CLIENT_ID = 'ACTOR-CALLE-LIVE-CLIENT';
+const TARGET_AT = '2027-07-01T17:00:00-05:00';
+const LATER_AT = '2027-07-02T17:00:00-05:00';
+const CALL_CREATED_AT = '2027-07-01T16:50:00-05:00';
+const CALL_RECEIVED_AT = '2027-07-01T16:58:00-05:00';
+const REVIEWED_AT = '2027-07-01T16:59:00-05:00';
+
+type EnvironmentName =
+  | 'CALLE_LIVE_E2E_MODE'
+  | 'CALLE_LIVE_E2E_CONFIRM'
+  | 'CALLE_API_KEY'
+  | 'CALLE_TEST_PHONE';
+
+type EnvironmentReader = (name: EnvironmentName) => string | undefined;
+
+type LiveConfiguration = Readonly<
+  | { authorized: false; reason: 'LIVE_MODE_REQUIRED' | 'LIVE_CONFIRMATION_REQUIRED' }
+  | { authorized: true; apiKey: string; phoneNumber: string }
+>;
+
+const readLiveConfiguration = (readEnvironment: EnvironmentReader): LiveConfiguration => {
+  if (readEnvironment('CALLE_LIVE_E2E_MODE') !== LIVE_MODE) {
+    return { authorized: false, reason: 'LIVE_MODE_REQUIRED' };
+  }
+  if (readEnvironment('CALLE_LIVE_E2E_CONFIRM') !== LIVE_CONFIRMATION) {
+    return { authorized: false, reason: 'LIVE_CONFIRMATION_REQUIRED' };
+  }
+  const apiKey = readEnvironment('CALLE_API_KEY');
+  const phoneNumber = readEnvironment('CALLE_TEST_PHONE');
+  if (apiKey === undefined || apiKey.trim() === '') throw new Error('CALLE_API_KEY is required after live authorization');
+  if (phoneNumber === undefined || phoneNumber.trim() === '') throw new Error('CALLE_TEST_PHONE is required after live authorization');
+  return { authorized: true, apiKey, phoneNumber };
+};
+
+const manualLiveRunSelected =
+  process.env.CALLE_LIVE_E2E_MODE === LIVE_MODE
+  && process.env.CALLE_LIVE_E2E_CONFIRM === LIVE_CONFIRMATION;
+
+class RecordingCallProvider implements CallProvider {
+  readonly #delegate: CallProvider;
+  invocationCount = 0;
+  providerLevelResult: unknown;
+
+  constructor(delegate: CallProvider) {
+    this.#delegate = delegate;
+  }
+
+  async executeCall(request: CallRequest): Promise<unknown> {
+    if (this.invocationCount !== 0) throw new Error('Live proof permits exactly one provider invocation');
+    this.invocationCount += 1;
+    const result = await this.#delegate.executeCall(request);
+    this.providerLevelResult = result;
+    return result;
+  }
+}
+
+const maskPhone = (phone: string): string => {
+  const suffix = phone.slice(-4);
+  return `${phone.slice(0, Math.min(2, phone.length))}${'•'.repeat(Math.max(0, phone.length - suffix.length - 2))}${suffix}`;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
+
+const providerProofProjection = (value: unknown): Readonly<Record<string, unknown>> => {
+  const record = asRecord(value);
+  if (record === undefined) return { responseType: typeof value };
+  const structured = asRecord(record.structuredResult);
+  const interactionKey = ['callId', 'call_id', 'taskId', 'task_id', 'id']
+    .find((key) => typeof record[key] === 'string' && String(record[key]).trim() !== '');
+  return {
+    status: record.status,
+    structuredResult: structured === undefined ? record.structuredResult : {
+      decision: structured.decision,
+      caseId: structured.caseId,
+      planId: structured.planId,
+      actorId: structured.actorId,
+      actorRole: structured.actorRole,
+      clarificationNeeded: structured.clarificationNeeded,
+      authorizationChangeCount: Array.isArray(structured.authorizationChanges)
+        ? structured.authorizationChanges.length
+        : undefined,
+    },
+    taskCompleted: record.taskCompleted,
+    completionConfidence: record.completionConfidence,
+    evidenceCount: Array.isArray(record.evidence) ? record.evidence.length : undefined,
+    ...(interactionKey === undefined ? {} : {
+      providerInteraction: { field: interactionKey, value: record[interactionKey] },
+    }),
+  };
+};
+
+const safeCase = (): ExceptionCase => exceptionCaseSchema.parse({
+  id: CASE_ID,
+  status: 'CASE_CREATED',
+  requestedQuantity: 500,
+  targetDeliveryDate: TARGET_AT,
+  actors: [
+    {
+      id: 'ACTOR-CALLE-LIVE-SUPPLIER',
+      role: 'supplier',
+      constraints: [{
+        type: 'SUPPLY',
+        originalQuantity: 350,
+        substituteQuantity: 150,
+        deliveryDate: TARGET_AT,
+        substituteUnitAdditionalCost: 0.5,
+      }],
+      authorization: {
+        maxAbsorbableAdditionalCost: 100,
+        maxSubstituteQuantity: 500,
+        latestAcceptedDeliveryDate: LATER_AT,
+      },
+    },
+    {
+      id: 'ACTOR-CALLE-LIVE-PRODUCTION',
+      role: 'production',
+      constraints: [{
+        type: 'MINIMUM_DELIVERY',
+        minimumRequiredQuantity: 500,
+        deliveryDate: TARGET_AT,
+        allowsOriginalAndSubstituteMix: true,
+      }],
+      authorization: {
+        maxAbsorbableAdditionalCost: 100,
+        maxSubstituteQuantity: 500,
+        latestAcceptedDeliveryDate: LATER_AT,
+      },
+    },
+    {
+      id: CLIENT_ID,
+      role: 'client',
+      constraints: [{
+        type: 'MINIMUM_DELIVERY',
+        minimumRequiredQuantity: 500,
+        deliveryDate: TARGET_AT,
+        allowsOriginalAndSubstituteMix: true,
+      }],
+      authorization: {
+        maxAbsorbableAdditionalCost: 100,
+        maxSubstituteQuantity: 180,
+        latestAcceptedDeliveryDate: LATER_AT,
+      },
+    },
+  ],
+});
+
+const safePlan = () => planSchema.parse({
+  id: PLAN_ID,
+  caseId: CASE_ID,
+  status: 'PENDING_APPROVAL',
+  version: 1,
+  originalQuantityTomorrow: 350,
+  substituteQuantityTomorrow: 150,
+  originalQuantityLater: 0,
+  laterDeliveryDate: LATER_AT,
+  clientAdditionalCost: 0,
+  supplierAbsorbedCost: 75,
+  productionAbsorbedCost: 0,
+});
+
+const emptyState = (exceptionCase: ExceptionCase): OrchestrationState => ({
+  exceptionCase,
+  plans: [],
+  planLineages: [],
+  approvals: [],
+  operationHistory: [],
+  events: [],
+});
+
+const localApproval = (
+  state: OrchestrationState,
+  role: Exclude<ActorRole, 'client'>,
+  token: string,
+): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
+  const actor = state.exceptionCase.actors.find((candidate) => candidate.role === role);
+  if (actor === undefined) throw new Error(`Missing local ${role}`);
+  const bridgeResult: DecisionBridgeResult = {
+    ready: true,
+    proposal: {
+      operationType: 'PLAN_DECISION',
+      requestId: `REQUEST-CALLE-LIVE-${token}`,
+      caseId: CASE_ID,
+      planId: PLAN_ID,
+      actorId: actor.id,
+      actorRole: role,
+      decision: 'APPROVED',
+      summary: `Deterministic local ${role} pre-approval`,
+      proposedAuthorizationChanges: [],
+      evidence: ['Deterministic local setup decision'],
+      completionConfidence: { score: 1, label: 'deterministic-local' },
+      receivedAt: '2027-07-01T16:40:00-05:00',
+      requiresReview: true,
+      reviewState: 'DECISION_REVIEW_REQUIRED',
+    },
+  };
+  return {
+    type: 'APPLY_REVIEWED_DECISION',
+    bridgeResult,
+    review: {
+      action: 'APPLY',
+      operationId: `OPERATION-CALLE-LIVE-${token}`,
+      reviewedBy: 'REVIEWER-CALLE-LIVE-LOCAL-SETUP',
+      reviewedAt: '2027-07-01T16:41:00-05:00',
+      eventId: `EVENT-CALLE-LIVE-${token}`,
+      approvalId: `APPROVAL-CALLE-LIVE-${token}`,
+      authorizationReviews: [],
+    },
+  };
+};
+
+const prepareLocalState = (): OrchestrationState => {
+  const exceptionCase = safeCase();
+  const plan = safePlan();
+  expect(validatePlan(exceptionCase, plan)).toEqual({ valid: true, violations: [] });
+  expect(assessPhysicalFeasibility(exceptionCase, plan).outcome).toBe('PHYSICALLY_FEASIBLE');
+
+  const registration = executeOrchestrationAction(emptyState(exceptionCase), {
+    type: 'REGISTER_PLAN_PROPOSAL',
+    lineageId: LINEAGE_ID,
+    plan,
+  });
+  if (!registration.accepted) throw new Error(`Registration failed: ${registration.failure.reason}`);
+  expect(registration.step).toMatchObject({
+    assessment: {
+      planAssessment: { outcome: 'PLAN_VALID' },
+      physicalFeasibilityAssessment: { outcome: 'PHYSICALLY_FEASIBLE' },
+    },
+  });
+
+  const supplier = executeOrchestrationAction(
+    registration.state,
+    localApproval(registration.state, 'supplier', 'SUPPLIER'),
+  );
+  if (!supplier.accepted) throw new Error(`Supplier setup approval failed: ${supplier.failure.reason}`);
+  const production = executeOrchestrationAction(
+    supplier.state,
+    localApproval(supplier.state, 'production', 'PRODUCTION'),
+  );
+  if (!production.accepted) throw new Error(`Production setup approval failed: ${production.failure.reason}`);
+  expect(production.disposition).toEqual({ type: 'AWAITING_EXTERNAL_ACTION' });
+  expect(production.state.approvals.map(({ actorRole }) => actorRole)).toEqual(['supplier', 'production']);
+  return production.state;
+};
+
+const callRequest = (phoneNumber: string): CallRequest => createCallRequest({
+  requestId: 'REQUEST-CALLE-LIVE-CLIENT-REAL',
+  caseId: CASE_ID,
+  planId: PLAN_ID,
+  actorId: CLIENT_ID,
+  actorRole: 'client',
+  phoneNumber,
+  objective: [
+    'This is a consented synthetic Exception Broker hackathon proof.',
+    `Discuss synthetic plan ${PLAN_ID} for 500 units: 350 original and 150 substitute.`,
+    'Ask the test operator for one explicit APPROVED, REJECTED, or NEEDS_CLARIFICATION decision.',
+  ].join(' '),
+  context: [
+    `Synthetic case ${CASE_ID}; no real customer or production system is involved.`,
+    'Return only the decision explicitly stated by the consenting test operator.',
+  ].join(' '),
+  expectedDecisionSchema: PHONE_DECISION_SCHEMA,
+  createdAt: CALL_CREATED_AT,
+});
+
+const promptForPostResultReview = async (): Promise<'APPLY' | 'DISCARD'> => {
+  const usesProcessTerminal = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  const input = usesProcessTerminal
+    ? process.stdin
+    : createReadStream(process.platform === 'win32' ? 'CONIN$' : '/dev/tty');
+  const output = usesProcessTerminal
+    ? process.stdout
+    : createWriteStream(process.platform === 'win32' ? 'CONOUT$' : '/dev/tty');
+  const interface_ = createInterface({ input, output });
+  try {
+    const answer = await interface_.question(
+      '\nPOST-RESULT REVIEW: Type APPLY to apply this exact proposal; anything else DISCARD: ',
+    );
+    return answer.trim() === 'APPLY' ? 'APPLY' : 'DISCARD';
+  } catch {
+    return 'DISCARD';
+  } finally {
+    interface_.close();
+    if (!usesProcessTerminal) {
+      input.destroy();
+      output.end();
+    }
+  }
+};
+
+describe('CALL-E live end-to-end proof harness', () => {
+  it('requires the dedicated live selector and exact confirmation before reading credentials', () => {
+    const credentialsOnlyValues: Partial<Record<EnvironmentName, string>> = {
+      CALLE_API_KEY: 'configured-but-must-not-be-read',
+      CALLE_TEST_PHONE: 'configured-phone-must-not-be-read',
+    };
+    const credentialsOnly = vi.fn<EnvironmentReader>((name) => credentialsOnlyValues[name]);
+    expect(readLiveConfiguration(credentialsOnly)).toEqual({ authorized: false, reason: 'LIVE_MODE_REQUIRED' });
+    expect(credentialsOnly).toHaveBeenCalledTimes(1);
+    expect(credentialsOnly).not.toHaveBeenCalledWith('CALLE_API_KEY');
+    expect(credentialsOnly).not.toHaveBeenCalledWith('CALLE_TEST_PHONE');
+
+    const selectorOnlyValues: Partial<Record<EnvironmentName, string>> = {
+      CALLE_LIVE_E2E_MODE: LIVE_MODE,
+      CALLE_API_KEY: 'configured-but-must-not-be-read',
+      CALLE_TEST_PHONE: 'configured-phone-must-not-be-read',
+    };
+    const selectorOnly = vi.fn<EnvironmentReader>((name) => selectorOnlyValues[name]);
+    expect(readLiveConfiguration(selectorOnly)).toEqual({ authorized: false, reason: 'LIVE_CONFIRMATION_REQUIRED' });
+    expect(selectorOnly).not.toHaveBeenCalledWith('CALLE_API_KEY');
+    expect(selectorOnly).not.toHaveBeenCalledWith('CALLE_TEST_PHONE');
+  });
+
+  it.skipIf(!manualLiveRunSelected)(
+    'places exactly one real CALL-E call and applies only the post-result reviewed decision',
+    async () => {
+      const configuration = readLiveConfiguration((name) => process.env[name]);
+      if (!configuration.authorized) throw new Error(`Live execution not authorized: ${configuration.reason}`);
+
+      const state = prepareLocalState();
+      const request = callRequest(configuration.phoneNumber);
+      const realProvider = new CallEProvider({
+        apiKeySource: () => configuration.apiKey,
+        allowedDecisions: ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION'],
+      });
+      const recordingProvider = new RecordingCallProvider(realProvider);
+
+      process.stdout.write(`\n${JSON.stringify({
+        stage: 'LIVE CALL-E',
+        requestId: request.requestId,
+        caseId: request.caseId,
+        planId: request.planId,
+        actorId: request.actorId,
+        actorRole: request.actorRole,
+        maskedDestination: maskPhone(request.phoneNumber),
+      }, null, 2)}\n`);
+
+      const mapped = await executeCall(recordingProvider, request, CALL_RECEIVED_AT);
+      expect(recordingProvider.invocationCount).toBe(1);
+      process.stdout.write(`${JSON.stringify({
+        stage: 'CALL-E provider response',
+        providerLevelEvidence: providerProofProjection(recordingProvider.providerLevelResult),
+      }, null, 2)}\n`);
+      expect(mapped.success).toBe(true);
+      if (!mapped.success) throw new Error(`Live CALL-E mapping stopped safely: ${mapped.reason}`);
+      expect(mapped.value).toMatchObject({
+        requestId: request.requestId,
+        caseId: CASE_ID,
+        planId: PLAN_ID,
+        actorId: CLIENT_ID,
+        actorRole: 'client',
+        receivedAt: CALL_RECEIVED_AT,
+      });
+      process.stdout.write(`${JSON.stringify({
+        stage: 'mapped Exception Broker evidence',
+        requestId: mapped.value.requestId,
+        caseId: mapped.value.caseId,
+        planId: mapped.value.planId,
+        actorId: mapped.value.actorId,
+        actorRole: mapped.value.actorRole,
+        decision: mapped.value.decision,
+        completionConfidence: mapped.value.completionConfidence,
+        evidenceCount: mapped.value.evidence.length,
+        receivedAt: mapped.value.receivedAt,
+      }, null, 2)}\n`);
+
+      const bridgeResult = prepareDecisionProposal(mapped, {
+        exceptionCase: state.exceptionCase,
+        plans: state.plans,
+      }, {
+        operationType: 'PLAN_DECISION',
+        caseId: CASE_ID,
+        planId: PLAN_ID,
+        actorId: CLIENT_ID,
+        actorRole: 'client',
+      });
+      expect(bridgeResult.ready).toBe(true);
+      if (!bridgeResult.ready) throw new Error(`Decision Bridge stopped safely: ${bridgeResult.reason}`);
+      expect(bridgeResult.proposal).toMatchObject({
+        operationType: 'PLAN_DECISION',
+        caseId: CASE_ID,
+        planId: PLAN_ID,
+        actorId: CLIENT_ID,
+        actorRole: 'client',
+        decision: mapped.value.decision,
+        requiresReview: true,
+      });
+      process.stdout.write(`${JSON.stringify({
+        stage: 'Decision Bridge review proposal',
+        ready: true,
+        operationType: bridgeResult.proposal.operationType,
+        caseId: bridgeResult.proposal.caseId,
+        planId: bridgeResult.proposal.operationType === 'PLAN_DECISION'
+          ? bridgeResult.proposal.planId
+          : undefined,
+        actorId: bridgeResult.proposal.actorId,
+        actorRole: bridgeResult.proposal.actorRole,
+        decision: bridgeResult.proposal.decision,
+        requiresReview: bridgeResult.proposal.requiresReview,
+        reviewState: bridgeResult.proposal.reviewState,
+        evidenceCount: bridgeResult.proposal.evidence.length,
+      }, null, 2)}\n`);
+
+      if (mapped.value.decision === 'NEEDS_CLARIFICATION') {
+        throw new Error('Live proof stopped safely: NEEDS_CLARIFICATION is not an applicable final decision');
+      }
+      const postResultReview = await promptForPostResultReview();
+      if (postResultReview !== 'APPLY') {
+        expect(state.approvals.map(({ actorRole }) => actorRole)).toEqual(['supplier', 'production']);
+        throw new Error('Live proof discarded after review; no real CALL-E decision was applied');
+      }
+
+      const operationId = 'OPERATION-CALLE-LIVE-CLIENT-REAL';
+      const eventId = 'EVENT-CALLE-LIVE-CLIENT-REAL';
+      const approvalId = 'APPROVAL-CALLE-LIVE-CLIENT-REAL';
+      const application = executeOrchestrationAction(state, {
+        type: 'APPLY_REVIEWED_DECISION',
+        bridgeResult,
+        review: {
+          action: 'APPLY',
+          operationId,
+          reviewedBy: 'REVIEWER-CALLE-LIVE-HUMAN',
+          reviewedAt: REVIEWED_AT,
+          eventId,
+          approvalId,
+          authorizationReviews: [],
+        },
+      });
+      expect(application.accepted).toBe(true);
+      if (!application.accepted) throw new Error(`Exception Broker stopped safely: ${application.failure.reason}`);
+
+      const finalPlan = application.state.plans.find(({ id }) => id === PLAN_ID);
+      const appliedDecision = application.state.approvals.find(({ approvalId: id }) => id === approvalId);
+      expect(appliedDecision).toMatchObject({
+        caseId: CASE_ID,
+        planId: PLAN_ID,
+        actorId: CLIENT_ID,
+        actorRole: 'client',
+        decision: mapped.value.decision,
+      });
+      expect(application.state.operationHistory.some(({ operationId: id }) => id === operationId)).toBe(true);
+      expect(application.state.events.some((event) =>
+        event.eventId === eventId
+        && event.operationId === operationId
+        && event.requestId === mapped.value.requestId
+        && event.approvalId === approvalId)).toBe(true);
+
+      if (mapped.value.decision === 'APPROVED') {
+        expect(finalPlan?.status).toBe('APPROVED');
+        expect(application.disposition).toEqual({
+          type: 'LINEAGE_RESOLVED',
+          scope: { caseId: CASE_ID, lineageId: LINEAGE_ID, planId: PLAN_ID },
+        });
+      } else {
+        expect(mapped.value.decision).toBe('REJECTED');
+        expect(finalPlan?.status).toBe('REJECTED');
+        expect(application.disposition).toEqual({ type: 'AWAITING_EXTERNAL_ACTION' });
+        expect(application.state.plans).toHaveLength(1);
+      }
+
+      process.stdout.write(`${JSON.stringify({
+        stage: 'Exception Broker authoritative result',
+        disposition: application.disposition,
+        planStatus: finalPlan?.status,
+        appliedDecision: appliedDecision?.decision,
+        operationId,
+        eventId,
+        approvalId,
+      }, null, 2)}\n`);
+    },
+    300_000,
+  );
+});
