@@ -19,8 +19,11 @@ import {
   prepareDecisionProposal,
   type DecisionBridgeResult,
 } from '../../../src/integrations/calle/decisionBridge.js';
-import type { CallProvider } from '../../../src/integrations/calle/provider.js';
-import type { CallRequest } from '../../../src/integrations/calle/types.js';
+import {
+  ProviderOperationalError,
+  type CallProvider,
+} from '../../../src/integrations/calle/provider.js';
+import type { CallMappingResult, CallRequest } from '../../../src/integrations/calle/types.js';
 
 const LIVE_MODE = 'MANUAL_LIVE_RUN';
 const LIVE_CONFIRMATION = 'YES_RUN_REAL_CALL_E_E2E';
@@ -65,23 +68,75 @@ const manualLiveRunSelected =
   process.env.CALLE_LIVE_E2E_MODE === LIVE_MODE
   && process.env.CALLE_LIVE_E2E_CONFIRM === LIVE_CONFIRMATION;
 
+type HarnessPhase =
+  | 'RECORDING_PROVIDER_ENTERED'
+  | 'DELEGATE_INVOCATION_STARTED'
+  | 'DELEGATE_RETURNED'
+  | 'DELEGATE_THREW'
+  | 'EXECUTE_CALL_RETURNED'
+  | 'EXECUTE_CALL_THREW'
+  | 'MAPPING_SUCCESS_OBSERVED'
+  | 'MAPPING_FAILURE_OBSERVED';
+
+type SanitizedThrownError = Readonly<{
+  type: string;
+  category?: string;
+}>;
+
+const sanitizeThrownError = (error: unknown): SanitizedThrownError => {
+  if (error instanceof ProviderOperationalError) {
+    return { type: error.name, category: error.kind };
+  }
+  if (error instanceof Error) return { type: error.name || 'Error' };
+  return { type: typeof error };
+};
+
 class RecordingCallProvider implements CallProvider {
   readonly #delegate: CallProvider;
   invocationCount = 0;
+  delegateReturned = false;
+  delegateThrew = false;
   providerLevelResult: unknown;
+  thrownError: SanitizedThrownError | undefined;
+  readonly phases: HarnessPhase[] = [];
 
   constructor(delegate: CallProvider) {
     this.#delegate = delegate;
   }
 
+  recordPhase(phase: HarnessPhase): void {
+    this.phases.push(phase);
+  }
+
   async executeCall(request: CallRequest): Promise<unknown> {
+    this.recordPhase('RECORDING_PROVIDER_ENTERED');
     if (this.invocationCount !== 0) throw new Error('Live proof permits exactly one provider invocation');
     this.invocationCount += 1;
-    const result = await this.#delegate.executeCall(request);
-    this.providerLevelResult = result;
-    return result;
+    this.recordPhase('DELEGATE_INVOCATION_STARTED');
+    try {
+      const result = await this.#delegate.executeCall(request);
+      this.providerLevelResult = result;
+      this.delegateReturned = true;
+      this.recordPhase('DELEGATE_RETURNED');
+      return result;
+    } catch (error: unknown) {
+      this.delegateThrew = true;
+      this.thrownError = sanitizeThrownError(error);
+      this.recordPhase('DELEGATE_THREW');
+      throw error;
+    }
   }
 }
+
+const mappingFailureProjection = (
+  result: Extract<CallMappingResult, { success: false }>,
+): Readonly<Record<string, unknown>> => ({
+  success: false,
+  reason: result.reason,
+  retryable: result.retryable,
+  ...(result.externalStatus === undefined ? {} : { externalStatus: result.externalStatus }),
+  ...(result.issues === undefined ? {} : { issues: [...result.issues] }),
+});
 
 const maskPhone = (phone: string): string => {
   const suffix = phone.slice(-4);
@@ -118,6 +173,19 @@ const providerProofProjection = (value: unknown): Readonly<Record<string, unknow
     }),
   };
 };
+
+const recordingProofProjection = (
+  provider: RecordingCallProvider,
+): Readonly<Record<string, unknown>> => ({
+  invocationCount: provider.invocationCount,
+  delegateReturned: provider.delegateReturned,
+  delegateThrew: provider.delegateThrew,
+  ...(provider.thrownError === undefined ? {} : { thrownError: provider.thrownError }),
+  phases: [...provider.phases],
+  ...(provider.delegateReturned
+    ? { providerLevelEvidence: providerProofProjection(provider.providerLevelResult) }
+    : {}),
+});
 
 const safeCase = (): ExceptionCase => exceptionCaseSchema.parse({
   id: CASE_ID,
@@ -342,6 +410,56 @@ describe('CALL-E live end-to-end proof harness', () => {
     expect(selectorOnly).not.toHaveBeenCalledWith('CALLE_TEST_PHONE');
   });
 
+  it('records provider returns and sanitized thrown categories without changing behavior', async () => {
+    const returnedResult = { status: 'failed', structuredResult: null };
+    const returnedProvider = new RecordingCallProvider({
+      executeCall: vi.fn(async () => returnedResult),
+    });
+    await expect(returnedProvider.executeCall(callRequest('+15555550123'))).resolves.toBe(returnedResult);
+    expect(recordingProofProjection(returnedProvider)).toEqual({
+      invocationCount: 1,
+      delegateReturned: true,
+      delegateThrew: false,
+      phases: ['RECORDING_PROVIDER_ENTERED', 'DELEGATE_INVOCATION_STARTED', 'DELEGATE_RETURNED'],
+      providerLevelEvidence: {
+        status: 'failed',
+        structuredResult: null,
+        taskCompleted: undefined,
+        completionConfidence: undefined,
+        evidenceCount: undefined,
+      },
+    });
+
+    const originalError = new ProviderOperationalError('NETWORK_FAILURE');
+    const thrownProvider = new RecordingCallProvider({
+      executeCall: vi.fn(async () => {
+        throw originalError;
+      }),
+    });
+    await expect(thrownProvider.executeCall(callRequest('+15555550123'))).rejects.toBe(originalError);
+    expect(recordingProofProjection(thrownProvider)).toEqual({
+      invocationCount: 1,
+      delegateReturned: false,
+      delegateThrew: true,
+      thrownError: { type: 'ProviderOperationalError', category: 'NETWORK_FAILURE' },
+      phases: ['RECORDING_PROVIDER_ENTERED', 'DELEGATE_INVOCATION_STARTED', 'DELEGATE_THREW'],
+    });
+
+    const secret = 'must-not-appear-in-diagnostics';
+    expect(JSON.stringify(sanitizeThrownError(new Error(secret)))).not.toContain(secret);
+    expect(mappingFailureProjection({
+      success: false,
+      reason: 'Call provider network failure',
+      retryable: true,
+      issues: ['Provider operational error: NETWORK_FAILURE'],
+    })).toEqual({
+      success: false,
+      reason: 'Call provider network failure',
+      retryable: true,
+      issues: ['Provider operational error: NETWORK_FAILURE'],
+    });
+  });
+
   it.skipIf(!manualLiveRunSelected)(
     'places exactly one real CALL-E call and applies only the post-result reviewed decision',
     async () => {
@@ -366,14 +484,35 @@ describe('CALL-E live end-to-end proof harness', () => {
         maskedDestination: maskPhone(request.phoneNumber),
       }, null, 2)}\n`);
 
-      const mapped = await executeCall(recordingProvider, request, CALL_RECEIVED_AT);
+      let mapped: CallMappingResult;
+      try {
+        mapped = await executeCall(recordingProvider, request, CALL_RECEIVED_AT);
+        recordingProvider.recordPhase('EXECUTE_CALL_RETURNED');
+        recordingProvider.recordPhase(mapped.success
+          ? 'MAPPING_SUCCESS_OBSERVED'
+          : 'MAPPING_FAILURE_OBSERVED');
+      } catch (error: unknown) {
+        recordingProvider.recordPhase('EXECUTE_CALL_THREW');
+        process.stdout.write(`${JSON.stringify({
+          stage: 'CALL-E provider diagnostic',
+          recording: recordingProofProjection(recordingProvider),
+          executeCallError: sanitizeThrownError(error),
+        }, null, 2)}\n`);
+        throw error;
+      }
       expect(recordingProvider.invocationCount).toBe(1);
       process.stdout.write(`${JSON.stringify({
-        stage: 'CALL-E provider response',
-        providerLevelEvidence: providerProofProjection(recordingProvider.providerLevelResult),
+        stage: 'CALL-E provider diagnostic',
+        recording: recordingProofProjection(recordingProvider),
       }, null, 2)}\n`);
+      if (!mapped.success) {
+        process.stdout.write(`${JSON.stringify({
+          stage: 'CALL-E mapping failure',
+          mapping: mappingFailureProjection(mapped),
+        }, null, 2)}\n`);
+        throw new Error(`Live CALL-E mapping stopped safely: ${mapped.reason}`);
+      }
       expect(mapped.success).toBe(true);
-      if (!mapped.success) throw new Error(`Live CALL-E mapping stopped safely: ${mapped.reason}`);
       expect(mapped.value).toMatchObject({
         requestId: request.requestId,
         caseId: CASE_ID,
