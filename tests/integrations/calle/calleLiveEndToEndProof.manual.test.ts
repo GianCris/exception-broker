@@ -341,7 +341,7 @@ const prepareLocalState = (): OrchestrationState => {
 };
 
 const callRequest = (phoneNumber: string): CallRequest => createCallRequest({
-  requestId: 'REQUEST-CALLE-LIVE-CLIENT-REAL-V2',
+  requestId: 'REQUEST-CALLE-LIVE-CLIENT-REAL-V3',
   caseId: CASE_ID,
   planId: PLAN_ID,
   actorId: CLIENT_ID,
@@ -350,13 +350,15 @@ const callRequest = (phoneNumber: string): CallRequest => createCallRequest({
   objective: [
     "You are calling CALL-E's official automated testing hotline for a synthetic Exception Broker hackathon proof.",
     `Ask the automated general-purpose test agent to role-play only as the synthetic Client for ${PLAN_ID}.`,
-    'Obtain exactly one explicit synthetic decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION.',
-    'No authorization change is requested. Once one outcome is clearly stated, conclude the interaction.',
+    'Ask it to evaluate the synthetic proposal facts against the synthetic Client policy, briefly state its reason, and choose exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION.',
+    'No authorization change is requested. Once the reason and one outcome are clearly stated, conclude the interaction.',
   ].join(' '),
   context: [
-    `Synthetic case ${CASE_ID}; synthetic plan ${PLAN_ID}: 500 units, with 350 original and 150 substitute.`,
     'The automated test agent has no real customer authority, and this interaction has no real-world operational effect.',
-    'Return only the single outcome explicitly stated by the automated test agent; do not infer or favor any outcome.',
+    'Synthetic Client policy: APPROVED if every required condition is satisfied; REJECTED if any stated hard condition is violated; NEEDS_CLARIFICATION only if information required to evaluate the conditions is missing or ambiguous.',
+    `Required conditions: substitute quantity must not exceed 180 units; Client additional cost must not exceed 100; all 500 units must be delivered by ${TARGET_AT}.`,
+    `Proposal facts for synthetic case ${CASE_ID}: 350 original and 150 substitute units are proposed for ${TARGET_AT}; total additional substitute cost is 75, allocated as Client 0, Supplier 75, and Production 0.`,
+    'Evaluate the policy and facts independently; do not infer or favor any outcome.',
   ].join(' '),
   expectedDecisionSchema: PHONE_DECISION_SCHEMA,
   createdAt: CALL_CREATED_AT,
@@ -411,7 +413,7 @@ describe('CALL-E live end-to-end proof harness', () => {
   });
 
   it('records provider returns and sanitized thrown categories without changing behavior', async () => {
-    expect(callRequest('+15555550123').requestId).toBe('REQUEST-CALLE-LIVE-CLIENT-REAL-V2');
+    expect(callRequest('+15555550123').requestId).toBe('REQUEST-CALLE-LIVE-CLIENT-REAL-V3');
 
     const returnedResult = { status: 'failed', structuredResult: null };
     const returnedProvider = new RecordingCallProvider({
@@ -574,7 +576,22 @@ describe('CALL-E live end-to-end proof harness', () => {
       }, null, 2)}\n`);
 
       if (mapped.value.decision === 'NEEDS_CLARIFICATION') {
-        throw new Error('Live proof stopped safely: NEEDS_CLARIFICATION is not an applicable final decision');
+        expect(state.approvals.map(({ actorRole }) => actorRole)).toEqual(['supplier', 'production']);
+        expect(state.plans.find(({ id }) => id === PLAN_ID)?.status).toBe('PENDING_APPROVAL');
+        expect(state.operationHistory).toHaveLength(2);
+        expect(state.events).toHaveLength(2);
+        process.stdout.write(`${JSON.stringify({
+          stage: 'Exception Broker safe stop',
+          runtimePipelineReached: 'DECISION_BRIDGE',
+          applicationReached: false,
+          safeStopReason: 'CLARIFICATION_REQUIRED',
+          decision: mapped.value.decision,
+          caseId: mapped.value.caseId,
+          planId: mapped.value.planId,
+          actorId: mapped.value.actorId,
+          actorRole: mapped.value.actorRole,
+        }, null, 2)}\n`);
+        return;
       }
       const postResultReview = await promptForPostResultReview();
       if (postResultReview !== 'APPLY') {
