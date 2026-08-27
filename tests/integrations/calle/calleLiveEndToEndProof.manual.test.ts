@@ -341,7 +341,7 @@ const prepareLocalState = (): OrchestrationState => {
 };
 
 const callRequest = (phoneNumber: string): CallRequest => createCallRequest({
-  requestId: 'REQUEST-CALLE-LIVE-CLIENT-REAL',
+  requestId: 'REQUEST-CALLE-LIVE-CLIENT-REAL-V2',
   caseId: CASE_ID,
   planId: PLAN_ID,
   actorId: CLIENT_ID,
@@ -411,6 +411,8 @@ describe('CALL-E live end-to-end proof harness', () => {
   });
 
   it('records provider returns and sanitized thrown categories without changing behavior', async () => {
+    expect(callRequest('+15555550123').requestId).toBe('REQUEST-CALLE-LIVE-CLIENT-REAL-V2');
+
     const returnedResult = { status: 'failed', structuredResult: null };
     const returnedProvider = new RecordingCallProvider({
       executeCall: vi.fn(async () => returnedResult),
