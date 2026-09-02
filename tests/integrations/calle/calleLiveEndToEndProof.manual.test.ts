@@ -27,6 +27,7 @@ import type { CallMappingResult, CallRequest } from '../../../src/integrations/c
 
 const LIVE_MODE = 'MANUAL_LIVE_RUN';
 const LIVE_CONFIRMATION = 'YES_RUN_REAL_CALL_E_E2E';
+const DEDICATED_LIVE_TEST_SELECTION = 'CALLE_LIVE_E2E_DEDICATED_SELECTION';
 const CASE_ID = 'CASE-CALLE-LIVE-E2E';
 const PLAN_ID = 'PLAN-CALLE-LIVE-E2E';
 const LINEAGE_ID = 'LINEAGE-CALLE-LIVE-E2E';
@@ -46,11 +47,31 @@ type EnvironmentName =
 type EnvironmentReader = (name: EnvironmentName) => string | undefined;
 
 type LiveConfiguration = Readonly<
-  | { authorized: false; reason: 'LIVE_MODE_REQUIRED' | 'LIVE_CONFIRMATION_REQUIRED' }
+  | {
+    authorized: false;
+    reason:
+      | 'DEDICATED_MANUAL_TEST_SELECTION_REQUIRED'
+      | 'LIVE_MODE_REQUIRED'
+      | 'LIVE_CONFIRMATION_REQUIRED';
+  }
   | { authorized: true; apiKey: string; phoneNumber: string }
 >;
 
-const readLiveConfiguration = (readEnvironment: EnvironmentReader): LiveConfiguration => {
+type VitestSelectionConfiguration = Readonly<{
+  testNamePattern?: RegExp;
+}>;
+
+const hasDedicatedLiveTestSelection = (
+  configuration: VitestSelectionConfiguration | undefined,
+): boolean => configuration?.testNamePattern?.source === DEDICATED_LIVE_TEST_SELECTION;
+
+const readLiveConfiguration = (
+  dedicatedLiveTestSelected: boolean,
+  readEnvironment: EnvironmentReader,
+): LiveConfiguration => {
+  if (!dedicatedLiveTestSelected) {
+    return { authorized: false, reason: 'DEDICATED_MANUAL_TEST_SELECTION_REQUIRED' };
+  }
   if (readEnvironment('CALLE_LIVE_E2E_MODE') !== LIVE_MODE) {
     return { authorized: false, reason: 'LIVE_MODE_REQUIRED' };
   }
@@ -64,8 +85,13 @@ const readLiveConfiguration = (readEnvironment: EnvironmentReader): LiveConfigur
   return { authorized: true, apiKey, phoneNumber };
 };
 
+const vitestSelectionConfiguration = (
+  globalThis as { __vitest_worker__?: { config?: VitestSelectionConfiguration } }
+).__vitest_worker__?.config;
+const dedicatedLiveTestSelected = hasDedicatedLiveTestSelection(vitestSelectionConfiguration);
 const manualLiveRunSelected =
-  process.env.CALLE_LIVE_E2E_MODE === LIVE_MODE
+  dedicatedLiveTestSelected
+  && process.env.CALLE_LIVE_E2E_MODE === LIVE_MODE
   && process.env.CALLE_LIVE_E2E_CONFIRM === LIVE_CONFIRMATION;
 
 type HarnessPhase =
@@ -390,26 +416,65 @@ const promptForPostResultReview = async (): Promise<'APPLY' | 'DISCARD'> => {
 };
 
 describe('CALL-E live end-to-end proof harness', () => {
-  it('requires the dedicated live selector and exact confirmation before reading credentials', () => {
+  it('requires deliberate test selection, live mode, and exact confirmation before reading credentials', () => {
+    expect(hasDedicatedLiveTestSelection(undefined)).toBe(false);
+    expect(hasDedicatedLiveTestSelection({})).toBe(false);
+    expect(hasDedicatedLiveTestSelection({ testNamePattern: /CALL-E/ })).toBe(false);
+    expect(hasDedicatedLiveTestSelection({
+      testNamePattern: /CALLE_LIVE_E2E_DEDICATED_SELECTION/,
+    })).toBe(true);
+
+    const allLiveValues: Partial<Record<EnvironmentName, string>> = {
+      CALLE_LIVE_E2E_MODE: LIVE_MODE,
+      CALLE_LIVE_E2E_CONFIRM: LIVE_CONFIRMATION,
+      CALLE_API_KEY: 'configured-but-must-not-be-read',
+      CALLE_TEST_PHONE: 'configured-phone-must-not-be-read',
+    };
+    const ordinarySuite = vi.fn<EnvironmentReader>((name) => allLiveValues[name]);
+    expect(readLiveConfiguration(false, ordinarySuite)).toEqual({
+      authorized: false,
+      reason: 'DEDICATED_MANUAL_TEST_SELECTION_REQUIRED',
+    });
+    expect(ordinarySuite).not.toHaveBeenCalled();
+
     const credentialsOnlyValues: Partial<Record<EnvironmentName, string>> = {
       CALLE_API_KEY: 'configured-but-must-not-be-read',
       CALLE_TEST_PHONE: 'configured-phone-must-not-be-read',
     };
-    const credentialsOnly = vi.fn<EnvironmentReader>((name) => credentialsOnlyValues[name]);
-    expect(readLiveConfiguration(credentialsOnly)).toEqual({ authorized: false, reason: 'LIVE_MODE_REQUIRED' });
-    expect(credentialsOnly).toHaveBeenCalledTimes(1);
-    expect(credentialsOnly).not.toHaveBeenCalledWith('CALLE_API_KEY');
-    expect(credentialsOnly).not.toHaveBeenCalledWith('CALLE_TEST_PHONE');
+    const dedicatedWithoutMode = vi.fn<EnvironmentReader>((name) => credentialsOnlyValues[name]);
+    expect(readLiveConfiguration(true, dedicatedWithoutMode)).toEqual({
+      authorized: false,
+      reason: 'LIVE_MODE_REQUIRED',
+    });
+    expect(dedicatedWithoutMode).not.toHaveBeenCalledWith('CALLE_API_KEY');
+    expect(dedicatedWithoutMode).not.toHaveBeenCalledWith('CALLE_TEST_PHONE');
 
-    const selectorOnlyValues: Partial<Record<EnvironmentName, string>> = {
+    const modeWithoutConfirmationValues: Partial<Record<EnvironmentName, string>> = {
       CALLE_LIVE_E2E_MODE: LIVE_MODE,
-      CALLE_API_KEY: 'configured-but-must-not-be-read',
-      CALLE_TEST_PHONE: 'configured-phone-must-not-be-read',
+      ...credentialsOnlyValues,
     };
-    const selectorOnly = vi.fn<EnvironmentReader>((name) => selectorOnlyValues[name]);
-    expect(readLiveConfiguration(selectorOnly)).toEqual({ authorized: false, reason: 'LIVE_CONFIRMATION_REQUIRED' });
-    expect(selectorOnly).not.toHaveBeenCalledWith('CALLE_API_KEY');
-    expect(selectorOnly).not.toHaveBeenCalledWith('CALLE_TEST_PHONE');
+    const dedicatedWithoutConfirmation = vi.fn<EnvironmentReader>(
+      (name) => modeWithoutConfirmationValues[name],
+    );
+    expect(readLiveConfiguration(true, dedicatedWithoutConfirmation)).toEqual({
+      authorized: false,
+      reason: 'LIVE_CONFIRMATION_REQUIRED',
+    });
+    expect(dedicatedWithoutConfirmation).not.toHaveBeenCalledWith('CALLE_API_KEY');
+    expect(dedicatedWithoutConfirmation).not.toHaveBeenCalledWith('CALLE_TEST_PHONE');
+
+    const fullyAuthorized = vi.fn<EnvironmentReader>((name) => allLiveValues[name]);
+    expect(readLiveConfiguration(true, fullyAuthorized)).toEqual({
+      authorized: true,
+      apiKey: 'configured-but-must-not-be-read',
+      phoneNumber: 'configured-phone-must-not-be-read',
+    });
+    expect(fullyAuthorized.mock.calls.map(([name]) => name)).toEqual([
+      'CALLE_LIVE_E2E_MODE',
+      'CALLE_LIVE_E2E_CONFIRM',
+      'CALLE_API_KEY',
+      'CALLE_TEST_PHONE',
+    ]);
   });
 
   it('records provider returns and sanitized thrown categories without changing behavior', async () => {
@@ -465,9 +530,12 @@ describe('CALL-E live end-to-end proof harness', () => {
   });
 
   it.skipIf(!manualLiveRunSelected)(
-    'places exactly one real CALL-E call and applies only the post-result reviewed decision',
+    `${DEDICATED_LIVE_TEST_SELECTION} places exactly one real CALL-E call and applies only the post-result reviewed decision`,
     async () => {
-      const configuration = readLiveConfiguration((name) => process.env[name]);
+      const configuration = readLiveConfiguration(
+        dedicatedLiveTestSelected,
+        (name) => process.env[name],
+      );
       if (!configuration.authorized) throw new Error(`Live execution not authorized: ${configuration.reason}`);
 
       const state = prepareLocalState();
