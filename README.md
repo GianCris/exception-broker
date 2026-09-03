@@ -1,83 +1,165 @@
 # Exception Broker
 
+**A successful AI interaction is not authority to execute.**
+
 Exception Broker is an execution-control layer that separates AI-acquired decisions from authority to change operational state.
 
-A successful AI interaction is not authority to execute.
+The current browser proof is deterministic and local: its decisions are explicit synthetic inputs, not AI-generated or CALL-E-generated results. The shortage scenario demonstrates the boundary; it does not define the entire product category.
 
-The current implementation demonstrates this boundary deterministically across Supplier, Production, and Client recovery scenarios.
+## The represented decision is APPROVED. The broker still blocks its application.
 
-## Project value
+| H02 input | Value |
+|---|---:|
+| Represented decision | **APPROVED** |
+| Proposed substitutes | **150** |
+| Client authorization limit | **180** |
+| Physical substitute supply | **100** |
 
-When operational authority is fragmented across systems and parties, an AI can obtain a valid decision that still must not execute. Exception Broker provides the control boundary between acquired intent and authoritative action.
+Authorization is sufficient. Modeled physical supply is not.
 
-It checks exact plan version and lineage currentness, authorization, modeled physical feasibility, and exact review binding before applicable local state mutation. It exposes inspectable local decision, operation, and event records—not a persistent or tamper-evident audit store.
+After explicit bound review, the broker attempts local application through the existing executor/Decision Application path and returns **BLOCK**:
 
-## Demo
+`PLAN_PHYSICALLY_INFEASIBLE` · `SUBSTITUTE_SUPPLY_EXCEEDED`
 
-The default browser demo uses deterministic evidence and explicit synthetic decisions. It makes no real phone calls or external API requests. Configured ERP/WMS source identities are not live integrations; source identity and stable configuration are trusted upstream, not authenticated here.
+**This blocked application attempt creates zero new decision, operation, or event records and preserves the exact pre-attempt state.** The proposal remains unapproved. These are assertions against the real local execution boundary, not a frontend-only BLOCK label. [Inspect the H02 proof and its zero-effects assertions](tests/application/productProofV2.heterogeneousEvidence.test.ts).
 
-The independent scenarios are:
+This demonstration uses configured evidence and synthetic decisions. It performs no shipment, ERP/WMS write, or external operational execution.
 
-- H02: an APPROVED decision is blocked by modeled physical infeasibility.
-- H01: an independently supportable recovery reaches exact local plan-lineage resolution after the required explicit reviews.
-- H03: conflicting physical evidence prevents trusted operational state from being established.
+**CALL-E is separately proven live:** real interactions reached structured clarification/Bridge or failed closed on null output. Live approved/rejected mutation was not demonstrated. The two evidence lanes below keep those claims distinct.
 
-CASE-001 remains retained legacy simulation proof, not the default UI or a mandatory generalized workflow. No scenario ships goods or writes to ERP/WMS systems.
+## One boundary, three independent proofs
 
-The separate historical CALL-E panel reports operator-confirmed live interactions: Run #4 returned structured NEEDS_CLARIFICATION, reached mapper/Bridge, and stopped without application; Run #5 completed with null structured output and failed closed. Live CALL-E APPROVED/REJECTED → review → mutation is not demonstrated. These runs did not generate H01/H02/H03; no original recording is bundled.
+| Scenario | Evidence condition | Local outcome | What it establishes |
+|---|---|---|---|
+| **H02 — BLOCK** | 150 substitutes proposed; 180 authorized; 100 available | Reviewed APPROVED decision blocked; zero new effects | Agreement and authorization do not create physical supply |
+| **H01 — ALLOW** | Sufficient modeled supply and required bound reviews | Exact local plan-lineage finalization | Supportable recovery can proceed; the broker does not merely block everything |
+| **H03 — WAIT** | Authoritative physical-supply claims conflict | No trusted case, registration, review, or application | Uncertain operational truth is not silently converted into actionable state |
 
-## Requirements
+The scenarios are independent. **H01 does not repair H02.** They share the same core recovery intent while changing the physical evidence condition. H01 requires separate Client, Production, and Supplier reviews; partial approval is not final recovery authorization.
 
-- Node.js `^20.19.0` or `>=22.12.0`.
-- npm.
+The UI's formal, physical, and currentness explanations are read-only snapshot assessments, **not chronological gate telemetry**. H03 stops earlier, at evidence assembly; it does not fabricate a case to claim physical infeasibility. Product Proof v2 also tests missing physical evidence, beyond the browser's conflicting-evidence example.
 
-## Installation
+## CALL-E: two evidence lanes
 
-Install the exact dependencies recorded in `package-lock.json`:
+### Lane A — Historical live acquisition
+
+Real CALL-E provider interactions and completed tasks were observed:
+
+- **Run #4:** schema-valid `NEEDS_CLARIFICATION` → mapper accepted → intended business identities preserved → Decision Bridge ready → stopped without application.
+- **Run #5:** completed task → `structuredResult=null` → mapper failed closed → no downstream application or effects.
+
+**Live CALL-E APPROVED/REJECTED → review → mutation was not demonstrated.** Historical CALL-E calls did not generate H01/H02/H03. Run summaries are operator-confirmed; no original live recording is bundled.
+
+The [CALL-E provider](src/integrations/calle/callEProvider.ts) invokes the SDK's `calls.createAndWait`; the existing mapper and Bridge handle the returned decision evidence. A completed provider task is not itself a usable decision, and a usable decision is not itself permission to apply it.
+
+### Lane B — Deterministic execution-control proof
+
+H01/H02 use synthetic normalized decisions with the real Bridge, explicit bound review, and executor/Application. H03 never reaches that decision path. This lane demonstrates local ALLOW/BLOCK/WAIT behavior independently of live acquisition.
+
+## H02: inputs and blocked application
+
+These are two genuine localhost captures from the same deterministic H02 scenario. They are not historical CALL-E evidence. Open either image at full size to inspect the text.
+
+![H02 deterministic inputs: APPROVED decision, 150 proposed substitutes, 180 authorized, and 100 physically available](docs/readme/h02-inputs.png)
+
+*H02 — deterministic inputs before application. The represented decision is APPROVED; 150 substitutes are proposed, 180 are authorized, but only 100 are physically available. Configured ERP/WMS sources are not live integrations.*
+
+![H02 after local application attempt: BLOCK, physical supply failure reasons, zero new records, and preserved broker state](docs/readme/h02-blocked-application.png)
+
+*H02 — after the reviewed local application attempt. The broker returns BLOCK with PLAN_PHYSICALLY_INFEASIBLE / SUBSTITUTE_SUPPLY_EXCEEDED, creates zero new decision, operation, or event records, and preserves the pre-attempt broker state.*
+
+## Responsibility boundaries
+
+This is a structural map of responsibilities and demonstrated endpoints, not an execution log. The two lanes are deliberately disconnected; no arrow claims a successful live mutation.
+
+```text
+HISTORICAL LIVE ACQUISITION PROOF
+CALL-E -> mapper -> Bridge -> clarification STOP (Run #4)
+CALL-E -> mapper -> null-result STOP             (Run #5)
+
+DETERMINISTIC EXECUTION-CONTROL PROOF
+Configured evidence -> Evidence Boundary -> trusted local case
+                             | conflict
+                             +-----------> WAIT; no case (H03)
+Explicit planner proposal ----------------> plan registration
+Synthetic decision -> Bridge -> explicit bound review
+                                    |
+Trusted local case + registered plan + reviewed proposal
+                                    |
+                         executor / Decision Application
+                                    |
+                        local ALLOW (H01) / BLOCK (H02)
+```
+
+Evidence assembly establishes which supplied facts may enter trusted state under the configured policy. It does not approve a plan. Plan registration records an explicit proposal; acceptance there does not mean approvability. Decision Application remains responsible for the applicable action controls, and the executor reports exact local outcomes and effects.
+
+## More than approval routing
+
+The distinction is behavioral: H02's reviewed APPROVED decision still fails because modeled physical evidence cannot support it. F-04 binds review to exact proposal semantics: **Review A cannot authorize Proposal B**. Exact plan/version and lineage checks reject superseded decisions; predecessor approvals cannot authorize a successor.
+
+Authorization is checked separately from availability. An authorization change does not automatically create supply, a successor, or approval. Supported replay/idempotency protections reject reused operation/approval identities rather than creating a second business effect. H03 stops before trusted-state construction, while H01 proves liveness through the same local controls.
+
+Workflow products can implement controls too. This repository's evidence is that these execution-control boundaries are explicit and independently tested—not that other products cannot implement them. Inspect the linked assertions rather than interpreting a successful operation as universal safety or final authorization.
+
+## Reproduce the proof
+
+Use Node.js `^20.19.0` or `>=22.12.0`, with npm. Install the lockfile dependencies, run the suite, then start the browser app:
 
 ```sh
 npm ci
-```
-
-## Local execution
-
-Start the application:
-
-```sh
+npm test
 npm run dev
 ```
 
-Open the `Local` URL reported by Vite in a browser. On the screen:
+`npm ci` requires normal package-registry access. Once installed, the deterministic proof needs no CALL-E credentials or paid service. Ordinary `npm test` skips the manually gated live CALL-E test. Open the Local URL printed by Vite.
 
-1. Confirm the local in-memory demonstration label. H02 is selected initially.
-2. Inspect the proposal, configured evidence, and represented decision before selecting `Apply reviewed decision` or `Discard`.
-3. Inspect the actual broker outcome and effects of that attempt. Expand the bound review and operation details for identifiers.
-4. Select H01 or H03 to start independent state. H01 requires three separate role reviews; H03 never reaches review.
+1. **H02 starts selected.** Inspect 150/180/100 and the represented decision. Select **Apply reviewed decision**. Expect `PLAN_PHYSICALLY_INFEASIBLE`, `SUBSTITUTE_SUPPLY_EXCEEDED`, zero new effects, and exact state preservation.
+2. **Select H01 independently.** Apply the Client, Production, and Supplier reviews separately. Expect WAIT before the final required review, then local ALLOW / `LINEAGE_RESOLVED` for the exact plan lineage.
+3. **Select H03.** Expect conflicting unaccepted claims and WAIT, without a review/application action. Resetting or switching scenarios starts independent state.
 
-## What the jury should observe
+Expand proposal and operation details to inspect identities. **Discard** uses the bound review path without applying the decision; it is not a business-safety BLOCK. All displayed effects belong to the local demonstration.
 
-- Exception Broker blocks application of an APPROVED decision at the local broker boundary when the modeled operational evidence cannot support it: H02 proposes 150 substitutes, authorization permits 180, but physical supply supports only 100. The failed attempt creates no decision, operation, or event records.
-- H01 has sufficient physical supply and reaches ALLOW only for the exact approved local plan lineage. Supporting formal, physical, and currentness assessments are snapshot queries, not chronological gate telemetry.
-- H03 shows WAIT with conflicting, unaccepted claims and no trusted case or application.
-- Registration, partial approval, and authorization changes are not final recovery authorization. Authorization alone does not create supply, a successor, or approval.
-- Effects and identifiers are local and inspectable. No external execution, authenticated reviewer identity, or general freshness/latest-inventory guarantee is demonstrated.
-
-## Verification
-
-Run the complete test suite:
+Run just the heterogeneous-evidence proof:
 
 ```sh
-npm test
+npm test -- tests/application/productProofV2.heterogeneousEvidence.test.ts
 ```
 
-Check the types:
+Additional repository checks:
 
 ```sh
 npm run typecheck
-```
-
-Generate the production build:
-
-```sh
 npm run build
+git diff --check
 ```
+
+The manual live harness is an operator tool, not part of this quickstart. Its dedicated test selection, exact mode/confirmation gates, credentials, and post-result review are separate requirements. A harness filename is not proof that every live stage occurred.
+
+## Claim-to-evidence index
+
+| Claim / boundary | Inspect |
+|---|---|
+| H01/H02/H03 and frozen causal comparison | [Product Proof v2](tests/application/productProofV2.heterogeneousEvidence.test.ts) |
+| UI outcomes come from real local review/application | [Proof UX tests](tests/ui/ProofExperience.test.tsx), [demo adapter tests](tests/demo/proofDemo.test.ts) |
+| Exact review binding, authorization, rejection and idempotency | [Decision Application / F-04 tests](tests/integrations/calle/decisionApplication.test.ts) |
+| Twelve named safety and liveness scenarios | [Product Proof Benchmark v1](tests/application/productProofBenchmark.v1.test.ts) |
+| Frozen unseen CASE-005 composition | [Unseen challenge](tests/application/adaptiveOrchestrator.unseenChallenge.test.ts) |
+| Authority, provenance, effective instant, missing/conflicting evidence | [Evidence Boundary tests](tests/application/evidenceBoundary.test.ts), [implementation](src/application/evidenceBoundary.ts) |
+| Physical supply is not authorization | [Physical Feasibility tests](tests/domain/physicalFeasibility.test.ts) |
+| Explicit actions, scoped resolution, failure-state preservation | [Adaptive executor tests](tests/application/adaptiveOrchestrator.test.ts), [implementation](src/application/adaptiveOrchestrator.ts) |
+| CALL-E request construction, normalization and context checks—offline tests | [Provider](tests/integrations/calle/callEProvider.test.ts), [mapper](tests/integrations/calle/mapper.test.ts), [Bridge](tests/integrations/calle/decisionBridge.test.ts) |
+| Manually gated live procedure and sanitized stage reporting | [Live harness](tests/integrations/calle/calleLiveEndToEndProof.manual.test.ts) |
+
+Benchmarks establish their named scenarios, not production reliability statistics or universal generalization. CASE-001 remains retained legacy simulation proof, not the default UI or a required generalized sequence. Live-run observations and deterministic test results are different evidence classes.
+
+## Proof limits
+
+Configured ERP/WMS labels are not live integrations. Declared source identity and stable configuration are trusted upstream; the broker does not independently authenticate those systems or people. Plan-lineage currentness is not general evidence freshness or latest-inventory synchronization.
+
+Records are inspectable local decision, operation, and event data—not persistent or tamper-evident audit storage. The proof does not demonstrate external shipment/order execution, production reliability, multichannel resilience, cryptographic acquisition-attempt provenance, or universal safety. Live approved/rejected application remains outside the demonstrated CALL-E evidence described above.
+
+## Commercial direction
+
+The demonstrated wedge is locally controlled Supplier/Production/Client recovery with separately supplied authority and operational evidence. The broader direction is operational exception execution control where facts and authority are distributed across systems and parties: **obtaining agreement does not establish that an action is operationally supportable**.
+
+The shortage is a proof vehicle for that boundary, not the whole product category. Enterprise deployment would still require real adapters, upstream authentication, durable records and lifecycle controls, and operational hardening. No customer validation, deployment, adoption, revenue, or ROI claim is made here.
