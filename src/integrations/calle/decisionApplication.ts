@@ -18,6 +18,7 @@ import {
   type ProcessedOperation,
 } from '../../domain/operationHistory.js';
 import type { Approval, ExceptionCase, Plan } from '../../domain/types.js';
+import { compareIsoInstants } from '../../domain/dateTime.js';
 import {
   assessPhysicalFeasibility,
   type PhysicalFeasibilityAssessment,
@@ -28,7 +29,14 @@ import {
 } from '../../domain/planLineage.js';
 import { approvalIdSchema } from '../../domain/schemas.js';
 import { validatePlan } from '../../domain/validator.js';
-import type { DecisionBridgeResult, DecisionProposal } from './decisionBridge.js';
+import {
+  deriveReviewTarget,
+  reviewTargetSchema,
+  reviewTargetsEqual,
+  type DecisionBridgeResult,
+  type DecisionProposal,
+  type ReviewTarget,
+} from './decisionBridge.js';
 
 export type AuthorizationReview = Readonly<{
   field: AuthorizationField;
@@ -40,11 +48,21 @@ export type ReviewCommand =
   | Readonly<{
       action: 'APPLY'; operationId: string; reviewedBy: string; reviewedAt: string;
       eventId: string; approvalId?: string; authorizationReviews: readonly AuthorizationReview[];
+      reviewTarget: ReviewTarget;
     }>
   | Readonly<{
       action: 'DISCARD'; operationId: string; reviewedBy: string; reviewedAt: string;
-      reason?: string;
+      reason?: string; reviewTarget: ReviewTarget;
     }>;
+
+export type UnboundReviewCommand =
+  | Omit<Extract<ReviewCommand, { action: 'APPLY' }>, 'reviewTarget'>
+  | Omit<Extract<ReviewCommand, { action: 'DISCARD' }>, 'reviewTarget'>;
+
+export const bindReviewCommand = (
+  command: UnboundReviewCommand,
+  reviewTarget: ReviewTarget,
+): ReviewCommand => ({ ...command, reviewTarget });
 
 export type DecisionApplicationContext = Readonly<{
   exceptionCase: ExceptionCase;
@@ -118,6 +136,25 @@ export const applyReviewedDecision = (
   if (!nonEmpty(command.operationId)) return fail(context, 'OPERATION_ID_REQUIRED');
   if (!nonEmpty(command.reviewedBy)) return fail(context, 'REVIEWER_REQUIRED');
   if (!iso(command.reviewedAt)) return fail(context, 'REVIEWED_AT_INVALID');
+  const suppliedTarget = reviewTargetSchema.safeParse((command as ReviewCommand).reviewTarget);
+  if (!suppliedTarget.success) {
+    const issue = (command as Partial<ReviewCommand>).reviewTarget === undefined ? 'MISSING' : 'MALFORMED';
+    return fail(context, 'REVIEW_PROPOSAL_BINDING_INVALID', [issue]);
+  }
+  const proposal = bridgeResult.proposal;
+  const malformed = proposalIssue(proposal);
+  if (malformed !== undefined) return fail(context, malformed);
+  const bridgeTarget = reviewTargetSchema.safeParse(bridgeResult.reviewTarget);
+  if (!bridgeTarget.success) return fail(context, 'REVIEW_PROPOSAL_BINDING_INVALID', ['MALFORMED']);
+  const expectedTarget = deriveReviewTarget(proposal);
+  if (!reviewTargetsEqual(bridgeTarget.data as ReviewTarget, expectedTarget)
+    || !reviewTargetsEqual(suppliedTarget.data as ReviewTarget, expectedTarget)) {
+    return fail(context, 'REVIEW_PROPOSAL_BINDING_INVALID', ['MISMATCH']);
+  }
+  const chronology = compareIsoInstants(command.reviewedAt, proposal.receivedAt);
+  if (!chronology.valid || chronology.order === -1) {
+    return fail(context, 'REVIEW_TIMESTAMP_PRECEDES_PROPOSAL');
+  }
   if (command.action === 'DISCARD') return fail(context, 'DISCARDED_BY_REVIEWER');
   if (command.action !== 'APPLY') return fail(context, 'REVIEW_ACTION_INVALID');
   if (!nonEmpty(command.eventId)) return fail(context, 'EVENT_ID_REQUIRED');
@@ -127,9 +164,6 @@ export const applyReviewedDecision = (
   if (!duplicate.success) return fail(context, 'OPERATION_HISTORY_INSUFFICIENT', duplicate.issues);
   if (duplicate.processed) return fail(context, 'DUPLICATE_OPERATION');
 
-  const proposal = bridgeResult.proposal;
-  const malformed = proposalIssue(proposal);
-  if (malformed !== undefined) return fail(context, malformed);
   if ((proposal.decision as string) === 'PENDING') return fail(context, 'PENDING_NOT_APPLICABLE');
   if (proposal.decision === 'NEEDS_CLARIFICATION') return fail(context, 'NEEDS_CLARIFICATION');
   if (proposal.caseId !== context.exceptionCase.id) return fail(context, 'CASE_MISMATCH');

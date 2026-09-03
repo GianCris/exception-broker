@@ -16,9 +16,11 @@ import { executeCall } from '../../../src/integrations/calle/adapter.js';
 import { CallEProvider } from '../../../src/integrations/calle/callEProvider.js';
 import { PHONE_DECISION_SCHEMA, createCallRequest } from '../../../src/integrations/calle/contract.js';
 import {
+  createReadyDecisionBridgeResult,
   prepareDecisionProposal,
   type DecisionBridgeResult,
 } from '../../../src/integrations/calle/decisionBridge.js';
+import { bindReviewCommand } from '../../../src/integrations/calle/decisionApplication.js';
 import {
   ProviderOperationalError,
   type CallProvider,
@@ -298,9 +300,7 @@ const localApproval = (
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const actor = state.exceptionCase.actors.find((candidate) => candidate.role === role);
   if (actor === undefined) throw new Error(`Missing local ${role}`);
-  const bridgeResult: DecisionBridgeResult = {
-    ready: true,
-    proposal: {
+  const bridgeResult: DecisionBridgeResult = createReadyDecisionBridgeResult({
       operationType: 'PLAN_DECISION',
       requestId: `REQUEST-CALLE-LIVE-${token}`,
       caseId: CASE_ID,
@@ -315,12 +315,11 @@ const localApproval = (
       receivedAt: '2027-07-01T16:40:00-05:00',
       requiresReview: true,
       reviewState: 'DECISION_REVIEW_REQUIRED',
-    },
-  };
+    });
   return {
     type: 'APPLY_REVIEWED_DECISION',
     bridgeResult,
-    review: {
+    review: bindReviewCommand({
       action: 'APPLY',
       operationId: `OPERATION-CALLE-LIVE-${token}`,
       reviewedBy: 'REVIEWER-CALLE-LIVE-LOCAL-SETUP',
@@ -328,7 +327,7 @@ const localApproval = (
       eventId: `EVENT-CALLE-LIVE-${token}`,
       approvalId: `APPROVAL-CALLE-LIVE-${token}`,
       authorizationReviews: [],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 
@@ -673,7 +672,7 @@ describe('CALL-E live end-to-end proof harness', () => {
       const application = executeOrchestrationAction(state, {
         type: 'APPLY_REVIEWED_DECISION',
         bridgeResult,
-        review: {
+        review: bindReviewCommand({
           action: 'APPLY',
           operationId,
           reviewedBy: 'REVIEWER-CALLE-LIVE-HUMAN',
@@ -681,7 +680,7 @@ describe('CALL-E live end-to-end proof harness', () => {
           eventId,
           approvalId,
           authorizationReviews: [],
-        },
+        }, bridgeResult.reviewTarget),
       });
       expect(application.accepted).toBe(true);
       if (!application.accepted) throw new Error(`Exception Broker stopped safely: ${application.failure.reason}`);

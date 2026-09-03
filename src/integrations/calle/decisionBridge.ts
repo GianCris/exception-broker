@@ -1,4 +1,9 @@
-import { approvalDecisionSchema, actorRoleSchema } from '../../domain/schemas.js';
+import { z } from 'zod';
+
+import {
+  approvalDecisionSchema,
+  actorRoleSchema,
+} from '../../domain/schemas.js';
 import type { Actor, ActorRole, ExceptionCase, Plan } from '../../domain/types.js';
 import { completionConfidenceSchema, receivedAtSchema } from './schemas.js';
 import type {
@@ -45,8 +50,27 @@ export type DecisionProposal =
   | (DecisionProposalBase & Readonly<{ operationType: 'PLAN_DECISION'; planId: string }>)
   | (DecisionProposalBase & Readonly<{ operationType: 'CASE_AUTHORIZATION' }>);
 
+type ReviewTargetBase = Readonly<{
+  requestId: string;
+  caseId: string;
+  actorId: string;
+  actorRole: ActorRole;
+  decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CLARIFICATION';
+  summary: string;
+  proposedAuthorizationChanges: readonly ReviewableAuthorizationChange[];
+  evidence: readonly string[];
+  completionConfidence: CompletionConfidence;
+  receivedAt: string;
+  requiresReview: true;
+  reviewState: 'DECISION_REVIEW_REQUIRED' | 'CLARIFICATION_REQUIRED';
+}>;
+
+export type ReviewTarget =
+  | (ReviewTargetBase & Readonly<{ operationType: 'PLAN_DECISION'; planId: string }>)
+  | (ReviewTargetBase & Readonly<{ operationType: 'CASE_AUTHORIZATION' }>);
+
 export type DecisionBridgeResult =
-  | Readonly<{ ready: true; proposal: DecisionProposal }>
+  | Readonly<{ ready: true; proposal: DecisionProposal; reviewTarget: ReviewTarget }>
   | Readonly<{ ready: false; reason: string; issues?: readonly string[] }>;
 
 type RecognizedAuthorizationField =
@@ -59,6 +83,115 @@ const recognizedAuthorizationFields = new Set<string>([
   'maxSubstituteQuantity',
   'latestAcceptedDeliveryDate',
 ]);
+
+const primitiveSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+// Validate nonblank review text without changing the snapshot's exact value.
+const reviewTextSchema = z.string().refine((value) => value.trim().length > 0, 'Must not be blank');
+const reviewableAuthorizationChangeSchema = z.object({
+  field: z.enum(['maxAbsorbableAdditionalCost', 'maxSubstituteQuantity', 'latestAcceptedDeliveryDate']),
+  currentInternalValue: z.union([z.string(), z.number().finite()]),
+  proposedNewValue: primitiveSchema,
+  externalPreviousValue: primitiveSchema.optional(),
+  reason: reviewTextSchema.optional(),
+  requiresReview: z.literal(true),
+}).strict();
+const reviewTargetBaseSchema = z.object({
+  requestId: reviewTextSchema,
+  caseId: reviewTextSchema,
+  actorId: reviewTextSchema,
+  actorRole: actorRoleSchema,
+  decision: z.enum(['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION']),
+  summary: reviewTextSchema,
+  proposedAuthorizationChanges: z.array(reviewableAuthorizationChangeSchema),
+  evidence: z.array(reviewTextSchema),
+  completionConfidence: completionConfidenceSchema.extend({ label: reviewTextSchema }),
+  receivedAt: receivedAtSchema,
+  requiresReview: z.literal(true),
+  reviewState: z.enum(['DECISION_REVIEW_REQUIRED', 'CLARIFICATION_REQUIRED']),
+}).strict();
+
+export const reviewTargetSchema = z.discriminatedUnion('operationType', [
+  reviewTargetBaseSchema.extend({ operationType: z.literal('PLAN_DECISION'), planId: reviewTextSchema }).strict(),
+  reviewTargetBaseSchema.extend({ operationType: z.literal('CASE_AUTHORIZATION') }).strict(),
+]).superRefine((target, context) => {
+  const expectedReviewState = target.decision === 'NEEDS_CLARIFICATION'
+    ? 'CLARIFICATION_REQUIRED'
+    : 'DECISION_REVIEW_REQUIRED';
+  if (target.reviewState !== expectedReviewState) {
+    context.addIssue({ code: 'custom', path: ['reviewState'], message: 'reviewState contradicts decision' });
+  }
+});
+
+const snapshotChanges = (
+  changes: readonly ReviewableAuthorizationChange[],
+): readonly ReviewableAuthorizationChange[] => Object.freeze(changes.map((change) => Object.freeze({ ...change })));
+
+export const deriveReviewTarget = (proposal: DecisionProposal): ReviewTarget => {
+  const base: ReviewTargetBase = Object.freeze({
+    requestId: proposal.requestId,
+    caseId: proposal.caseId,
+    actorId: proposal.actorId,
+    actorRole: proposal.actorRole,
+    decision: proposal.decision,
+    summary: proposal.summary,
+    proposedAuthorizationChanges: snapshotChanges(proposal.proposedAuthorizationChanges),
+    evidence: Object.freeze([...proposal.evidence]),
+    completionConfidence: Object.freeze({ ...proposal.completionConfidence }),
+    receivedAt: proposal.receivedAt,
+    requiresReview: proposal.requiresReview,
+    reviewState: proposal.reviewState,
+  });
+  return proposal.operationType === 'PLAN_DECISION'
+    ? Object.freeze({ ...base, operationType: 'PLAN_DECISION', planId: proposal.planId })
+    : Object.freeze({ ...base, operationType: 'CASE_AUTHORIZATION' });
+};
+
+const primitiveEqual = (left: string | number | boolean | undefined, right: string | number | boolean | undefined) =>
+  left === right;
+
+const changeEqual = (left: ReviewableAuthorizationChange, right: ReviewableAuthorizationChange): boolean =>
+  left.field === right.field
+  && primitiveEqual(left.currentInternalValue, right.currentInternalValue)
+  && primitiveEqual(left.proposedNewValue, right.proposedNewValue)
+  && primitiveEqual(left.externalPreviousValue, right.externalPreviousValue)
+  && left.reason === right.reason
+  && left.requiresReview === right.requiresReview;
+
+export const reviewTargetsEqual = (left: ReviewTarget, right: ReviewTarget): boolean => {
+  if (left.operationType !== right.operationType) return false;
+  if (left.operationType === 'PLAN_DECISION'
+    && (right.operationType !== 'PLAN_DECISION' || left.planId !== right.planId)) return false;
+  if (left.requestId !== right.requestId
+    || left.caseId !== right.caseId
+    || left.actorId !== right.actorId
+    || left.actorRole !== right.actorRole
+    || left.decision !== right.decision
+    || left.summary !== right.summary
+    || left.receivedAt !== right.receivedAt
+    || left.requiresReview !== right.requiresReview
+    || left.reviewState !== right.reviewState
+    || left.completionConfidence.score !== right.completionConfidence.score
+    || left.completionConfidence.label !== right.completionConfidence.label
+    || left.evidence.length !== right.evidence.length
+    || left.evidence.some((item, index) => item !== right.evidence[index])) return false;
+
+  if (left.proposedAuthorizationChanges.length !== right.proposedAuthorizationChanges.length) return false;
+  const rightByField = new Map(right.proposedAuthorizationChanges.map((change) => [change.field, change]));
+  return rightByField.size === right.proposedAuthorizationChanges.length
+    && new Set(left.proposedAuthorizationChanges.map(({ field }) => field)).size === left.proposedAuthorizationChanges.length
+    && left.proposedAuthorizationChanges.every((change) => {
+      const matching = rightByField.get(change.field);
+      return matching !== undefined && changeEqual(change, matching);
+    });
+};
+
+export const createReadyDecisionBridgeResult = (
+  proposal: DecisionProposal,
+): Extract<DecisionBridgeResult, { ready: true }> => ({
+  ready: true,
+  proposal,
+  reviewTarget: deriveReviewTarget(proposal),
+});
 
 const failure = (reason: string, issues?: readonly string[]): DecisionBridgeResult => ({
   ready: false,
@@ -236,7 +369,8 @@ export const prepareDecisionProposal = (
         ? 'CLARIFICATION_REQUIRED'
         : 'DECISION_REVIEW_REQUIRED',
   };
-  return expected.operationType === 'PLAN_DECISION'
-    ? { ready: true, proposal: { ...proposalBase, operationType: 'PLAN_DECISION', planId: expected.planId } }
-    : { ready: true, proposal: { ...proposalBase, operationType: 'CASE_AUTHORIZATION' } };
+  const proposal: DecisionProposal = expected.operationType === 'PLAN_DECISION'
+    ? { ...proposalBase, operationType: 'PLAN_DECISION', planId: expected.planId }
+    : { ...proposalBase, operationType: 'CASE_AUTHORIZATION' };
+  return createReadyDecisionBridgeResult(proposal);
 };

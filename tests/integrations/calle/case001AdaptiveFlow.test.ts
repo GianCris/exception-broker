@@ -4,6 +4,8 @@ import { executeOrchestrationAction, type OrchestrationAction } from '../../../s
 import { validatePlan } from '../../../src/domain/validator.js';
 import { createCase001ThreePartyFlowConfig } from '../../../src/integrations/calle/case001ThreePartyFlow.js';
 import { runCase001AdaptiveFlow } from '../../../src/integrations/calle/case001AdaptiveFlow.js';
+import { createReadyDecisionBridgeResult } from '../../../src/integrations/calle/decisionBridge.js';
+import { bindReviewCommand } from '../../../src/integrations/calle/decisionApplication.js';
 import { MockProvider } from '../../../src/integrations/calle/mockProvider.js';
 import { runThreePartyFlow, type ThreePartyFlowConfig } from '../../../src/integrations/calle/threePartyFlow.js';
 
@@ -64,7 +66,11 @@ const reviewedDecisionAction = (
   review: ThreePartyFlowConfig['plan001Rejection']['review'],
 ): OrchestrationAction => {
   if (bridgeResult === undefined) throw new Error('Expected prepared bridge evidence');
-  return { type: 'APPLY_REVIEWED_DECISION', bridgeResult, review };
+  return {
+    type: 'APPLY_REVIEWED_DECISION',
+    bridgeResult,
+    review: bridgeResult.ready ? bindReviewCommand(review, bridgeResult.reviewTarget) : review as never,
+  };
 };
 
 describe('CASE-001 adaptive equivalence adapter', () => {
@@ -214,10 +220,8 @@ describe('CASE-001 adaptive equivalence adapter', () => {
     ) {
       throw new Error('Missing final client evidence');
     }
-    const delayed = executeOrchestrationAction(adaptive.state, reviewedDecisionAction({
-      ready: true,
-      proposal: { ...finalClientTrace.bridgeResult.proposal, planId: 'PLAN-001' },
-    }, {
+    const delayed = executeOrchestrationAction(adaptive.state, reviewedDecisionAction(
+      createReadyDecisionBridgeResult({ ...finalClientTrace.bridgeResult.proposal, planId: 'PLAN-001' }), {
       ...config.finalApprovals[2].review,
       operationId: 'OPERATION-DELAYED',
       eventId: 'FLOW-EVENT-DELAYED',
@@ -249,10 +253,8 @@ describe('CASE-001 adaptive equivalence adapter', () => {
     if (rejectionTrace?.bridgeResult?.ready !== true || config.plan001Rejection.review.action !== 'APPLY') {
       throw new Error('Missing rejection evidence');
     }
-    const invalidApproval = executeOrchestrationAction(registrationOnly.state, reviewedDecisionAction({
-      ready: true,
-      proposal: { ...rejectionTrace.bridgeResult.proposal, decision: 'APPROVED' },
-    }, {
+    const invalidApproval = executeOrchestrationAction(registrationOnly.state, reviewedDecisionAction(
+      createReadyDecisionBridgeResult({ ...rejectionTrace.bridgeResult.proposal, decision: 'APPROVED' }), {
       ...config.plan001Rejection.review,
       operationId: 'OPERATION-INVALID-APPROVAL',
       eventId: 'FLOW-EVENT-INVALID-APPROVAL',

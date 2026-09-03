@@ -8,6 +8,7 @@ import { assessNoSolution, type NoSolutionAssessment } from '../../domain/outcom
 import type { PlanRegistrationAssessment } from '../../domain/planRegistration.js';
 import { executeCall } from './adapter.js';
 import { prepareDecisionProposal, type DecisionBridgeResult } from './decisionBridge.js';
+import { bindReviewCommand } from './decisionApplication.js';
 import type { CallMappingResult } from './types.js';
 import type { FlowCallStep, ThreePartyFlowConfig } from './threePartyFlow.js';
 
@@ -62,7 +63,7 @@ const executeExternalDecision = async (
   const orchestrationResult = executeOrchestrationAction(state, {
     type: 'APPLY_REVIEWED_DECISION',
     bridgeResult,
-    review: step.review,
+    review: bridgeResult.ready ? bindReviewCommand(step.review, bridgeResult.reviewTarget) : step.review as never,
   });
   const trace: Case001AdaptiveTraceEntry = {
     stepId: step.stepId,

@@ -7,7 +7,8 @@ import {
 } from '../../src/application/adaptiveOrchestrator.js';
 import { exceptionCaseSchema, planSchema } from '../../src/domain/schemas.js';
 import type { ActorRole, ExceptionCase, Plan, PlanId } from '../../src/domain/types.js';
-import type { DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { createReadyDecisionBridgeResult, type DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { bindReviewCommand } from '../../src/integrations/calle/decisionApplication.js';
 
 const TARGET = '2027-09-10T17:00:00-05:00';
 const LATER = '2027-09-12T17:00:00-05:00';
@@ -109,24 +110,21 @@ const decision = (
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const actor = state.exceptionCase.actors.find((candidate) => candidate.role === role);
   if (actor === undefined) throw new Error(`Missing benchmark actor ${role}`);
-  const bridgeResult: DecisionBridgeResult = {
-    ready: true,
-    proposal: {
+  const bridgeResult: DecisionBridgeResult = createReadyDecisionBridgeResult({
       operationType: 'PLAN_DECISION', requestId: `REQUEST-${token}`, caseId: state.exceptionCase.id,
       planId, actorId: actor.id, actorRole: overrides.actorRole ?? actor.role,
       decision: 'APPROVED', summary: 'Explicit benchmark decision', proposedAuthorizationChanges: [],
       evidence: ['Frozen benchmark evidence'], completionConfidence: { score: 1, label: 'high' },
       receivedAt: '2027-09-01T12:00:00Z', requiresReview: true, reviewState: 'DECISION_REVIEW_REQUIRED',
-    },
-  };
+    });
   return {
     type: 'APPLY_REVIEWED_DECISION', bridgeResult,
-    review: {
+    review: bindReviewCommand({
       action: 'APPLY', operationId: overrides.operationId ?? `OPERATION-${token}`,
       reviewedBy: 'BENCHMARK-REVIEWER', reviewedAt: '2027-09-01T13:00:00Z',
       eventId: overrides.eventId ?? `EVENT-${token}`,
       approvalId: overrides.approvalId ?? `APPROVAL-${token}`, authorizationReviews: [],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 
@@ -138,23 +136,21 @@ const authorization = (
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const actor = state.exceptionCase.actors.find(({ role }) => role === 'client');
   if (actor === undefined) throw new Error('Missing benchmark client');
-  return {
-    type: 'APPLY_REVIEWED_DECISION',
-    bridgeResult: {
-      ready: true,
-      proposal: {
+  const bridgeResult = createReadyDecisionBridgeResult({
         operationType: 'CASE_AUTHORIZATION', requestId: `REQUEST-${token}`, caseId: state.exceptionCase.id,
         actorId: actor.id, actorRole: 'client', decision: 'APPROVED', summary: 'Explicit authorization',
         proposedAuthorizationChanges: [{ field: 'maxSubstituteQuantity', currentInternalValue: current, proposedNewValue: next, requiresReview: true }],
         evidence: ['Frozen authorization evidence'], completionConfidence: { score: 1, label: 'high' },
         receivedAt: '2027-09-01T14:00:00Z', requiresReview: true, reviewState: 'DECISION_REVIEW_REQUIRED',
-      },
-    },
-    review: {
+  });
+  return {
+    type: 'APPLY_REVIEWED_DECISION',
+    bridgeResult,
+    review: bindReviewCommand({
       action: 'APPLY', operationId: `OPERATION-${token}`, reviewedBy: 'BENCHMARK-REVIEWER',
       reviewedAt: '2027-09-01T15:00:00Z', eventId: `EVENT-${token}`,
       authorizationReviews: [{ field: 'maxSubstituteQuantity', action: 'APPLY' }],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 

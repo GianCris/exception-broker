@@ -10,7 +10,8 @@ import { assessPhysicalFeasibility } from '../../src/domain/physicalFeasibility.
 import { exceptionCaseSchema, planSchema } from '../../src/domain/schemas.js';
 import type { ActorRole, ExceptionCase, Plan } from '../../src/domain/types.js';
 import { validatePlan } from '../../src/domain/validator.js';
-import type { DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { createReadyDecisionBridgeResult, type DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { bindReviewCommand } from '../../src/integrations/calle/decisionApplication.js';
 
 const TARGET = '2027-06-10T17:00:00-05:00';
 const LATEST = '2027-06-12T17:00:00-05:00';
@@ -142,9 +143,7 @@ const approvalAction = (
   token: string,
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const actor = actorFor(state, role);
-  const bridgeResult: DecisionBridgeResult = {
-    ready: true,
-    proposal: {
+  const bridgeResult: DecisionBridgeResult = createReadyDecisionBridgeResult({
       operationType: 'PLAN_DECISION',
       requestId: `REQUEST-${token}`,
       caseId: state.exceptionCase.id,
@@ -159,12 +158,11 @@ const approvalAction = (
       receivedAt: '2027-06-01T12:00:00Z',
       requiresReview: true,
       reviewState: 'DECISION_REVIEW_REQUIRED',
-    },
-  };
+    });
   return {
     type: 'APPLY_REVIEWED_DECISION',
     bridgeResult,
-    review: {
+    review: bindReviewCommand({
       action: 'APPLY',
       operationId: `OPERATION-${token}`,
       reviewedBy: 'REVIEWER-005',
@@ -172,7 +170,7 @@ const approvalAction = (
       eventId: `EVENT-${token}`,
       approvalId: `APPROVAL-${token}`,
       authorizationReviews: [],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 
@@ -180,11 +178,7 @@ const authorizationAction = (
   state: OrchestrationState,
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const client = actorFor(state, 'client');
-  return {
-    type: 'APPLY_REVIEWED_DECISION',
-    bridgeResult: {
-      ready: true,
-      proposal: {
+  const bridgeResult = createReadyDecisionBridgeResult({
         operationType: 'CASE_AUTHORIZATION',
         requestId: 'REQUEST-AUTHORIZATION-005',
         caseId: state.exceptionCase.id,
@@ -203,16 +197,18 @@ const authorizationAction = (
         receivedAt: '2027-06-01T14:00:00Z',
         requiresReview: true,
         reviewState: 'DECISION_REVIEW_REQUIRED',
-      },
-    },
-    review: {
+  });
+  return {
+    type: 'APPLY_REVIEWED_DECISION',
+    bridgeResult,
+    review: bindReviewCommand({
       action: 'APPLY',
       operationId: 'OPERATION-AUTHORIZATION-005',
       reviewedBy: 'REVIEWER-005',
       reviewedAt: '2027-06-01T15:00:00Z',
       eventId: 'EVENT-AUTHORIZATION-005',
       authorizationReviews: [{ field: 'maxSubstituteQuantity', action: 'APPLY' }],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 
