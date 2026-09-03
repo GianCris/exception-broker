@@ -1,6 +1,6 @@
-import { createLocalSimulationInput, runDemo } from './demo/demoRunner.js';
-import { DemoExperience } from './ui/DemoExperience.js';
+import { prepareProof, reviewProof } from './demo/proofDemo.js';
+import { ProofExperience } from './ui/ProofExperience.js';
 
 export const App = () => (
-  <DemoExperience runner={runDemo} createInput={createLocalSimulationInput} />
+  <ProofExperience prepare={prepareProof} review={reviewProof} />
 );

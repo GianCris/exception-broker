@@ -5,10 +5,13 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from '../../src/App.js';
 import { createLocalSimulationInput, runDemo } from '../../src/demo/demoRunner.js';
 import type { DemoRunResult, DemoRunnerInput } from '../../src/demo/demoTypes.js';
 import { DemoExperience } from '../../src/ui/DemoExperience.js';
+
+// Preserve regression coverage for the retained legacy experience. The actual
+// App now mounts ProofExperience, covered independently in ProofExperience.test.tsx.
+const App = () => <DemoExperience runner={runDemo} createInput={createLocalSimulationInput} />;
 
 afterEach(cleanup);
 
@@ -18,7 +21,7 @@ const completed = async () => {
   return result;
 };
 
-describe('Exception Broker safe demo UI', () => {
+describe('Retained legacy Exception Broker demo UI', () => {
   it('starts IDLE with explicit safe mode and no premature resolution', () => {
     render(<App />);
     expect(screen.getByText(/local simulation/i)).toBeInTheDocument();
