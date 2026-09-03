@@ -7,7 +7,8 @@ import {
 } from '../../src/application/adaptiveOrchestrator.js';
 import { exceptionCaseSchema, planSchema } from '../../src/domain/schemas.js';
 import type { ActorRole, ExceptionCase, Plan } from '../../src/domain/types.js';
-import type { DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { createReadyDecisionBridgeResult, type DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { bindReviewCommand } from '../../src/integrations/calle/decisionApplication.js';
 
 const target = '2026-10-01T17:00:00-05:00';
 const later = '2026-10-04T17:00:00-05:00';
@@ -62,32 +63,26 @@ const planDecision = (
   approvalId = `APPROVAL-${sequence}`,
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const actorId = `${role.toUpperCase()}-ADAPTIVE`;
-  const bridgeResult: DecisionBridgeResult = {
-    ready: true,
-    proposal: {
+  const bridgeResult: DecisionBridgeResult = createReadyDecisionBridgeResult({
       operationType: 'PLAN_DECISION', requestId: `REQUEST-${sequence}`, caseId: 'CASE-ADAPTIVE',
       planId, actorId, actorRole: role, decision, summary: `${role} ${decision}`,
       proposedAuthorizationChanges: [], evidence: ['Reviewed external decision'],
       completionConfidence: { score: 1, label: 'high' },
       receivedAt: `2026-09-${String(sequence).padStart(2, '0')}T12:00:00Z`,
       requiresReview: true, reviewState: 'DECISION_REVIEW_REQUIRED',
-    },
-  };
+    });
   return {
     type: 'APPLY_REVIEWED_DECISION', bridgeResult,
-    review: {
+    review: bindReviewCommand({
       action: 'APPLY', operationId: `OPERATION-${sequence}`, reviewedBy: 'REVIEWER-ADAPTIVE',
       reviewedAt: `2026-09-${String(sequence).padStart(2, '0')}T13:00:00Z`,
       eventId: `EVENT-${sequence}`, approvalId, authorizationReviews: [],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 
-const authorizationDecision = (): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => ({
-  type: 'APPLY_REVIEWED_DECISION',
-  bridgeResult: {
-    ready: true,
-    proposal: {
+const authorizationDecision = (): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
+  const bridgeResult = createReadyDecisionBridgeResult({
       operationType: 'CASE_AUTHORIZATION', requestId: 'REQUEST-AUTHORIZATION', caseId: 'CASE-ADAPTIVE',
       actorId: 'CLIENT-ADAPTIVE', actorRole: 'client', decision: 'APPROVED', summary: 'Raise permission',
       proposedAuthorizationChanges: [{
@@ -97,14 +92,13 @@ const authorizationDecision = (): Extract<OrchestrationAction, { type: 'APPLY_RE
       evidence: ['Client reviewed the permission'],
       completionConfidence: { score: 1, label: 'high' },
       receivedAt: '2026-09-20T12:00:00Z', requiresReview: true, reviewState: 'DECISION_REVIEW_REQUIRED',
-    },
-  },
-  review: {
+    });
+  return { type: 'APPLY_REVIEWED_DECISION', bridgeResult, review: bindReviewCommand({
     action: 'APPLY', operationId: 'OPERATION-AUTHORIZATION', reviewedBy: 'REVIEWER-ADAPTIVE',
     reviewedAt: '2026-09-20T13:00:00Z', eventId: 'EVENT-AUTHORIZATION',
     authorizationReviews: [{ field: 'maxSubstituteQuantity', action: 'APPLY' }],
-  },
-});
+  }, bridgeResult.reviewTarget) };
+};
 
 const registeredState = (): OrchestrationState => {
   const result = register();
@@ -334,6 +328,32 @@ describe('executeOrchestrationAction', () => {
       result: 'APPROVAL_RECORDED', planId: 'PLAN-ADAPTIVE-1',
     });
     expect(result.step).toMatchObject({ applicationEventIds: ['EVENT-14'] });
+  });
+
+  it('preserves the exact orchestration state reference when Review A is presented with Proposal B', () => {
+    const state = registeredState();
+    const reviewedAction = planDecision('client', 'APPROVED', 18);
+    if (!reviewedAction.bridgeResult.ready) throw new Error('Expected ready bridge');
+    const suppliedBridge = createReadyDecisionBridgeResult({
+      ...reviewedAction.bridgeResult.proposal,
+      summary: 'A different proposal was supplied after review',
+    });
+    const before = structuredClone(state);
+    const result = executeOrchestrationAction(state, {
+      ...reviewedAction,
+      bridgeResult: suppliedBridge,
+    });
+    expect(result).toMatchObject({
+      accepted: false,
+      failure: { source: 'DECISION_APPLICATION', reason: 'REVIEW_PROPOSAL_BINDING_INVALID' },
+    });
+    expect(result.state).toBe(state);
+    expect(state).toEqual(before);
+    expect(state.approvals).toHaveLength(0);
+    expect(state.operationHistory).toHaveLength(0);
+    expect(state.events).toHaveLength(0);
+    expect(state.plans[0]?.status).toBe('PENDING_APPROVAL');
+    expect(state.planLineages).toEqual(before.planLineages);
   });
 
   it('is deterministic and leaves frozen inputs and explicit actions unchanged', () => {

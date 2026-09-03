@@ -219,6 +219,29 @@ describe('CALL-E normalized decision bridge', () => {
     expect(result.ready && result.proposal.proposedAuthorizationChanges).toEqual([]);
   });
 
+  it('derives an immutable review target detached from all nested proposal data', () => {
+    const result = prepareDecisionProposal(withValue({
+      evidence: ['first', 'second'],
+      authorizationChanges: [{
+        field: 'maxSubstituteQuantity', newValue: 120,
+        externalPreviousValue: 100, reason: 'Explicit reviewed change',
+      }],
+    }), context(), expected());
+    expect(result.ready).toBe(true);
+    if (!result.ready) return;
+    expect(result.reviewTarget).toEqual(result.proposal);
+    expect(result.reviewTarget).not.toBe(result.proposal);
+    expect(result.reviewTarget.evidence).not.toBe(result.proposal.evidence);
+    expect(result.reviewTarget.proposedAuthorizationChanges).not.toBe(result.proposal.proposedAuthorizationChanges);
+    expect(result.reviewTarget.proposedAuthorizationChanges[0]).not.toBe(result.proposal.proposedAuthorizationChanges[0]);
+    expect(result.reviewTarget.completionConfidence).not.toBe(result.proposal.completionConfidence);
+    expect(Object.isFrozen(result.reviewTarget)).toBe(true);
+    expect(Object.isFrozen(result.reviewTarget.evidence)).toBe(true);
+    expect(Object.isFrozen(result.reviewTarget.proposedAuthorizationChanges)).toBe(true);
+    expect(Object.isFrozen(result.reviewTarget.proposedAuthorizationChanges[0])).toBe(true);
+    expect(Object.isFrozen(result.reviewTarget.completionConfidence)).toBe(true);
+  });
+
   it('resolves a recognized authorization field from current internal state', () => {
     const result = prepareDecisionProposal(withValue({
       authorizationChanges: [{

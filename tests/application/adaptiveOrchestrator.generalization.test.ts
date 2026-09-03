@@ -8,7 +8,8 @@ import {
 import { assessNoSolution } from '../../src/domain/outcomes.js';
 import { exceptionCaseSchema, planSchema } from '../../src/domain/schemas.js';
 import type { ActorRole, ExceptionCase, Plan, PlanId } from '../../src/domain/types.js';
-import type { DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { createReadyDecisionBridgeResult, type DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { bindReviewCommand } from '../../src/integrations/calle/decisionApplication.js';
 
 const target = '2027-03-01T17:00:00-05:00';
 const later = '2027-03-04T17:00:00-05:00';
@@ -127,9 +128,7 @@ const decisionAction = (
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const actor = state.exceptionCase.actors.find((candidate) => candidate.role === role);
   if (actor === undefined) throw new Error(`Missing ${role}`);
-  const bridgeResult: DecisionBridgeResult = {
-    ready: true,
-    proposal: {
+  const bridgeResult: DecisionBridgeResult = createReadyDecisionBridgeResult({
       operationType: 'PLAN_DECISION',
       requestId: `REQUEST-${token}`,
       caseId: state.exceptionCase.id,
@@ -144,12 +143,11 @@ const decisionAction = (
       receivedAt: '2027-02-01T12:00:00Z',
       requiresReview: true,
       reviewState: 'DECISION_REVIEW_REQUIRED',
-    },
-  };
+    });
   return {
     type: 'APPLY_REVIEWED_DECISION',
     bridgeResult,
-    review: {
+    review: bindReviewCommand({
       action: 'APPLY',
       operationId: `OPERATION-${token}`,
       reviewedBy: 'REVIEWER-GENERAL',
@@ -157,7 +155,7 @@ const decisionAction = (
       eventId: `EVENT-${token}`,
       approvalId: `APPROVAL-${token}`,
       authorizationReviews: [],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 
@@ -390,12 +388,11 @@ describe('adaptive orchestrator generalization challenges', () => {
 
     const wrongRoleAction = decisionAction(client.state, 'PROPOSAL-IDENTITY', 'supplier', 'APPROVED', 'WRONG-ROLE');
     if (!wrongRoleAction.bridgeResult.ready) throw new Error('Unexpected bridge result');
+    const wrongRoleBridge = createReadyDecisionBridgeResult({ ...wrongRoleAction.bridgeResult.proposal, actorRole: 'production' });
     const wrongRole = executeOrchestrationAction(client.state, {
       ...wrongRoleAction,
-      bridgeResult: {
-        ready: true,
-        proposal: { ...wrongRoleAction.bridgeResult.proposal, actorRole: 'production' },
-      },
+      bridgeResult: wrongRoleBridge,
+      review: { ...wrongRoleAction.review, reviewTarget: wrongRoleBridge.reviewTarget },
     });
     expect(wrongRole).toMatchObject({ accepted: false, failure: { reason: 'ACTOR_ROLE_MISMATCH' } });
     expect(wrongRole.state).toBe(client.state);

@@ -10,7 +10,8 @@ import { assessPhysicalFeasibility } from '../../src/domain/physicalFeasibility.
 import { exceptionCaseSchema, planSchema } from '../../src/domain/schemas.js';
 import type { ActorRole, ExceptionCase, Plan } from '../../src/domain/types.js';
 import { validatePlan } from '../../src/domain/validator.js';
-import type { DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { createReadyDecisionBridgeResult, type DecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
+import { bindReviewCommand } from '../../src/integrations/calle/decisionApplication.js';
 
 const REQUESTED_EFFECTIVE_AT = '2027-06-10T17:00:00-05:00';
 const EQUIVALENT_EFFECTIVE_AT = '2027-06-10T22:00:00Z';
@@ -183,9 +184,7 @@ const reviewedApproval = (
 ): Extract<OrchestrationAction, { type: 'APPLY_REVIEWED_DECISION' }> => {
   const actor = state.exceptionCase.actors.find(({ role }) => role === actorRole);
   if (actor === undefined) throw new Error(`Missing ${actorRole} actor`);
-  const bridgeResult: DecisionBridgeResult = {
-    ready: true,
-    proposal: {
+  const bridgeResult: DecisionBridgeResult = createReadyDecisionBridgeResult({
       operationType: 'PLAN_DECISION',
       requestId: `REQUEST-PPV2-${token}`,
       caseId: state.exceptionCase.id,
@@ -200,12 +199,11 @@ const reviewedApproval = (
       receivedAt: '2027-06-10T22:05:00Z',
       requiresReview: true,
       reviewState: 'DECISION_REVIEW_REQUIRED',
-    },
-  };
+    });
   return {
     type: 'APPLY_REVIEWED_DECISION',
     bridgeResult,
-    review: {
+    review: bindReviewCommand({
       action: 'APPLY',
       operationId: `OPERATION-PPV2-${token}`,
       reviewedBy: 'REVIEWER-PPV2',
@@ -213,7 +211,7 @@ const reviewedApproval = (
       eventId: `EVENT-PPV2-${token}`,
       approvalId: `APPROVAL-PPV2-${token}`,
       authorizationReviews: [],
-    },
+    }, bridgeResult.reviewTarget),
   };
 };
 

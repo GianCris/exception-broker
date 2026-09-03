@@ -19,9 +19,10 @@ import {
 } from './decisionBridge.js';
 import {
   applyReviewedDecision,
+  bindReviewCommand,
   type DecisionApplicationEvent,
   type DecisionApplicationResult,
-  type ReviewCommand,
+  type UnboundReviewCommand,
 } from './decisionApplication.js';
 import type { CallProvider } from './provider.js';
 import type { CallMappingResult, CallRequest } from './types.js';
@@ -32,7 +33,7 @@ export type FlowCallStep = Readonly<{
   request: CallRequest;
   receivedAt: string;
   expected: ExpectedDecisionReference;
-  review: ReviewCommand;
+  review: UnboundReviewCommand;
 }>;
 
 export type ThreePartyFlowConfig = Readonly<{
@@ -173,7 +174,7 @@ const runCallStep = async (
     approvals: state.approvals,
     operationHistory: state.operationHistory,
     existingEventIds: state.events.map(({ eventId }) => eventId),
-  }, step.review);
+  }, bindReviewCommand(step.review, bridgeResult.reviewTarget));
   const trace = { ...traceBase, applicationResult };
   if (!applicationResult.applied) return { success: false, reason: applicationResult.reason, trace };
 
