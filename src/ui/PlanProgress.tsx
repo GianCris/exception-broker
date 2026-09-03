@@ -10,7 +10,7 @@ const PlanExplanation = ({ plan }: Readonly<{ plan: PlanViewModel }>) => {
     </div>;
   }
   if (explanation.kind === 'final') {
-    return <p className="unlock-message">Unlocked after client limit changed from <strong>{explanation.unlockPreviousValue}</strong> to <strong>{explanation.unlockNewValue}</strong></p>;
+    return <p className="unlock-message">Client limit changed from <strong>{explanation.unlockPreviousValue}</strong> to <strong>{explanation.unlockNewValue}</strong>. A separate proposal, review, and required approvals still applied.</p>;
   }
   if (explanation.kind === 'neutral') {
     return <p className="neutral-evidence">{explanation.message}</p>;

@@ -24,7 +24,7 @@ describe('CASE-001 presentation model', () => {
     const simulation = simulateCase001();
     const viewModel = createCase001ViewModel(simulation);
 
-    expect(viewModel.header.title).toBe(`${simulation.updatedCase.requestedQuantity}-unit shortage resolved`);
+    expect(viewModel.header.title).toBe(`${simulation.updatedCase.requestedQuantity}-unit recovery plan approved in simulation`);
     expect(viewModel.resolutionApproved).toBe(true);
     expect(viewModel.header.statusLabel).toBe('Approved');
     expect(viewModel.finalApprovals).toHaveLength(3);
@@ -98,7 +98,7 @@ describe('CASE-001 presentation model', () => {
     expect(viewModel.finalApprovals).toEqual([]);
     expect(viewModel.resolutionAvailable).toBe(false);
     expect(viewModel.resolutionApproved).toBe(false);
-    expect(viewModel.header.title).not.toContain('resolved');
+    expect(viewModel.header.title).not.toContain('approved in simulation');
   });
 
   it('does not approve a final plan whose status is not APPROVED', () => {

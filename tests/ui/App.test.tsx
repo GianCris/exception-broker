@@ -28,7 +28,7 @@ describe('Retained legacy Exception Broker demo UI', () => {
     expect(screen.getByText(/no real calls/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run exception resolution' })).toBeEnabled();
     expect(screen.getByText(/Ready\. Run the local demo/i)).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /case resolved safely/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /recovery plan approved in simulation/i })).not.toBeInTheDocument();
   });
 
   it('executes once, disables during RUNNING, and blocks a double click', async () => {
@@ -41,13 +41,13 @@ describe('Retained legacy Exception Broker demo UI', () => {
     expect(button).toBeDisabled();
     expect(screen.getByText(/Running the deterministic local simulation/i)).toBeInTheDocument();
     await act(async () => resolve(await completed()));
-    expect(screen.getByRole('heading', { name: 'Case resolved safely' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Recovery plan approved in simulation' })).toBeInTheDocument();
   });
 
   it('renders the complete evidence narrative and exactly nine runner steps', async () => {
     render(<App />);
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
-    expect(await screen.findByRole('heading', { name: 'Case resolved safely' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Recovery plan approved in simulation' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /PLAN-001 · Rejected/i })).toBeInTheDocument();
     expect(screen.getByText('R-04')).toBeInTheDocument();
     expect(screen.getByText('250')).toBeInTheDocument();
@@ -126,7 +126,7 @@ describe('Retained legacy Exception Broker demo UI', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
     expect(screen.getByRole('heading', { name: 'Simulation stopped safely' })).toBeInTheDocument();
     expect(screen.getByText(/CLIENT_APPROVAL/)).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Case resolved safely' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Recovery plan approved in simulation' })).not.toBeInTheDocument();
     expect(screen.queryByText(/CASE RESOLVED/)).not.toBeInTheDocument();
   });
 
@@ -161,7 +161,7 @@ describe('Retained legacy Exception Broker demo UI', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
     expect(screen.getByRole('heading', { name: 'Simulation stopped safely' })).toBeInTheDocument();
     expect(screen.queryByText(/CLIENT APPROVED|PLAN-003 FINALIZED|CASE RESOLVED/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Case resolved safely' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Recovery plan approved in simulation' })).not.toBeInTheDocument();
   });
 
   it('does not invent authorization evidence when the partial narrative lacks it', async () => {
@@ -180,7 +180,7 @@ describe('Retained legacy Exception Broker demo UI', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
     expect(screen.queryByLabelText('50 changed to 100')).not.toBeInTheDocument();
     expect(screen.queryByText('maxSubstituteQuantity')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Case resolved safely' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Recovery plan approved in simulation' })).not.toBeInTheDocument();
   });
 
   it('renders an empty last-safe state without unsafe values or false success', async () => {
@@ -196,7 +196,7 @@ describe('Retained legacy Exception Broker demo UI', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Run exception resolution' })));
     expect(screen.getByText(/0 plan versions and 0 recorded decisions/)).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/Infinity|NaN|undefined/);
-    expect(screen.queryByRole('heading', { name: 'Case resolved safely' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Recovery plan approved in simulation' })).not.toBeInTheDocument();
   });
 
   it('does not mutate the explicit demo configuration passed by the UI', async () => {

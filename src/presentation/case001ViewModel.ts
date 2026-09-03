@@ -169,7 +169,7 @@ export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
   return {
     header: {
       caseLabel: `${simulation.caseId} · Supply exception`,
-      title: resolutionApproved ? `${simulation.updatedCase.requestedQuantity}-unit shortage resolved` : neutralReason,
+      title: resolutionApproved ? `${simulation.updatedCase.requestedQuantity}-unit recovery plan approved in simulation` : neutralReason,
       requestedQuantity: simulation.updatedCase.requestedQuantity,
       participantCount: simulation.updatedCase.actors.length,
       targetDeliveryDate: formatDateTime(simulation.updatedCase.targetDeliveryDate),
@@ -184,7 +184,7 @@ export const createCase001ViewModel = (simulation: Case001SimulationResult) => {
     resolutionAvailable,
     resolutionApproved,
     resolutionMessage: neutralReason,
-    progressHeading: resolutionApproved ? 'How the exception was resolved' : 'Plan history',
+    progressHeading: resolutionApproved ? 'How the recovery plan was approved in simulation' : 'Plan history',
     progressDescription: resolutionApproved
       ? 'Each version preserves the decision that led to the approved recovery plan.'
       : 'Available plan evidence is shown without claiming a final resolution.',

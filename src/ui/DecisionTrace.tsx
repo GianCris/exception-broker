@@ -24,7 +24,7 @@ export const DecisionTrace = ({ events }: Readonly<{ events: readonly EventView[
         aria-controls={contentId}
         onClick={() => setOpen((current) => !current)}
       >
-        <span><span className="trace-icon" aria-hidden="true">≡</span><strong id="trace-title">View decision trace</strong><small>Audit every decision and constraint update</small></span>
+        <span><span className="trace-icon" aria-hidden="true">≡</span><strong id="trace-title">View decision trace</strong><small>Inspect recorded local decisions and constraint updates</small></span>
         <span className="toggle-symbol" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
       {open ? (

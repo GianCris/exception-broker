@@ -38,11 +38,11 @@ const Narrative = ({ narrative }: Readonly<{ narrative: PartialDemoCaseNarrative
 const Completed = ({ result }: Readonly<{ result: Extract<DemoRunResult, { status: 'COMPLETED' }> }>) => (
   <div className="demo-result" role="status" aria-live="polite">
     <section className="demo-resolution">
-      <p className="eyebrow">Resolution completed</p><h2>Case resolved safely</h2>
+      <p className="eyebrow">Legacy simulation completed</p><h2>Recovery plan approved in simulation</h2>
       <p>{result.caseNarrative.plan003.planId} reached approval after all three parties agreed.</p>
     </section>
     <Narrative narrative={result.caseNarrative} />
-    <section className="section" aria-labelledby="steps-title"><div className="section-heading compact"><div><p className="eyebrow">Verified execution</p><h2 id="steps-title">Resolution steps</h2></div></div>
+    <section className="section" aria-labelledby="steps-title"><div className="section-heading compact"><div><p className="eyebrow">Verified local scenario result</p><h2 id="steps-title">Resolution steps</h2></div></div>
       <ol className="demo-steps">{result.steps.map((step) => <li key={step.type}><span aria-hidden="true">✓</span><div><strong>{step.type.replaceAll('_', ' ')}</strong><p>{step.message}</p></div></li>)}</ol>
     </section>
     <DemoDecisionTrace steps={result.steps} />
