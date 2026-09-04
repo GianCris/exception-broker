@@ -5,6 +5,8 @@ import type { ReviewTarget } from '../src/integrations/calle/decisionBridge.js';
 import type { AuthorizationReview } from '../src/integrations/calle/decisionApplication.js';
 import { operationEffects, presentAttempt } from '../src/presentation/decisionTraceViewModel.js';
 import { createOperatorScenario } from '../src/sandbox/operatorScenario.js';
+import type { CallProvider } from '../src/integrations/calle/provider.js';
+import type { AcquisitionResult } from '../src/application/decisionAcquisitionSession.js';
 
 export type OperatorIO = Readonly<{ write: (text: string) => void; ask: (prompt: string) => Promise<string | undefined> }>;
 const value = (input: unknown) => JSON.stringify(input) ?? '(absent)';
@@ -12,9 +14,9 @@ const value = (input: unknown) => JSON.stringify(input) ?? '(absent)';
 /** Only schema-bound review content, never an unrestricted SDK/provider object.
  * JSON string quoting preserves whitespace and escapes terminal control characters.
  */
-export const formatExactReview = (target: ReviewTarget): string => [
+export const formatExactReview = (target: ReviewTarget, source = 'OFFLINE / MOCK'): string => [
   'Exact retained review — APPLY binds all content below',
-  'Source: OFFLINE / MOCK. Completion confidence is informational, not authority.',
+  `Source: ${source}. Completion confidence is informational, not authority.`,
   `Operation type: ${value(target.operationType)}`,
   `Case: ${value(target.caseId)}`,
   `Plan: ${value(target.operationType === 'PLAN_DECISION' ? target.planId : undefined)}`,
@@ -40,15 +42,34 @@ const answer = async (io: OperatorIO, prompt: string) => {
   try { return await io.ask(prompt); } catch { return undefined; }
 };
 
-export const runOperatorSandbox = async (io: OperatorIO, scenario = createOperatorScenario()) => {
+export type OperatorRunOptions = Readonly<{
+  source?: 'OFFLINE / MOCK' | 'LIVE / CALL-E';
+  acquisitionPreauthorized?: boolean;
+  provider?: CallProvider;
+  afterAcquire?: (result: AcquisitionResult) => void;
+  reviewMetadata?: () => Readonly<{
+    operationId: string; eventId: string; approvalId: string; reviewedBy: string; reviewedAt: string;
+  }>;
+}>;
+
+export const runOperatorSandbox = async (
+  io: OperatorIO,
+  scenario: Omit<ReturnType<typeof createOperatorScenario>, 'receivedAt'> & { receivedAt: string | (() => string) } = createOperatorScenario(),
+  options: OperatorRunOptions = {},
+) => {
+  const source = options.source ?? 'OFFLINE / MOCK';
   const session = new DecisionAcquisitionSession(scenario.state, scenario.request, scenario.receivedAt);
-  io.write('Exception Broker — Operator Sandbox\nSANDBOX MODE — OFFLINE / MOCK ONLY\nOperational state is synthetic and pre-trusted. No Evidence Boundary ingestion, ERP/WMS connection, phone call or external execution.');
-  io.write(`Scenario: ${value(scenario.request.caseId)} / ${value(scenario.request.planId)}\nOperational state: ${value(scenario.state.exceptionCase)}\nRegistered proposal: ${value(scenario.state.plans)}\nSynthetic Supplier/Production setup records: ${scenario.state.approvals.length} decisions, ${scenario.state.operationHistory.length} operations, ${scenario.state.events.length} events. These are not live acquisitions.\nReviewer and timestamps are synthetic sandbox metadata, not authenticated identity or wall-clock evidence.`);
-  if (await answer(io, 'Acquire offline operational decision? Type ACQUIRE; anything else stops: ') !== 'ACQUIRE') {
+  io.write(`Exception Broker — Operator Sandbox\nSANDBOX MODE — ${source}\nOperational state is synthetic and pre-trusted. No Evidence Boundary ingestion, ERP/WMS connection or external execution.${source === 'OFFLINE / MOCK' ? ' No phone call.' : ' Only this acquisition may be a real CALL-E interaction.'}`);
+  const provenance = source === 'OFFLINE / MOCK'
+    ? 'Reviewer identity and lifecycle timestamps are synthetic/deterministic sandbox metadata, not authenticated identity or wall-clock evidence.'
+    : 'Reviewer identity is local and unauthenticated. Lifecycle timestamps come from the local process clock; they are not externally attested, cryptographically verified, or claimed to be CALL-E server timestamps.';
+  io.write(`Scenario: ${value(scenario.request.caseId)} / ${value(scenario.request.planId)}\nOperational state: ${value(scenario.state.exceptionCase)}\nRegistered proposal: ${value(scenario.state.plans)}\nSynthetic Supplier/Production setup records: ${scenario.state.approvals.length} decisions, ${scenario.state.operationHistory.length} operations, ${scenario.state.events.length} events. These are not live acquisitions.\n${provenance}`);
+  if (!options.acquisitionPreauthorized && await answer(io, 'Acquire offline operational decision? Type ACQUIRE; anything else stops: ') !== 'ACQUIRE') {
     io.write('WAIT / STOPPED — acquisition not authorized. No provider invocation; no new effects.');
     return;
   }
-  const acquired = await session.acquire(scenario.provider);
+  const acquired = await session.acquire(options.provider ?? scenario.provider);
+  options.afterAcquire?.(acquired);
   if (acquired.status !== 'REVIEWABLE') {
     const detail = acquired.status === 'STOPPED'
       ? acquired.stage === 'MAPPING' || acquired.stage === 'PROVIDER' ? { stage: acquired.stage, ...acquired.mapping }
@@ -57,7 +78,7 @@ export const runOperatorSandbox = async (io: OperatorIO, scenario = createOperat
     io.write(`WAIT / STOPPED — ${value(detail)}\nNo decision application; zero new effects. Prior synthetic setup records remain.`);
     return;
   }
-  io.write(formatExactReview(acquired.bridge.reviewTarget));
+  io.write(formatExactReview(acquired.bridge.reviewTarget, source));
   const stopReview = () => io.write('WAIT / STOPPED — No valid operator review was submitted. No application occurred. Zero new effects.');
   const choice = await answer(io, 'Review THIS exact proposal: APPLY / DISCARD (any other input stops without submitting a review): ');
   if (choice !== 'APPLY' && choice !== 'DISCARD') {
@@ -75,10 +96,11 @@ export const runOperatorSandbox = async (io: OperatorIO, scenario = createOperat
       authorizationReviews.push({ field: change.field, action: selected });
     }
   }
+  const metadata = options.reviewMetadata?.() ?? scenario.reviewMetadata;
   const reviewed = session.review(choice === 'APPLY'
-    ? { ...scenario.reviewMetadata, action: 'APPLY', authorizationReviews }
-    : { action: 'DISCARD', operationId: scenario.reviewMetadata.operationId, reviewedBy: scenario.reviewMetadata.reviewedBy,
-        reviewedAt: scenario.reviewMetadata.reviewedAt, reason: 'Operator explicitly discarded' });
+    ? { ...metadata, action: 'APPLY', authorizationReviews }
+    : { action: 'DISCARD', operationId: metadata.operationId, reviewedBy: metadata.reviewedBy,
+        reviewedAt: metadata.reviewedAt, reason: 'Operator explicitly discarded' });
   if (reviewed.status !== 'REVIEWED') {
     io.write(`WAIT / STOPPED — ${reviewed.reason}`);
     return;

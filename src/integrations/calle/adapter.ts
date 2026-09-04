@@ -5,12 +5,13 @@ import type { CallMappingResult, CallRequest } from './types.js';
 export const executeCall = async (
   provider: CallProvider,
   request: CallRequest,
-  receivedAt: string,
+  receivedAt: string | (() => string),
 ): Promise<CallMappingResult> => {
   try {
     const providerRequest = structuredClone(request);
     const externalResponse: unknown = await provider.executeCall(providerRequest);
-    return mapCalleResponse(request, externalResponse, receivedAt);
+    const resolvedReceivedAt = typeof receivedAt === 'function' ? receivedAt() : receivedAt;
+    return mapCalleResponse(request, externalResponse, resolvedReceivedAt);
   } catch (error: unknown) {
     if (error instanceof ProviderOperationalError) {
       return {

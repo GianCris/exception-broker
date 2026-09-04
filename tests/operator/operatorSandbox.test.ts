@@ -26,6 +26,7 @@ describe('Offline operator shell', () => {
     const output = io.output.join('\n');
     expect(output).toContain('SANDBOX MODE');
     expect(output).toContain('OFFLINE / MOCK');
+    expect(output).toContain('timestamps are synthetic/deterministic sandbox metadata');
     expect(output).toContain('"label":"ALLOW"');
     expect(output).toContain('LINEAGE_RESOLVED');
     expect(output).toContain('1 decisions (1 APPROVED / 0 REJECTED), 1 operations, 1 events');
