@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MockProvider } from '../../src/integrations/calle/mockProvider.js';
 import { formatExactReview, runOperatorSandbox } from '../../scripts/operator-sandbox.js';
 import { createOperatorScenario } from '../../src/sandbox/operatorScenario.js';
 import { DecisionAcquisitionSession } from '../../src/application/decisionAcquisitionSession.js';
@@ -10,6 +11,7 @@ const ioFor = (answers: (string | undefined)[]) => {
 };
 
 describe('Offline operator shell', () => {
+  afterEach(() => vi.restoreAllMocks());
   it('requires acquisition confirmation and shows complete review BEFORE asking APPLY', async () => {
     const scenario = createOperatorScenario();
     const io = ioFor(['ACQUIRE', 'APPLY']);
@@ -38,13 +40,76 @@ describe('Offline operator shell', () => {
     expect(io.output.join('\n')).toContain('acquisition not authorized');
   });
 
-  it.each(['DISCARD', undefined, '', 'yes'])('post-result %j is a normal discard with zero effects', async (choice) => {
-    const io = ioFor(['ACQUIRE', choice]);
+  it('explicit DISCARD is a normal discard with zero effects', async () => {
+    const review = vi.spyOn(DecisionAcquisitionSession.prototype, 'review');
+    const io = ioFor(['ACQUIRE', 'DISCARD']);
     await runOperatorSandbox(io);
+    expect(review).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ action: 'DISCARD' }));
     expect(io.output.join('\n')).toContain('"label":"DISCARDED"');
     expect(io.output.join('\n')).toContain('0 decisions (0 APPROVED / 0 REJECTED), 0 operations, 0 events');
     expect(io.output.join('\n')).toContain('same state reference');
   });
+
+  const invalidInputs = [undefined, '', 'yes', ' APPLY ', 'INPUT_FAILURE'] as const;
+  it.each(invalidInputs)('main review %j stops without submitting any review', async (choice) => {
+    const scenario = createOperatorScenario();
+    const review = vi.spyOn(DecisionAcquisitionSession.prototype, 'review');
+    const acquire = vi.spyOn(DecisionAcquisitionSession.prototype, 'acquire');
+    const io = ioFor(['ACQUIRE', choice]);
+    if (choice === 'INPUT_FAILURE') io.ask.mockResolvedValueOnce('ACQUIRE').mockRejectedValueOnce(new Error('cancelled'));
+    await runOperatorSandbox(io, scenario);
+    expect(review).not.toHaveBeenCalled();
+    expect((acquire.mock.contexts[0] as DecisionAcquisitionSession).state).toEqual(scenario.state);
+    expect(scenario.provider.invocationCount).toBe(1);
+    expect(io.output.join('\n')).toContain('No valid operator review was submitted. No application occurred. Zero new effects.');
+    expect(io.output.join('\n')).not.toContain('"label":"DISCARDED"');
+  });
+
+  const authorizationScenario = () => {
+    const scenario = createOperatorScenario();
+    scenario.provider = new MockProvider({ type: 'response', payload: {
+      ...scenario.response, structuredResult: { ...scenario.response.structuredResult, authorizationChanges: [
+        { field: 'maxSubstituteQuantity', newValue: 190, reason: 'Synthetic field review' },
+        { field: 'maxAbsorbableAdditionalCost', newValue: 110, reason: 'Second synthetic field review' },
+      ] },
+    } });
+    return scenario;
+  };
+
+  it.each(['APPLY', 'DISCARD'] as const)('retains explicit authorization %s for every field', async (action) => {
+    const scenario = authorizationScenario();
+    const review = vi.spyOn(DecisionAcquisitionSession.prototype, 'review');
+    const io = ioFor(['ACQUIRE', 'APPLY', action, action]);
+    await runOperatorSandbox(io, scenario);
+    expect(review).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ action: 'APPLY', authorizationReviews: [
+      { field: 'maxSubstituteQuantity', action }, { field: 'maxAbsorbableAdditionalCost', action },
+    ] }));
+    const client = (review.mock.contexts[0] as DecisionAcquisitionSession).state.exceptionCase.actors.find(({ role }) => role === 'client');
+    expect(client?.authorization.maxSubstituteQuantity).toBe(action === 'APPLY' ? 190 : 180);
+    expect(client?.authorization.maxAbsorbableAdditionalCost).toBe(action === 'APPLY' ? 110 : 100);
+    expect(io.output.join('\n')).toContain('"label":"ALLOW"');
+  });
+
+  it.each(invalidInputs.flatMap((input) => [ [input, false], [input, true] ] as const))(
+    'authorization input %j after partial collection %j submits nothing', async (input, partial) => {
+      const scenario = authorizationScenario();
+      const review = vi.spyOn(DecisionAcquisitionSession.prototype, 'review');
+      const acquire = vi.spyOn(DecisionAcquisitionSession.prototype, 'acquire');
+      const answers = ['ACQUIRE', 'APPLY', ...(partial ? ['APPLY'] : []), input];
+      const io = ioFor(answers);
+      io.ask.mockImplementation(async () => {
+        const next = answers.shift();
+        if (next === 'INPUT_FAILURE') throw new Error('cancelled');
+        return next;
+      });
+      await runOperatorSandbox(io, scenario);
+      expect(review).not.toHaveBeenCalled();
+      expect((acquire.mock.contexts[0] as DecisionAcquisitionSession).state).toEqual(scenario.state);
+      expect(scenario.provider.invocationCount).toBe(1);
+      expect(io.output.join('\n')).toContain('No valid operator review was submitted. No application occurred. Zero new effects.');
+      expect(io.output.join('\n')).not.toContain('"label":"DISCARDED"');
+    },
+  );
 
   it('cancelled I/O defaults to no acquisition', async () => {
     const scenario = createOperatorScenario();

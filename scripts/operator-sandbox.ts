@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { DecisionAcquisitionSession } from '../src/application/decisionAcquisitionSession.js';
 import type { ReviewTarget } from '../src/integrations/calle/decisionBridge.js';
+import type { AuthorizationReview } from '../src/integrations/calle/decisionApplication.js';
 import { operationEffects, presentAttempt } from '../src/presentation/decisionTraceViewModel.js';
 import { createOperatorScenario } from '../src/sandbox/operatorScenario.js';
 
@@ -57,18 +58,27 @@ export const runOperatorSandbox = async (io: OperatorIO, scenario = createOperat
     return;
   }
   io.write(formatExactReview(acquired.bridge.reviewTarget));
-  const choice = await answer(io, 'Review THIS exact proposal: APPLY / DISCARD (anything else discards): ');
-  const authorizationReviews = [];
+  const stopReview = () => io.write('WAIT / STOPPED — No valid operator review was submitted. No application occurred. Zero new effects.');
+  const choice = await answer(io, 'Review THIS exact proposal: APPLY / DISCARD (any other input stops without submitting a review): ');
+  if (choice !== 'APPLY' && choice !== 'DISCARD') {
+    stopReview();
+    return;
+  }
+  const authorizationReviews: AuthorizationReview[] = [];
   if (choice === 'APPLY') {
     for (const change of acquired.bridge.reviewTarget.proposedAuthorizationChanges) {
-      const selected = await answer(io, `Authorization ${change.field}: APPLY / DISCARD (anything else discards): `);
-      authorizationReviews.push({ field: change.field, action: selected === 'APPLY' ? 'APPLY' as const : 'DISCARD' as const });
+      const selected = await answer(io, `Authorization ${change.field}: APPLY / DISCARD (any other input stops the whole review): `);
+      if (selected !== 'APPLY' && selected !== 'DISCARD') {
+        stopReview();
+        return;
+      }
+      authorizationReviews.push({ field: change.field, action: selected });
     }
   }
   const reviewed = session.review(choice === 'APPLY'
     ? { ...scenario.reviewMetadata, action: 'APPLY', authorizationReviews }
     : { action: 'DISCARD', operationId: scenario.reviewMetadata.operationId, reviewedBy: scenario.reviewMetadata.reviewedBy,
-        reviewedAt: scenario.reviewMetadata.reviewedAt, reason: 'Operator discarded or did not confirm APPLY' });
+        reviewedAt: scenario.reviewMetadata.reviewedAt, reason: 'Operator explicitly discarded' });
   if (reviewed.status !== 'REVIEWED') {
     io.write(`WAIT / STOPPED — ${reviewed.reason}`);
     return;
