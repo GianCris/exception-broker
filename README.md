@@ -135,6 +135,14 @@ git diff --check
 
 The manual live harness is an operator tool, not part of this quickstart. Its dedicated test selection, exact mode/confirmation gates, credentials, and post-result review are separate requirements. A harness filename is not proof that every live stage occurred.
 
+## Offline Operator Sandbox
+
+Run `npm run operator:sandbox` for a separate interactive terminal workflow. Type `ACQUIRE` to obtain a deterministic MockProvider response, inspect the complete exact review, then choose `APPLY` or `DISCARD`. Missing or unrecognized confirmation never applies a decision. V1 accepts no flags or live mode and reads no CALL-E credentials.
+
+The built-in operational state is synthetic and pre-trusted, not assembled through Evidence Boundary or connected to ERP/WMS. Supplier/Production setup approvals are explicitly synthetic. The acquired Client decision is mock data, but mapping, Bridge, bound review and local executor/Application are the existing real implementations. The default supported scenario can finalize locally; no shipment or external action occurs. Output distinguishes prior setup records from new effects.
+
+The reusable session coordinator accepts a `CallProvider`, permits one acquisition attempt per session, and never retries or automatically applies. Its frozen sandbox request has its own V1 identity: exact unchanged requests retain that identity; material changes require a separately reviewed request definition/key. There is no persistent request registry. The browser Proof UX and historical manual live CALL-E harness remain separate and unchanged; this command does not demonstrate new live behavior.
+
 ## Claim-to-evidence index
 
 | Claim / boundary | Inspect |
