@@ -38,6 +38,15 @@ export const formatExactReview = (target: ReviewTarget, source = 'OFFLINE / MOCK
   ...(target.evidence.length === 0 ? ['  none'] : target.evidence.map((entry, index) => `  ${index + 1}. ${value(entry)}`)),
 ].join('\n');
 
+/** Bounded normalized explanation only; never raw provider output or execution authority. */
+export const formatClarificationExplanation = (target: ReviewTarget): string => [
+  'Clarification required — normalized external decision content is informational, not verified truth or execution authority.',
+  `Decision: ${value(target.decision)}`,
+  `Summary (complete): ${value(target.summary)}`,
+  'Evidence (complete, normalized, in presented order):',
+  ...(target.evidence.length === 0 ? ['  none'] : target.evidence.map((entry, index) => `  ${index + 1}. ${value(entry)}`)),
+].join('\n');
+
 const answer = async (io: OperatorIO, prompt: string) => {
   try { return await io.ask(prompt); } catch { return undefined; }
 };
@@ -71,6 +80,9 @@ export const runOperatorSandbox = async (
   const acquired = await session.acquire(options.provider ?? scenario.provider);
   options.afterAcquire?.(acquired);
   if (acquired.status !== 'REVIEWABLE') {
+    if (acquired.status === 'STOPPED' && acquired.stage === 'CLARIFICATION') {
+      io.write(formatClarificationExplanation(acquired.bridge.reviewTarget));
+    }
     const detail = acquired.status === 'STOPPED'
       ? acquired.stage === 'MAPPING' || acquired.stage === 'PROVIDER' ? { stage: acquired.stage, ...acquired.mapping }
         : acquired.stage === 'BRIDGE' ? acquired.bridge : { reason: 'NEEDS_CLARIFICATION', reviewState: acquired.bridge.proposal.reviewState }

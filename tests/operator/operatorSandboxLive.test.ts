@@ -40,6 +40,26 @@ const fixture = (answers: string[] = []) => {
 const confirm = (id = 'IDENTITY-1') => `CALL REQUEST-OPERATOR-LIVE-${id}`;
 
 describe('Operator Sandbox live composition (offline fakes only)', () => {
+  it('defines V2 independently from concrete acquisition identity and response-schema version', () => {
+    const request = createLiveRequest('REQUEST-OPERATOR-LIVE-FRESH-ID', '2027-08-01T12:00:00Z');
+    expect(LIVE_REQUEST_DEFINITION).toBe('OPERATOR-LIVE-V2');
+    expect(request.requestId).toBe('REQUEST-OPERATOR-LIVE-FRESH-ID');
+    expect(request.requestId).not.toContain('V2');
+    expect(request.expectedDecisionSchema).toEqual({ name: 'exception-broker-phone-decision', version: 1 });
+  });
+
+  it('states an outcome-neutral synthetic Client decision contract', () => {
+    const request = createLiveRequest('REQUEST-CONTRACT', '2027-08-01T12:00:00Z');
+    const contract = `${request.objective} ${request.context}`;
+    expect(contract).toContain('role-play only as the synthetic Client');
+    expect(contract).toContain('APPROVED only when every required Client condition is satisfied');
+    expect(contract).toContain('REJECTED when any stated hard Client condition is violated');
+    expect(contract).toContain('NEEDS_CLARIFICATION only when information necessary to evaluate those conditions is missing or ambiguous');
+    expect(contract).toContain('no outcome is preferred');
+    expect(contract).toContain('No authorization change is requested');
+    expect(contract).not.toMatch(/expected (?:answer|outcome)|therefore approve|plan satisfies/i);
+  });
+
   it('derives operational state and live context coherently from immutable shared facts', () => {
     expect(Object.isFrozen(OPERATOR_SANDBOX_FACTS)).toBe(true);
     const facts: OperatorSandboxFacts = Object.freeze({
@@ -51,11 +71,32 @@ describe('Operator Sandbox live composition (offline fakes only)', () => {
     expect(scenario.state.plans[0]).toMatchObject({ originalQuantityTomorrow: 360, substituteQuantityTomorrow: 150 });
     expect(scenario.request.context).toContain('510 units');
     expect(scenario.request.context).toContain('360 original and 150 substitute');
-    expect(live.context).toContain('510 units');
-    expect(live.context).toContain('360 original and 150 substitute');
+    expect(live.context).toContain('510 total units');
+    expect(live.context).toContain('360 original units, 150 substitute units');
     expect(live).toMatchObject({ requestId: 'REQUEST-FACTS-TEST', phoneNumber: CALLE_TESTING_HOTLINE,
       objective: expect.stringContaining('return exactly one decision'), expectedDecisionSchema: { name: 'exception-broker-phone-decision', version: 1 } });
     expect(live).not.toBe(scenario.request);
+  });
+
+  it('renders V2 policy from the generated Client state and registered proposal', () => {
+    const facts: OperatorSandboxFacts = Object.freeze({
+      ...OPERATOR_SANDBOX_FACTS, requestedQuantity: 510, originalQuantity: 360,
+      substituteAuthorizationLimit: 160, clientAdditionalCost: 25, clientCostLimit: 125, supplierAbsorbedCost: 50,
+    });
+    const scenario = createOperatorScenario(facts);
+    const request = createLiveRequest('REQUEST-COHERENCE', '2027-08-01T12:00:00Z', CALLE_TESTING_HOTLINE, facts);
+    const client = scenario.state.exceptionCase.actors.find(({ role }) => role === 'client')!;
+    const minimum = client.constraints.find(({ type }) => type === 'MINIMUM_DELIVERY');
+    const plan = scenario.state.plans[0]!;
+    if (minimum?.type !== 'MINIMUM_DELIVERY') throw new Error('Client minimum-delivery constraint required');
+    expect(minimum).toMatchObject({ minimumRequiredQuantity: facts.requestedQuantity, deliveryDate: facts.targetDeliveryDate });
+    expect(client.authorization).toMatchObject({ maxSubstituteQuantity: facts.substituteAuthorizationLimit,
+      maxAbsorbableAdditionalCost: facts.clientCostLimit });
+    for (const value of [minimum.minimumRequiredQuantity, minimum.deliveryDate,
+      client.authorization.maxSubstituteQuantity, client.authorization.maxAbsorbableAdditionalCost,
+      plan.originalQuantityTomorrow, plan.substituteQuantityTomorrow, plan.clientAdditionalCost]) {
+      expect(request.context).toContain(String(value));
+    }
   });
 
   it('stops without TTY before identity, secret, provider construction or invocation', async () => {
@@ -207,9 +248,41 @@ describe('Operator Sandbox live composition (offline fakes only)', () => {
     item.dependencies = { ...item.dependencies, providerFactory: () => provider };
     await runLiveOperatorSandbox(item.dependencies);
     expect(provider.invocationCount).toBe(1);
-    expect(item.output.join('\n')).toContain('"stoppedStage":"CLARIFICATION"');
-    expect(item.output.join('\n')).not.toContain('Exact retained review');
+    const output = item.output.join('\n');
+    expect(output).toContain('"stoppedStage":"CLARIFICATION"');
+    expect(output).toContain('Clarification required');
+    expect(output).toContain('Decision: "NEEDS_CLARIFICATION"');
+    expect(output).toContain('Summary (complete): "Synthetic NEEDS_CLARIFICATION"');
+    expect(output).toContain('1. "Synthetic evidence"');
+    expect(output).toContain('informational, not verified truth or execution authority');
+    expect(output).not.toContain('Exact retained review');
     expect(item.dependencies.io.ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('safely renders normalized clarification content without exposing raw provider-only data', async () => {
+    const item = fixture(['LIVE', confirm()]);
+    const payload = completed('NEEDS_CLARIFICATION');
+    payload.structuredResult.summary = 'Need\nclarification \u001b[31m';
+    payload.evidence = ['Evidence\nline', '\u001b[32msecond'];
+    const provider = new MockProvider({ type: 'response', payload: { ...payload, rawTranscript: 'RAW-PRIVATE-PROVIDER-DATA' } });
+    item.dependencies = { ...item.dependencies, providerFactory: () => provider };
+    await runLiveOperatorSandbox(item.dependencies);
+    const output = item.output.join('\n');
+    expect(output).toContain('"Need\\nclarification \\u001b[31m"');
+    expect(output).toContain('"Evidence\\nline"');
+    expect(output).toContain('"\\u001b[32msecond"');
+    expect(output).not.toContain('\u001b');
+    expect(output).not.toContain('RAW-PRIVATE-PROVIDER-DATA');
+    expect(provider.invocationCount).toBe(1);
+  });
+
+  it('does not invent clarification explanation for provider failure', async () => {
+    const item = fixture(['LIVE', confirm()]);
+    const provider = new MockProvider({ type: 'operational-error', kind: 'OPERATION_REJECTED' });
+    item.dependencies = { ...item.dependencies, providerFactory: () => provider };
+    await runLiveOperatorSandbox(item.dependencies);
+    expect(item.output.join('\n')).not.toContain('Clarification required');
+    expect(provider.invocationCount).toBe(1);
   });
 
   it('provider operational failure is an explicit receipt/stopped result with no retry', async () => {

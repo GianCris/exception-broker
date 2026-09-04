@@ -25,6 +25,19 @@ export const OPERATOR_SANDBOX_FACTS: OperatorSandboxFacts = Object.freeze({
 export const renderOperatorFacts = (facts: OperatorSandboxFacts) =>
   `${facts.requestedQuantity} units due ${facts.targetDeliveryDate}; proposal ${facts.originalQuantity} original and ${facts.substituteQuantity} substitute units; substitute limit ${facts.substituteAuthorizationLimit}; Client cost ${facts.clientAdditionalCost} with limit ${facts.clientCostLimit}; Supplier absorbs ${facts.supplierAbsorbedCost}`;
 
+/** Synthetic Client policy for acquisition only; downstream execution controls remain independent. */
+export const renderClientDecisionPolicy = (facts: OperatorSandboxFacts) => [
+  `Required Client conditions: deliver ${facts.requestedQuantity} total units by ${facts.targetDeliveryDate};`,
+  `use no more than ${facts.substituteAuthorizationLimit} substitute units;`,
+  `and charge the Client no more than ${facts.clientCostLimit} additional cost.`,
+  `Proposal facts: ${facts.originalQuantity} original units, ${facts.substituteQuantity} substitute units, and ${facts.clientAdditionalCost} Client additional cost.`,
+  `Supplier absorbed cost ${facts.supplierAbsorbedCost} is proposal context, not a Client hard condition.`,
+  'Return APPROVED only when every required Client condition is satisfied.',
+  'Return REJECTED when any stated hard Client condition is violated.',
+  'Return NEEDS_CLARIFICATION only when information necessary to evaluate those conditions is missing or ambiguous.',
+  'Evaluate neutrally; no outcome is preferred. Give a brief reason and exactly one decision.',
+].join(' ');
+
 const requestFor = (facts: OperatorSandboxFacts) => createCallRequest({
   requestId: 'REQUEST-OPERATOR-SANDBOX-CLIENT-V1', caseId: facts.caseId, planId: facts.planId, actorId: facts.clientActorId, actorRole: 'client',
   phoneNumber: '+15555550123', // Inert mock destination; this shell has no live composition.
