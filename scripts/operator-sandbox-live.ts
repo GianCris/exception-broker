@@ -6,10 +6,10 @@ import { createCallRequest } from '../src/integrations/calle/contract.js';
 import { CallEProvider } from '../src/integrations/calle/callEProvider.js';
 import type { CallProvider } from '../src/integrations/calle/provider.js';
 import type { CallRequest } from '../src/integrations/calle/types.js';
-import { createOperatorScenario, OPERATOR_SANDBOX_FACTS, renderOperatorFacts, type OperatorSandboxFacts } from '../src/sandbox/operatorScenario.js';
+import { createOperatorScenario, OPERATOR_SANDBOX_FACTS, renderClientDecisionPolicy, type OperatorSandboxFacts } from '../src/sandbox/operatorScenario.js';
 import type { AcquisitionResult } from '../src/application/decisionAcquisitionSession.js';
 
-export const LIVE_REQUEST_DEFINITION = 'OPERATOR-LIVE-V1';
+export const LIVE_REQUEST_DEFINITION = 'OPERATOR-LIVE-V2';
 export const CALLE_TESTING_HOTLINE = '+12763229632';
 export const LIVE_ACKNOWLEDGEMENT = 'LIVE';
 export const LIVE_ALLOWED_DECISIONS = ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION'] as const;
@@ -30,8 +30,8 @@ export const createLiveRequest = (requestId: string, createdAt: string, destinat
     actorId: facts.clientActorId,
     actorRole: 'client',
     phoneNumber: destination,
-    objective: 'For this synthetic sandbox interaction, return exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION. No authorization change is requested.',
-    context: `Synthetic Client policy: ${renderOperatorFacts(facts)}. No real customer authority or external effect.`,
+    objective: 'Ask the automated testing agent to role-play only as the synthetic Client, neutrally evaluate the stated proposal against the stated Client policy, give a brief reason, and return exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION. No authorization change is requested.',
+    context: `Synthetic sandbox test only; no real customer authority or external effect. ${renderClientDecisionPolicy(facts)}`,
     expectedDecisionSchema: { name: 'exception-broker-phone-decision', version: 1 },
     createdAt,
   }));
@@ -45,7 +45,7 @@ class ReceiptProvider implements CallProvider {
   invoked = 0;
   constructor(delegate: CallProvider) { this.#delegate = delegate; }
   async executeCall(request: CallRequest): Promise<unknown> {
-    if (this.invoked !== 0) throw new Error('Live V1 permits one provider invocation');
+    if (this.invoked !== 0) throw new Error('The live sandbox permits one provider invocation');
     this.invoked += 1;
     const returned = await this.#delegate.executeCall(request);
     this.returned = returned;
