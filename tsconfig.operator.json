@@ -8,5 +8,5 @@
     "sourceMap": false,
     "incremental": false
   },
-  "include": ["scripts/operator-sandbox.ts"]
+  "include": ["scripts/operator-sandbox.ts", "scripts/operator-sandbox-live.ts"]
 }
