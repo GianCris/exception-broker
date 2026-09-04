@@ -54,13 +54,16 @@ export type OperatorRunOptions = Readonly<{
 
 export const runOperatorSandbox = async (
   io: OperatorIO,
-  scenario = createOperatorScenario(),
+  scenario: Omit<ReturnType<typeof createOperatorScenario>, 'receivedAt'> & { receivedAt: string | (() => string) } = createOperatorScenario(),
   options: OperatorRunOptions = {},
 ) => {
   const source = options.source ?? 'OFFLINE / MOCK';
   const session = new DecisionAcquisitionSession(scenario.state, scenario.request, scenario.receivedAt);
   io.write(`Exception Broker — Operator Sandbox\nSANDBOX MODE — ${source}\nOperational state is synthetic and pre-trusted. No Evidence Boundary ingestion, ERP/WMS connection or external execution.${source === 'OFFLINE / MOCK' ? ' No phone call.' : ' Only this acquisition may be a real CALL-E interaction.'}`);
-  io.write(`Scenario: ${value(scenario.request.caseId)} / ${value(scenario.request.planId)}\nOperational state: ${value(scenario.state.exceptionCase)}\nRegistered proposal: ${value(scenario.state.plans)}\nSynthetic Supplier/Production setup records: ${scenario.state.approvals.length} decisions, ${scenario.state.operationHistory.length} operations, ${scenario.state.events.length} events. These are not live acquisitions.\nReviewer and timestamps are synthetic sandbox metadata, not authenticated identity or wall-clock evidence.`);
+  const provenance = source === 'OFFLINE / MOCK'
+    ? 'Reviewer identity and lifecycle timestamps are synthetic/deterministic sandbox metadata, not authenticated identity or wall-clock evidence.'
+    : 'Reviewer identity is local and unauthenticated. Lifecycle timestamps come from the local process clock; they are not externally attested, cryptographically verified, or claimed to be CALL-E server timestamps.';
+  io.write(`Scenario: ${value(scenario.request.caseId)} / ${value(scenario.request.planId)}\nOperational state: ${value(scenario.state.exceptionCase)}\nRegistered proposal: ${value(scenario.state.plans)}\nSynthetic Supplier/Production setup records: ${scenario.state.approvals.length} decisions, ${scenario.state.operationHistory.length} operations, ${scenario.state.events.length} events. These are not live acquisitions.\n${provenance}`);
   if (!options.acquisitionPreauthorized && await answer(io, 'Acquire offline operational decision? Type ACQUIRE; anything else stops: ') !== 'ACQUIRE') {
     io.write('WAIT / STOPPED — acquisition not authorized. No provider invocation; no new effects.');
     return;

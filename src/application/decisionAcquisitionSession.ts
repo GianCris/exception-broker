@@ -25,12 +25,12 @@ export type AcquisitionResult =
 /** One owned, in-memory plan-decision session. No shell I/O, credentials, retries or scenario policy. */
 export class DecisionAcquisitionSession {
   readonly #request: CallRequest;
-  readonly #receivedAt: string;
+  readonly #receivedAt: string | (() => string);
   #state: OrchestrationState;
   #phase: 'READY' | 'ACQUIRING' | 'STOPPED' | 'AWAITING_REVIEW' | 'TERMINAL' = 'READY';
   #bridge: Extract<DecisionBridgeResult, { ready: true }> | undefined;
 
-  constructor(state: OrchestrationState, request: CallRequest, receivedAt: string) {
+  constructor(state: OrchestrationState, request: CallRequest, receivedAt: string | (() => string)) {
     this.#request = freeze(createCallRequest(request));
     if (this.request.planId === undefined) throw new Error('A plan-bound request is required');
     this.#state = freeze(structuredClone(state));

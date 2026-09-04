@@ -11,6 +11,7 @@ import {
 import { MockProvider } from '../../src/integrations/calle/mockProvider.js';
 import type { CallProvider } from '../../src/integrations/calle/provider.js';
 import type { CallRequest } from '../../src/integrations/calle/types.js';
+import { OPERATOR_SANDBOX_FACTS, createOperatorScenario, type OperatorSandboxFacts } from '../../src/sandbox/operatorScenario.js';
 
 const completed = (decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CLARIFICATION' = 'APPROVED') => ({
   id: 'TEST-INTERACTION-NOT-LIVE', status: 'completed', taskCompleted: true,
@@ -39,6 +40,24 @@ const fixture = (answers: string[] = []) => {
 const confirm = (id = 'IDENTITY-1') => `CALL REQUEST-OPERATOR-LIVE-${id}`;
 
 describe('Operator Sandbox live composition (offline fakes only)', () => {
+  it('derives operational state and live context coherently from immutable shared facts', () => {
+    expect(Object.isFrozen(OPERATOR_SANDBOX_FACTS)).toBe(true);
+    const facts: OperatorSandboxFacts = Object.freeze({
+      ...OPERATOR_SANDBOX_FACTS, requestedQuantity: 510, originalQuantity: 360,
+    });
+    const scenario = createOperatorScenario(facts);
+    const live = createLiveRequest('REQUEST-FACTS-TEST', '2027-08-01T12:00:00Z', CALLE_TESTING_HOTLINE, facts);
+    expect(scenario.state.exceptionCase.requestedQuantity).toBe(510);
+    expect(scenario.state.plans[0]).toMatchObject({ originalQuantityTomorrow: 360, substituteQuantityTomorrow: 150 });
+    expect(scenario.request.context).toContain('510 units');
+    expect(scenario.request.context).toContain('360 original and 150 substitute');
+    expect(live.context).toContain('510 units');
+    expect(live.context).toContain('360 original and 150 substitute');
+    expect(live).toMatchObject({ requestId: 'REQUEST-FACTS-TEST', phoneNumber: CALLE_TESTING_HOTLINE,
+      objective: expect.stringContaining('return exactly one decision'), expectedDecisionSchema: { name: 'exception-broker-phone-decision', version: 1 } });
+    expect(live).not.toBe(scenario.request);
+  });
+
   it('stops without TTY before identity, secret, provider construction or invocation', async () => {
     const item = fixture();
     item.dependencies = { ...item.dependencies, interactiveTerminal: false };
@@ -145,6 +164,41 @@ describe('Operator Sandbox live composition (offline fakes only)', () => {
     expect(output).toContain('TEST-INTERACTION-NOT-LIVE');
     expect(output).toContain('not authority to execute');
     expect(output).not.toContain('fake-credential-never-sent');
+    expect(output).toContain('Reviewer identity is local and unauthenticated');
+    expect(output).toContain('local process clock');
+    expect(output).toContain('not externally attested');
+    expect(output).not.toContain('timestamps are synthetic sandbox metadata');
+  });
+
+  it('resolves one post-provider receipt timestamp and reuses it for receipt, proposal and ReviewTarget', async () => {
+    const item = fixture(['LIVE', confirm(), 'DISCARD']);
+    const times = ['2027-08-01T12:00:00Z', '2027-08-01T12:01:00Z', '2027-08-01T12:02:00Z'];
+    let providerReturned = false;
+    const now = vi.fn(() => {
+      const value = times.shift()!;
+      if (value === '2027-08-01T12:01:00Z') expect(providerReturned).toBe(true);
+      return value;
+    });
+    const provider: CallProvider = { executeCall: vi.fn(async () => { providerReturned = true; return completed(); }) };
+    item.dependencies = { ...item.dependencies, now, providerFactory: () => provider };
+    await runLiveOperatorSandbox(item.dependencies);
+    const output = item.output.join('\n');
+    expect(now).toHaveBeenCalledTimes(3);
+    expect(output).toContain('"receivedAt":"2027-08-01T12:01:00Z"');
+    expect(output).toContain('Received at: "2027-08-01T12:01:00Z"');
+    expect(Date.parse('2027-08-01T12:00:00Z')).toBeLessThanOrEqual(Date.parse('2027-08-01T12:01:00Z'));
+    expect(Date.parse('2027-08-01T12:01:00Z')).toBeLessThanOrEqual(Date.parse('2027-08-01T12:02:00Z'));
+  });
+
+  it('does not repair impossible review chronology and existing Application fails closed', async () => {
+    const item = fixture(['LIVE', confirm(), 'APPLY']);
+    const times = ['2027-08-01T12:00:00Z', '2027-08-01T12:02:00Z', '2027-08-01T12:01:00Z'];
+    item.dependencies = { ...item.dependencies, now: vi.fn(() => times.shift()!) };
+    await runLiveOperatorSandbox(item.dependencies);
+    const output = item.output.join('\n');
+    expect(output).toContain('REVIEW_TIMESTAMP_PRECEDES_PROPOSAL');
+    expect(output).toContain('0 decisions (0 APPROVED / 0 REJECTED), 0 operations, 0 events');
+    expect(output).toContain('same state reference');
   });
 
   it('clarification emits receipt then stops without application or retry', async () => {
@@ -164,8 +218,10 @@ describe('Operator Sandbox live composition (offline fakes only)', () => {
     item.dependencies = { ...item.dependencies, providerFactory: () => provider };
     await runLiveOperatorSandbox(item.dependencies);
     expect(provider.invocationCount).toBe(1);
-    expect(item.output.join('\n')).toContain('"stoppedStage":"PROVIDER"');
-    expect(item.output.join('\n')).toContain('OPERATION_REJECTED');
+    const output = item.output.join('\n');
+    expect(output).toContain('"stoppedStage":"PROVIDER"');
+    expect(output).toContain('OPERATION_REJECTED');
+    expect(output).not.toContain('"receivedAt"');
   });
 
   it('offline command remains a separate mock-only composition without live activation', () => {

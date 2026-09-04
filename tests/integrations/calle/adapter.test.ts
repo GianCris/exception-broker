@@ -50,6 +50,28 @@ const providerReturning = (payload: unknown): CallProvider => ({
 });
 
 describe('CALL-E adapter', () => {
+  it('resolves a deferred receivedAt only after the provider returns', async () => {
+    const order: string[] = [];
+    const result = await executeCall({ executeCall: async () => {
+      order.push('provider returned');
+      return externalResponse();
+    } }, request(), () => {
+      order.push('receivedAt resolved');
+      return receivedAt;
+    });
+    expect(order).toEqual(['provider returned', 'receivedAt resolved']);
+    expect(result).toMatchObject({ success: true, value: { receivedAt } });
+  });
+
+  it('does not resolve a deferred receivedAt when the provider fails', async () => {
+    const clock = vi.fn(() => receivedAt);
+    const result = await executeCall({ executeCall: async () => {
+      throw new ProviderOperationalError('OPERATION_REJECTED');
+    } }, request(), clock);
+    expect(result).toMatchObject({ success: false });
+    expect(clock).not.toHaveBeenCalled();
+  });
+
   it.each(['APPROVED', 'REJECTED', 'PENDING', 'NEEDS_CLARIFICATION'])(
     'normalizes a valid %s provider response through the W3-01 mapper',
     async (decision) => {

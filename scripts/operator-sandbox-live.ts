@@ -6,7 +6,7 @@ import { createCallRequest } from '../src/integrations/calle/contract.js';
 import { CallEProvider } from '../src/integrations/calle/callEProvider.js';
 import type { CallProvider } from '../src/integrations/calle/provider.js';
 import type { CallRequest } from '../src/integrations/calle/types.js';
-import { createOperatorScenario } from '../src/sandbox/operatorScenario.js';
+import { createOperatorScenario, OPERATOR_SANDBOX_FACTS, renderOperatorFacts, type OperatorSandboxFacts } from '../src/sandbox/operatorScenario.js';
 import type { AcquisitionResult } from '../src/application/decisionAcquisitionSession.js';
 
 export const LIVE_REQUEST_DEFINITION = 'OPERATOR-LIVE-V1';
@@ -22,16 +22,16 @@ const deepFreeze = <T>(value: T): T => {
   return value;
 };
 
-export const createLiveRequest = (requestId: string, createdAt: string, destination = CALLE_TESTING_HOTLINE): CallRequest =>
+export const createLiveRequest = (requestId: string, createdAt: string, destination = CALLE_TESTING_HOTLINE, facts: OperatorSandboxFacts = OPERATOR_SANDBOX_FACTS): CallRequest =>
   deepFreeze(createCallRequest({
     requestId,
-    caseId: 'CASE-OPERATOR-SANDBOX',
-    planId: 'PLAN-OPERATOR-SANDBOX',
-    actorId: 'ACTOR-OPERATOR-CLIENT',
+    caseId: facts.caseId,
+    planId: facts.planId,
+    actorId: facts.clientActorId,
     actorRole: 'client',
     phoneNumber: destination,
     objective: 'For this synthetic sandbox interaction, return exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION. No authorization change is requested.',
-    context: 'Synthetic Client policy: 500 units are due 2027-07-01T17:00:00-05:00; the proposal is 350 original and 150 substitute units; substitute limit 180; Client cost 0 with limit 100; Supplier absorbs 75. No real customer authority or external effect.',
+    context: `Synthetic Client policy: ${renderOperatorFacts(facts)}. No real customer authority or external effect.`,
     expectedDecisionSchema: { name: 'exception-broker-phone-decision', version: 1 },
     createdAt,
   }));
@@ -53,7 +53,7 @@ class ReceiptProvider implements CallProvider {
   }
 }
 
-const receipt = (request: CallRequest, provider: ReceiptProvider, result: AcquisitionResult, receivedAt: string) => {
+const receipt = (request: CallRequest, provider: ReceiptProvider, result: AcquisitionResult) => {
   const raw = asRecord(provider.returned);
   const confidence = asRecord(raw?.completionConfidence);
   const interactionKey = raw === undefined ? undefined : ['callId', 'call_id', 'taskId', 'task_id', 'id']
@@ -67,7 +67,8 @@ const receipt = (request: CallRequest, provider: ReceiptProvider, result: Acquis
     providerStatus: raw?.status,
     taskCompleted: raw?.taskCompleted,
     completionConfidence: confidence === undefined ? undefined : { score: confidence.score, label: confidence.label },
-    receivedAt,
+    ...(result.status === 'REVIEWABLE' || (result.status === 'STOPPED' && result.stage === 'CLARIFICATION')
+      ? { receivedAt: result.bridge.proposal.receivedAt } : {}),
     acquisitionStatus: result.status,
     ...(result.status === 'STOPPED' ? { stoppedStage: result.stage } : {}),
     note: 'Session-local acquisition provenance; not authority to execute.',
@@ -131,11 +132,10 @@ export const runLiveOperatorSandbox = async (dependencies: LiveDependencies) => 
   const apiKey = dependencies.readSecret();
   if (apiKey === undefined || apiKey.length === 0) return stopped(io, 'CALL-E credential is unavailable after authorization');
   const provider = new ReceiptProvider(dependencies.providerFactory(apiKey, LIVE_ALLOWED_DECISIONS));
-  const receivedAt = dependencies.now();
-  const scenario = { ...createOperatorScenario(), request, receivedAt };
+  const scenario = { ...createOperatorScenario(), request, receivedAt: dependencies.now };
   await runOperatorSandbox(io, scenario, {
     source: 'LIVE / CALL-E', acquisitionPreauthorized: true, provider,
-    afterAcquire: (result) => io.write(`Acquisition receipt: ${JSON.stringify(receipt(request, provider, result, receivedAt))}`),
+    afterAcquire: (result) => io.write(`Acquisition receipt: ${JSON.stringify(receipt(request, provider, result))}`),
     reviewMetadata: () => ({
       operationId: `OPERATION-${request.requestId}`,
       eventId: `EVENT-${request.requestId}`,
