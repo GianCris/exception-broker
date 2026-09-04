@@ -7,6 +7,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "operator:sandbox": "tsc -p tsconfig.operator.json && node .operator-dist/scripts/operator-sandbox.js",
     "dev": "vite --configLoader runner",
     "build": "tsc --noEmit && vite build --configLoader runner",
     "calle:smoke": "tsc -p tsconfig.smoke.json && node .calle-smoke-dist/scripts/calle-live-smoke-test.js",
