@@ -25,7 +25,7 @@ After explicit bound review, the broker attempts local application through the e
 
 This demonstration uses configured evidence and synthetic decisions. It performs no shipment, ERP/WMS write, or external operational execution.
 
-**CALL-E is separately proven live:** real interactions reached structured clarification/Bridge or failed closed on null output. Live approved/rejected mutation was not demonstrated. The two evidence lanes below keep those claims distinct.
+**CALL-E is separately proven live:** productized Operator Sandbox runs reached both a normalized clarification safe-stop and an exact reviewed APPROVED path that applied local sandbox effects. These historical runs did not generate H01/H02/H03, and no external operation was executed. The two evidence lanes below keep those claims distinct.
 
 ## One boundary, three independent proofs
 
@@ -43,12 +43,12 @@ The UI's formal, physical, and currentness explanations are read-only snapshot a
 
 ### Lane A — Historical live acquisition
 
-Real CALL-E provider interactions and completed tasks were observed:
+Real CALL-E provider interactions and completed tasks were observed through the productized Operator Sandbox:
 
-- **Run #4:** schema-valid `NEEDS_CLARIFICATION` → mapper accepted → intended business identities preserved → Decision Bridge ready → stopped without application.
-- **Run #5:** completed task → `structuredResult=null` → mapper failed closed → no downstream application or effects.
+- **Operator Run 1 / `OPERATOR-LIVE-V1`:** schema-valid `NEEDS_CLARIFICATION` → mapper and Bridge accepted → clarification stop → zero new effects.
+- **Operator Run 2 / `OPERATOR-LIVE-V2`:** schema-valid `APPROVED` → exact retained proposal displayed → explicit human `APPLY` → current local Broker/Application evaluation → `ALLOW` / `LINEAGE_RESOLVED` → one local decision, operation, and event record.
 
-**Live CALL-E APPROVED/REJECTED → review → mutation was not demonstrated.** Historical CALL-E calls did not generate H01/H02/H03. Run summaries are operator-confirmed; no original live recording is bundled.
+These are operator-observed historical results; no original CALL-E recording is bundled. Reviewer identity was local and unauthenticated, lifecycle timestamps came from the unattested local process clock, state and effects were in memory, and Supplier/Production setup records were synthetic. Historical CALL-E calls did not generate H01/H02/H03. See the [live validation evidence note](docs/evidence/call-e-live-validation.md).
 
 The [CALL-E provider](src/integrations/calle/callEProvider.ts) invokes the SDK's `calls.createAndWait`; the existing mapper and Bridge handle the returned decision evidence. A completed provider task is not itself a usable decision, and a usable decision is not itself permission to apply it.
 
@@ -70,12 +70,12 @@ These are two genuine localhost captures from the same deterministic H02 scenari
 
 ## Responsibility boundaries
 
-This is a structural map of responsibilities and demonstrated endpoints, not an execution log. The two lanes are deliberately disconnected; no arrow claims a successful live mutation.
+This is a structural map of responsibilities and demonstrated endpoints, not an execution log. Historical live application affected local sandbox state only.
 
 ```text
 HISTORICAL LIVE ACQUISITION PROOF
-CALL-E -> mapper -> Bridge -> clarification STOP (Run #4)
-CALL-E -> mapper -> null-result STOP             (Run #5)
+CALL-E -> mapper -> Bridge -> clarification STOP; zero effects (Operator Run 1 / V1)
+CALL-E -> mapper -> Bridge -> exact review/APPLY -> local Application -> ALLOW (Operator Run 2 / V2)
 
 DETERMINISTIC EXECUTION-CONTROL PROOF
 Configured evidence -> Evidence Boundary -> trusted local case
@@ -139,11 +139,11 @@ The manual live harness is an operator tool, not part of this quickstart. Its de
 
 Run `npm run operator:sandbox` for a separate interactive terminal workflow. Type `ACQUIRE` to obtain a deterministic MockProvider response, inspect the complete exact review, then choose `APPLY` or `DISCARD`. Missing or unrecognized confirmation never applies a decision. V1 accepts no flags or live mode and reads no CALL-E credentials.
 
-`npm run operator:sandbox:live` is a separate deliberately gated composition limited in source code to CALL-E's official testing hotline. It requires an interactive terminal, exact `LIVE` acknowledgement, inspection of a deeply frozen request with a fresh acquisition ID, and exact acquisition-specific confirmation before `CALLE_API_KEY` is read. It permits one call attempt per session, has no retry or destination override, and accepts no command-line arguments. This command is capable of a real outbound call; it was implemented and tested with injected fakes only in this phase, without live validation.
+`npm run operator:sandbox:live` is a separate deliberately gated composition limited in source code to CALL-E's official testing hotline. It requires an interactive terminal, exact `LIVE` acknowledgement, inspection of a deeply frozen request with a fresh acquisition ID, and exact acquisition-specific confirmation before `CALLE_API_KEY` is read. It permits one call attempt per session, has no retry or destination override, and accepts no command-line arguments. Two operator-observed live validations are recorded in the [live evidence note](docs/evidence/call-e-live-validation.md): V1 stopped safely for clarification; V2 displayed an exact APPROVED proposal for explicit review and, after `APPLY`, produced local `ALLOW` / `LINEAGE_RESOLVED` effects.
 
 Both commands use synthetic, pre-trusted operational state that is not assembled through Evidence Boundary or connected to ERP/WMS. Supplier/Production setup approvals are explicitly synthetic. Offline acquisition is mock data; live composition can make only one deliberate CALL-E acquisition. Both reuse the same mapping, Bridge, bound review and local executor/Application. Reviewer identity is not authenticated, state and acquisition receipt are in-memory, and no shipment or external fulfillment occurs. Output distinguishes prior setup records from new effects.
 
-The reusable session coordinator accepts a `CallProvider`, permits one acquisition attempt per session, and never retries or automatically applies. Its frozen sandbox request has its own V1 identity: exact unchanged requests retain that identity; material changes require a separately reviewed request definition/key. There is no persistent request registry. The browser Proof UX and historical manual live CALL-E harness remain separate and unchanged; this command does not demonstrate new live behavior.
+The reusable session coordinator accepts a `CallProvider`, permits one acquisition attempt per session, and never retries or automatically applies. Each live request definition is explicitly versioned while each acquisition receives a separate fresh identity. There is no persistent request registry. The browser Proof UX and historical manual live CALL-E harness remain separate from the productized Operator Sandbox evidence.
 
 ## Claim-to-evidence index
 
@@ -158,7 +158,9 @@ The reusable session coordinator accepts a `CallProvider`, permits one acquisiti
 | Physical supply is not authorization | [Physical Feasibility tests](tests/domain/physicalFeasibility.test.ts) |
 | Explicit actions, scoped resolution, failure-state preservation | [Adaptive executor tests](tests/application/adaptiveOrchestrator.test.ts), [implementation](src/application/adaptiveOrchestrator.ts) |
 | CALL-E request construction, normalization and context checks—offline tests | [Provider](tests/integrations/calle/callEProvider.test.ts), [mapper](tests/integrations/calle/mapper.test.ts), [Bridge](tests/integrations/calle/decisionBridge.test.ts) |
-| Manually gated live procedure and sanitized stage reporting | [Live harness](tests/integrations/calle/calleLiveEndToEndProof.manual.test.ts) |
+| Productized live Operator Sandbox implementation and network-free tests | [Live composition](scripts/operator-sandbox-live.ts), [live composition tests](tests/operator/operatorSandboxLive.test.ts) |
+| Operator-observed productized CALL-E live results and limits | [Live validation evidence note](docs/evidence/call-e-live-validation.md) |
+| Historical manually gated live procedure and sanitized stage reporting | [Manual live harness](tests/integrations/calle/calleLiveEndToEndProof.manual.test.ts) |
 
 Benchmarks establish their named scenarios, not production reliability statistics or universal generalization. CASE-001 remains retained legacy simulation proof, not the default UI or a required generalized sequence. Live-run observations and deterministic test results are different evidence classes.
 
@@ -166,7 +168,7 @@ Benchmarks establish their named scenarios, not production reliability statistic
 
 Configured ERP/WMS labels are not live integrations. Declared source identity and stable configuration are trusted upstream; the broker does not independently authenticate those systems or people. Plan-lineage currentness is not general evidence freshness or latest-inventory synchronization.
 
-Records are inspectable local decision, operation, and event data—not persistent or tamper-evident audit storage. The proof does not demonstrate external shipment/order execution, production reliability, multichannel resilience, cryptographic acquisition-attempt provenance, or universal safety. Live approved/rejected application remains outside the demonstrated CALL-E evidence described above.
+Records are inspectable local decision, operation, and event data—not persistent or tamper-evident audit storage. The proof does not demonstrate external shipment/order execution, production reliability, multichannel resilience, cryptographic acquisition-attempt provenance, or universal safety. Live `REJECTED` application remains outside the demonstrated CALL-E evidence; the observed live `APPROVED` application produced local sandbox effects only.
 
 ## Commercial direction
 
