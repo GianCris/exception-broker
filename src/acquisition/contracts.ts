@@ -76,6 +76,7 @@ export type AcquisitionRecord = Readonly<{
   acquisitionId: string;
   idempotencyKey: string;
   requestFingerprint: string;
+  requestDefinitionFingerprint?: string;
   clientTokenHash: string;
   authorizationConfirmed: true;
   maskedRecipient: string;
@@ -100,12 +101,12 @@ export type PollAcquisitionResult =
   | Readonly<{ found: true; record: AcquisitionRecord }>
   | Readonly<{ found: false; code: 'NOT_FOUND' | 'PROVIDER_FAILURE' | 'POLL_TIMEOUT'; reason: string }>;
 
-export type AcquisitionPublicRecord = Omit<AcquisitionRecord, 'clientTokenHash' | 'requestFingerprint' | 'decisionContext'> & Readonly<{
+export type AcquisitionPublicRecord = Omit<AcquisitionRecord, 'clientTokenHash' | 'requestFingerprint' | 'requestDefinitionFingerprint' | 'decisionContext'> & Readonly<{
   decisionContext: PersistedDecisionContext;
 }>;
 
 export const toPublicAcquisitionRecord = (record: AcquisitionRecord): AcquisitionPublicRecord => {
-  const { clientTokenHash: _clientTokenHash, requestFingerprint: _requestFingerprint, ...safe } = record;
+  const { clientTokenHash: _clientTokenHash, requestFingerprint: _requestFingerprint, requestDefinitionFingerprint: _requestDefinitionFingerprint, ...safe } = record;
   return structuredClone(safe);
 };
 

@@ -1,4 +1,6 @@
 import type { AcquisitionPublicRecord } from './contracts.js';
+import { OPERATOR_SANDBOX_DEFINITION, OPERATOR_SANDBOX_FACTS, OPERATOR_SANDBOX_OBJECTIVE, operatorSandboxContext } from '../sandbox/operatorDefinition.js';
+import type { LiveControlPublicRecord } from '../control/contracts.js';
 
 export type BrowserAcquisitionCreateInput = Readonly<{
   acquisitionId: string;
@@ -33,6 +35,9 @@ export interface AcquisitionBrowserApi {
   create(input: BrowserAcquisitionCreateInput): Promise<BrowserCreateResult>;
   get(acquisitionId: string, accessToken: string): Promise<AcquisitionPublicRecord>;
   refresh(acquisitionId: string, accessToken: string): Promise<BrowserReadResult>;
+  handoff(acquisitionId: string, accessToken: string): Promise<Readonly<{ accepted: true; record: LiveControlPublicRecord; existing: boolean }>>;
+  getControl(controlSessionId: string, accessToken: string): Promise<Readonly<{ accepted: true; record: LiveControlPublicRecord; existing: boolean }>>;
+  review(controlSessionId: string, accessToken: string, action: 'APPLY' | 'DISCARD'): Promise<Readonly<{ accepted: true; record: LiveControlPublicRecord; existing: boolean }>>;
 }
 
 export class AcquisitionApiError extends Error {
@@ -80,10 +85,19 @@ export const createAcquisitionBrowserApi = (
       headers: { 'x-acquisition-demo-token': accessToken },
     }));
   },
+  async handoff(acquisitionId, accessToken) {
+    return parseResponse(await fetcher(`/api/acquisitions/${encodeURIComponent(acquisitionId)}/control`, { method: 'POST', headers: { 'x-acquisition-demo-token': accessToken } }));
+  },
+  async getControl(controlSessionId, accessToken) {
+    return parseResponse(await fetcher(`/api/control-sessions/${encodeURIComponent(controlSessionId)}`, { headers: { 'x-acquisition-demo-token': accessToken } }));
+  },
+  async review(controlSessionId, accessToken, action) {
+    return parseResponse(await fetcher(`/api/control-sessions/${encodeURIComponent(controlSessionId)}/review`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-acquisition-demo-token': accessToken }, body: JSON.stringify({ action }) }));
+  },
 });
 
-export const ACQUISITION_V1_OBJECTIVE = 'Obtain exactly one explicit decision about the controlled synthetic proposal.';
-export const ACQUISITION_V1_CONTEXT = 'Controlled sandbox context only. Return APPROVED, REJECTED, PENDING, or NEEDS_CLARIFICATION. No real customer authority, operational truth, or external effect is established.';
+export const ACQUISITION_V1_OBJECTIVE = OPERATOR_SANDBOX_OBJECTIVE;
+export const ACQUISITION_V1_CONTEXT = operatorSandboxContext();
 
 export const createBrowserAcquisitionRequest = (input: Readonly<{
   identity: string;
@@ -97,13 +111,13 @@ export const createBrowserAcquisitionRequest = (input: Readonly<{
   phoneNumber: input.phoneNumber,
   request: {
     requestId: `REQUEST-BROWSER-V1-${input.identity}`,
-    caseId: 'CASE-ACQUISITION-V1-SANDBOX',
-    planId: 'PLAN-ACQUISITION-V1-SANDBOX',
-    actorId: 'ACTOR-ACQUISITION-V1-CLIENT',
-    actorRole: 'client',
+    caseId: OPERATOR_SANDBOX_FACTS.caseId,
+    planId: OPERATOR_SANDBOX_FACTS.planId,
+    actorId: OPERATOR_SANDBOX_FACTS.clientActorId,
+    actorRole: OPERATOR_SANDBOX_DEFINITION.actorRole,
     objective: ACQUISITION_V1_OBJECTIVE,
     context: ACQUISITION_V1_CONTEXT,
-    expectedDecisionSchema: { name: 'exception-broker-phone-decision', version: 1 },
+    expectedDecisionSchema: OPERATOR_SANDBOX_DEFINITION.expectedDecisionSchema,
     createdAt: input.createdAt,
   },
 });

@@ -109,6 +109,12 @@ const fingerprintFor = (input: AcquisitionCreateInput): string => createHash('sh
   .update(JSON.stringify({ phoneNumber: input.phoneNumber, request: input.request }), 'utf8')
   .digest('hex');
 
+export const acquisitionRequestDefinitionFingerprint = (request: Readonly<{ caseId: string; planId?: string | undefined; actorId: string; actorRole: string;
+  objective: string; context: string; expectedDecisionSchema: unknown }>): string => createHash('sha256')
+  .update(JSON.stringify({ caseId: request.caseId, planId: request.planId, actorId: request.actorId, actorRole: request.actorRole,
+    objective: request.objective, context: request.context, expectedDecisionSchema: request.expectedDecisionSchema }), 'utf8')
+  .digest('hex');
+
 const contextFor = (request: AcquisitionCreateInput['request']): PersistedDecisionContext => ({
   requestId: request.requestId,
   createdAt: request.createdAt,
@@ -193,6 +199,7 @@ export class AcquisitionService {
       acquisitionId: input.acquisitionId,
       idempotencyKey,
       requestFingerprint: fingerprint,
+      requestDefinitionFingerprint: acquisitionRequestDefinitionFingerprint(input.request),
       clientTokenHash: hashClientToken(input.clientToken),
       authorizationConfirmed: true,
       maskedRecipient: maskPhone(input.phoneNumber),

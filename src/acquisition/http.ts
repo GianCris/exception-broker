@@ -1,5 +1,6 @@
 import type { AcquisitionService } from './service.js';
 import { toPublicAcquisitionRecord } from './contracts.js';
+import type { LiveControlService } from '../control/service.js';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -8,12 +9,32 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 export type AcquisitionHttpHandler = (request: Request) => Promise<Response>;
 
-export const createAcquisitionHttpHandler = (service: AcquisitionService): AcquisitionHttpHandler => async (request) => {
+export const createAcquisitionHttpHandler = (service: AcquisitionService, controls?: LiveControlService): AcquisitionHttpHandler => async (request) => {
   const url = new URL(request.url);
   const clientToken = request.headers.get('x-acquisition-demo-token') ?? '';
   const match = /^\/api\/acquisitions\/([^/]+)$/.exec(url.pathname);
   const pollMatch = /^\/api\/acquisitions\/([^/]+)\/poll$/.exec(url.pathname);
   const refreshMatch = /^\/api\/acquisitions\/([^/]+)\/refresh$/.exec(url.pathname);
+  const controlMatch = /^\/api\/acquisitions\/([^/]+)\/control$/.exec(url.pathname);
+  const controlReadMatch = /^\/api\/control-sessions\/([^/]+)$/.exec(url.pathname);
+  const reviewMatch = /^\/api\/control-sessions\/([^/]+)\/review$/.exec(url.pathname);
+
+  if (controls !== undefined && request.method === 'POST' && controlMatch !== null) {
+    const result = await controls.create(decodeURIComponent(controlMatch[1] ?? ''), clientToken);
+    return result.accepted ? json(result, result.existing ? 200 : 201) : json(result, result.code === 'NOT_FOUND' ? 404 : 409);
+  }
+  if (controls !== undefined && request.method === 'GET' && controlReadMatch !== null) {
+    const result = await controls.get(decodeURIComponent(controlReadMatch[1] ?? ''), clientToken);
+    return result.accepted ? json(result) : json(result, 404);
+  }
+  if (controls !== undefined && request.method === 'POST' && reviewMatch !== null) {
+    let body: unknown;
+    try { body = await request.json(); } catch { return json({ accepted: false, code: 'REVIEW_CONFLICT', reason: 'Review body must be JSON' }, 400); }
+    const keys = typeof body === 'object' && body !== null && !Array.isArray(body) ? Object.keys(body) : [];
+    if (keys.length !== 1 || keys[0] !== 'action') return json({ accepted: false, code: 'REVIEW_CONFLICT', reason: 'Review accepts only action intent' }, 400);
+    const result = await controls.review(decodeURIComponent(reviewMatch[1] ?? ''), clientToken, (body as { action?: unknown }).action);
+    return result.accepted ? json(result) : json(result, result.code === 'NOT_FOUND' ? 404 : 409);
+  }
 
   if (request.method === 'POST' && url.pathname === '/api/acquisitions') {
     let body: unknown;

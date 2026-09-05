@@ -613,6 +613,7 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .eligibility span { color: var(--text-muted); font-size: .65rem; font-weight: 700; text-transform: uppercase; }
 .eligibility strong { font-size: 1.08rem; }
 .eligibility h2, .eligibility > p { grid-column: 1 / -1; margin: 0; }
+.eligibility > button { grid-column: 1 / -1; justify-self: start; padding: 9px 13px; color: var(--surface-base); border: 1px solid var(--brand); border-radius: 5px; background: var(--brand); font-weight: 800; cursor: pointer; }
 .safe-stop { border-left-color: var(--wait); }.safe-stop strong { color: var(--wait); }
 .ready-review { border-left-color: var(--allow); }.ready-review strong { color: var(--allow); }
 .provider-error { margin-top: 12px; padding: 22px; border-left: 3px solid var(--block); }
@@ -641,6 +642,9 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .bounded-refresh p { margin: 2px 0; color: var(--text-muted); font-size: .72rem; }
 .bounded-refresh button { flex: 0 0 auto; padding: 8px 12px; color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-control); cursor: pointer; }
 .bounded-refresh button:disabled { cursor: wait; opacity: .65; }
+.live-control-workspace .control-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.live-control-workspace .control-summary article { min-width: 0; }
+.live-control-workspace .action-receipt { margin-top: 12px; padding: 22px; }
 
 @media (max-width: 1050px) {
   .product-layout { grid-template-columns: 270px minmax(0, 1fr); }
@@ -683,6 +687,7 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
   .transcript-timeline li { grid-template-columns: 64px minmax(0, 1fr); }
   .transcript-timeline p { grid-column: 1 / -1; }
   .provider-depth dl { grid-template-columns: 1fr; }
+  .live-control-workspace .control-summary { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .proof-shell, .queue-list button, .product-nav button { transition: none; }

@@ -11,6 +11,7 @@ import type { AcquisitionPublicRecord, SanitizedAttempt } from '../acquisition/c
 import { createAcquisitionPresentation } from '../presentation/acquisitionViewModel.js';
 import { BrokerMark } from './CaseHeader.js';
 import { ThemeControl } from './ProofExperience.js';
+import type { LiveControlPublicRecord } from '../control/contracts.js';
 
 export const acquisitionStorageKey = 'exception-broker-acquisition-id';
 export const acquisitionAccessKey = 'exception-broker-live-access';
@@ -22,6 +23,7 @@ type ExperienceProps = Readonly<{
   onNavigateControl: () => void;
   createIdentity?: () => string;
   clock?: () => string;
+  onOpenControl?: (record: LiveControlPublicRecord) => void;
 }>;
 
 const readStorage = (storage: Storage, key: string) => {
@@ -51,6 +53,7 @@ export const AcquisitionExperience = ({
   onNavigateControl,
   createIdentity = () => crypto.randomUUID(),
   clock = () => new Date().toISOString(),
+  onOpenControl,
 }: ExperienceProps) => {
   const [accessToken, setAccessToken] = useState(() => readStorage(sessionStorage, acquisitionAccessKey));
   const [storedId, setStoredId] = useState(() => readStorage(localStorage, acquisitionStorageKey));
@@ -61,6 +64,7 @@ export const AcquisitionExperience = ({
   const [message, setMessage] = useState('');
   const [refreshCount, setRefreshCount] = useState(0);
   const [explicitRefreshPending, setExplicitRefreshPending] = useState(false);
+  const [handoffPending, setHandoffPending] = useState(false);
   const createPending = useRef(false);
   const explicitRefreshLock = useRef(false);
 
@@ -121,6 +125,13 @@ export const AcquisitionExperience = ({
     } catch (error: unknown) { setMessage(errorMessage(error)); }
     finally { createPending.current = false; setBusy(false); }
   };
+  const continueToControl = async () => {
+    if (accessToken === null || record === null || !ready || handoffPending) return;
+    setHandoffPending(true); setMessage('Resolving controlled context and exact review on the server…');
+    try { const result = await api.handoff(record.acquisitionId, accessToken); onOpenControl?.(result.record); }
+    catch (error: unknown) { setMessage(errorMessage(error)); }
+    finally { setHandoffPending(false); }
+  };
 
   const presentation = record === null ? null : createAcquisitionPresentation(record);
   const provider = record?.providerEvidence;
@@ -142,7 +153,7 @@ export const AcquisitionExperience = ({
         <section className="acquisition-status" aria-label="Acquisition status"><div><p className="eyebrow">Live lifecycle</p><h2>{presentation.label}</h2><p>{record.acquisitionId}</p></div><dl><div><dt>Human-facing state</dt><dd>{presentation.lifecycle}</dd></div><div><dt>Provider task</dt><dd>{record.status}</dd></div><div><dt>Latest attempt</dt><dd>{attempt?.status ?? 'not available'}</dd></div><div><dt>Updated</dt><dd>{record.updatedAt}</dd></div></dl></section>
         <section className="decision-formation" aria-label="Decision formation"><h2>Decision formation</h2><ol><li><b>1</b><span>CALL-E interaction</span></li><li><b>2</b><span>Provider evidence &amp; structured result</span></li><li><b>3</b><span>Exception Broker normalization</span></li><li><b>4</b><span>Control eligibility</span></li></ol><p>The provider supplies the structured result. Exception Broker validates and normalizes it; it does not infer a decision from transcript text.</p></section>
         {safeStop ? <section className="eligibility safe-stop" aria-label="Control eligibility"><div><span>Provider outcome</span><strong>{record.status.toUpperCase()}</strong></div><div><span>Control eligibility</span><strong>NOT READY FOR REVIEW</strong></div><h2>The acquisition completed, but no usable APPROVED / REJECTED decision was established.</h2><p>No authority created. No review submitted. No application attempted. No external effect.</p><p>{record.safeStopReason}</p></section> : null}
-        {ready ? <section className="eligibility ready-review" aria-label="Control eligibility"><div><span>Decision acquired</span><strong>{record.normalizedResult?.decision}</strong></div><div><span>Control eligibility</span><strong>READY FOR REVIEW</strong></div><h2>Acquired decision ≠ execution authority</h2><p>Eligible for exact review. No authority has been granted. No review or application has occurred.</p></section> : null}
+        {ready ? <section className="eligibility ready-review" aria-label="Control eligibility"><div><span>Decision acquired</span><strong>{record.normalizedResult?.decision}</strong></div><div><span>Control eligibility</span><strong>READY FOR REVIEW</strong></div><h2>Acquired decision ≠ execution authority</h2><p>Eligible for exact review. No authority has been granted. No review or application has occurred.</p><button type="button" disabled={handoffPending} onClick={() => void continueToControl()}>{handoffPending ? 'Preparing exact review…' : 'Continue to Control'}</button></section> : null}
         {presentation.lifecycle === 'FAILED' || presentation.lifecycle === 'CANCELED' ? <section className="provider-error" role="alert"><h2>Provider/system outcome</h2><p>{presentation.label}. This is not a business SAFE_STOP or Broker disposition.</p></section> : null}
         <section className="acquisition-evidence" aria-labelledby="conversation-title"><div className="evidence-heading"><div><p className="eyebrow">Decision provenance · CALL-E · Live acquisition</p><h2 id="conversation-title">Conversation evidence</h2></div><p>Workflow context · Controlled sandbox template</p></div>{transcript.length === 0 ? <p>Conversation evidence will appear when available.</p> : <ol className="transcript-timeline">{transcript.map((turn, index) => <li key={`${turn.offsetSeconds}-${index}`}><time>{turn.offsetSeconds === null ? 'Time unavailable' : `+${turn.offsetSeconds}s`}</time><strong>{turn.speaker}</strong><p>{turn.text}</p></li>)}</ol>}
           <details><summary>Inspect sanitized provider evidence</summary><div className="provider-depth"><dl><dt>Masked recipient</dt><dd>{record.maskedRecipient}</dd><dt>Created</dt><dd>{record.createdAt}</dd><dt>Completed</dt><dd>{provider?.completedAt ?? 'not completed'}</dd><dt>Task completed</dt><dd>{provider?.taskCompleted === null || provider?.taskCompleted === undefined ? 'not available' : String(provider.taskCompleted)}</dd><dt>Summary</dt><dd>{provider?.summary ?? 'not available'}</dd><dt>Completion confidence</dt><dd>{provider?.completionConfidence ? `${provider.completionConfidence.score}${provider.completionConfidence.label ? ` · ${provider.completionConfidence.label}` : ''}` : 'not available'}</dd></dl><h3>Evidence</h3>{provider?.evidence.length ? <ul>{provider.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p>None returned.</p>}<h3>Structured result</h3><pre>{provider?.structuredResult ? JSON.stringify(provider.structuredResult, null, 2) : 'No schema-valid structured result returned.'}</pre></div></details>

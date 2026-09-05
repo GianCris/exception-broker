@@ -10,6 +10,7 @@ import {
   type AcquisitionBrowserApi,
 } from '../../src/acquisition/browserClient.js';
 import type { AcquisitionPublicRecord } from '../../src/acquisition/contracts.js';
+import type { LiveControlPublicRecord } from '../../src/control/contracts.js';
 import { phoneDecisionSchema } from '../../src/integrations/calle/schemas.js';
 import { createAcquisitionPresentation } from '../../src/presentation/acquisitionViewModel.js';
 import {
@@ -34,9 +35,10 @@ const completed = (decision: 'APPROVED' | 'REJECTED' | 'PENDING' = 'PENDING'): A
   handoffState: decision === 'APPROVED' || decision === 'REJECTED' ? 'READY_FOR_REVIEW' : 'SAFE_STOP',
   safeStopReason: decision === 'PENDING' ? 'Decision PENDING requires a safe stop before review' : null,
 });
-const api = (initial = record()): AcquisitionBrowserApi & { create: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn> } => ({
+const api = (initial = record()): AcquisitionBrowserApi & { create: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn>; handoff: ReturnType<typeof vi.fn>; getControl: ReturnType<typeof vi.fn>; review: ReturnType<typeof vi.fn> } => ({
   create: vi.fn().mockResolvedValue({ accepted: true, record: initial, existing: false }),
   get: vi.fn().mockResolvedValue(initial), refresh: vi.fn().mockResolvedValue({ found: true, record: initial }),
+  handoff: vi.fn(), getControl: vi.fn(), review: vi.fn(),
 });
 const unlock = () => {
   fireEvent.change(screen.getByLabelText('Temporary live-access token'), { target: { value: 'INERT-SESSION-TOKEN' } });
@@ -72,10 +74,26 @@ describe('Acquisition V1 browser client', () => {
     expect(JSON.stringify(fetcher.mock.calls)).not.toContain('CALLE_API_KEY');
   });
 
+  it('sends only action intent to the same-origin review endpoint', async () => {
+    const response = { accepted: true, record: {}, existing: true };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await createAcquisitionBrowserApi(fetcher).review('CONTROL / 1', 'ACCESS', 'DISCARD');
+    const [url, init] = fetcher.mock.calls[0]!; expect(url).toBe('/api/control-sessions/CONTROL%20%2F%201/review');
+    expect(JSON.parse(init.body)).toEqual({ action: 'DISCARD' }); expect(JSON.stringify(init.body)).not.toMatch(/reviewTarget|caseId|planId|reviewedAt/);
+  });
+
   it('builds a fixed controlled request rather than accepting browser-authored correlation truth', () => {
     const input = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', accessToken: 'ACCESS', phoneNumber: '+15551234567' });
-    expect(input.request).toMatchObject({ caseId: 'CASE-ACQUISITION-V1-SANDBOX', planId: 'PLAN-ACQUISITION-V1-SANDBOX', actorRole: 'client' });
+    expect(input.request).toMatchObject({ caseId: 'CASE-OPERATOR-SANDBOX', planId: 'PLAN-OPERATOR-SANDBOX', actorId: 'ACTOR-OPERATOR-CLIENT', actorRole: 'client' });
     expect(input).not.toHaveProperty('operationalTruth');
+  });
+
+  it('keeps per-call identity, recipient and time outside the canonical definition', () => {
+    const left = createBrowserAcquisitionRequest({ identity: 'ONE', createdAt: '2027-06-10T22:00:00Z', accessToken: 'A', phoneNumber: '+15551234567' });
+    const right = createBrowserAcquisitionRequest({ identity: 'TWO', createdAt: '2027-06-11T22:00:00Z', accessToken: 'B', phoneNumber: '+15557654321' });
+    expect(left).toMatchObject({ acquisitionId: 'ACQ-BROWSER-V1-ONE', phoneNumber: '+15551234567', request: { requestId: 'REQUEST-BROWSER-V1-ONE', createdAt: '2027-06-10T22:00:00Z' } });
+    expect(right).toMatchObject({ acquisitionId: 'ACQ-BROWSER-V1-TWO', phoneNumber: '+15557654321', request: { requestId: 'REQUEST-BROWSER-V1-TWO', createdAt: '2027-06-11T22:00:00Z' } });
+    expect(left.request).toMatchObject({ caseId: right.request.caseId, planId: right.request.planId, actorId: right.request.actorId, actorRole: right.request.actorRole, context: right.request.context });
   });
 });
 
@@ -204,8 +222,18 @@ describe('Acquisition V1 experience', () => {
     const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
     expect(within(eligibility).getByText(decision)).toBeVisible(); expect(within(eligibility).getByText('READY FOR REVIEW')).toBeVisible();
     expect(within(eligibility).getByText(/Acquired decision ≠ execution authority/)).toBeVisible();
-    expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: /Continue to Control/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Continue to Control' })).toBeVisible();
     expect(within(eligibility).getByText(/Eligible for exact review/)).toBeVisible();
+  });
+
+  it('hands off a READY acquisition using only its identity and existing access, then opens the server record', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(completed('APPROVED')); const onOpenControl = vi.fn();
+    const serverRecord = { controlSessionId: 'CONTROL-ACQ-TEST-1' } as LiveControlPublicRecord;
+    fake.handoff.mockResolvedValue({ accepted: true, record: serverRecord, existing: false });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} onOpenControl={onOpenControl} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to Control' }));
+    await waitFor(() => expect(fake.handoff).toHaveBeenCalledWith('ACQ-TEST-1', 'ACCESS'));
+    expect(onOpenControl).toHaveBeenCalledWith(serverRecord);
   });
 
   it('offers one explicit refresh after the automatic bound and prevents duplicate pending requests', async () => {
@@ -253,9 +281,9 @@ describe('Acquisition V1 experience', () => {
     expect(screen.queryByText('NOT READY FOR REVIEW')).not.toBeInTheDocument();
   });
 
-  it('contains no provider SDK, server implementation, VITE credential, or Control-state handoff in browser acquisition modules', () => {
+  it('contains no provider SDK, server control implementation, operator scenario, or VITE credential in browser acquisition modules', () => {
     const source = ['src/acquisition/browserClient.ts', 'src/ui/AcquisitionExperience.tsx', 'src/presentation/acquisitionViewModel.ts'].map((path) => readFileSync(path, 'utf8')).join('\n');
-    expect(source).not.toMatch(/@call-e\/calle|CALLE_API_KEY|VITE_|CallEProvider|prepareProof\(|reviewProof\(|executeOrchestrationAction|ProofSession/);
+    expect(source).not.toMatch(/@call-e\/calle|CALLE_API_KEY|VITE_|CallEProvider|operatorScenario|control\/service|control\/store|prepareProof\(|reviewProof\(|executeOrchestrationAction|OrchestrationState|ProofSession/);
     expect(source).not.toMatch(/localStorage\.setItem\([^\n]*access|localStorage\.setItem\([^\n]*token/i);
   });
 });
