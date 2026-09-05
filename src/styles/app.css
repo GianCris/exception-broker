@@ -555,6 +555,19 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .proof-shell footer { color: var(--text-muted); border-color: var(--border-subtle); background: var(--surface-base); }
 .proof-shell button:focus-visible, .proof-shell summary:focus-visible { outline-color: var(--brand); }
 
+/* Keep technical min-content inside the instrument instead of widening the page. */
+.product-layout, .control-workspace, .control-workspace > *,
+.supporting-proof, .supporting-proof-content, .supporting-proof-content > section,
+.action-receipt, .receipt-depth, .receipt-depth > section,
+.review-application-proof, .review-application-proof > section,
+.proof-history-grid, .proof-history-grid > article { min-width: 0; max-width: 100%; }
+.proof-table-scroll { max-width: 100%; overscroll-behavior-inline: contain; }
+.receipt-depth dd, .receipt-depth dd > span, .receipt-depth dd > em,
+.review-application-proof dd, .proof-history-grid p,
+.proof-shell summary, .proof-shell pre { min-width: 0; overflow-wrap: anywhere; }
+.proof-shell pre { max-width: 100%; overflow-x: auto; }
+.product-topbar > *, .proof-mode span { min-width: 0; overflow-wrap: anywhere; }
+
 @media (max-width: 1050px) {
   .product-layout { grid-template-columns: 270px minmax(0, 1fr); }
 }

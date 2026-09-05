@@ -576,6 +576,14 @@ describe('Evidence-to-decision primary experience', () => {
     expect(styles).toMatch(/@media \(max-width: 760px\)[\s\S]*\.proof-table-scroll \{ max-width: 100%; overflow-x: auto; \}/);
   });
 
+  it('contains long technical identifiers within local proof surfaces instead of the page grid', () => {
+    const styles = readFileSync('src/styles/app.css', 'utf8');
+    expect(styles).toMatch(/\.control-workspace[^}]*min-width:\s*0;[^}]*max-width:\s*100%/s);
+    expect(styles).toMatch(/\.receipt-depth dd[^}]*overflow-wrap:\s*anywhere/s);
+    expect(styles).toMatch(/\.proof-table-scroll \{ max-width:\s*100%;[^}]*overscroll-behavior-inline:\s*contain;/);
+    expect(styles).toMatch(/\.proof-shell pre \{ max-width:\s*100%; overflow-x:\s*auto;/);
+  });
+
   it('assigns evidence, exact review, and technical effects to their truthful verification groups', () => {
     render(<App />); apply(); revealSupporting();
     const operational = screen.getByRole('region', { name: 'Operational evidence' });
