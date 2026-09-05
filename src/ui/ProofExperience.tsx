@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ProofScenario, ProofSession } from '../demo/proofDemo.js';
 import { proofScenarios } from '../demo/proofDemo.js';
-import { createDecisionTraceView, historicalCallProof, type DecisionTraceView } from '../presentation/decisionTraceViewModel.js';
+import { createDecisionControlView, createDecisionTraceView, historicalCallProof, type DecisionTraceView } from '../presentation/decisionTraceViewModel.js';
 import { BrokerMark } from './CaseHeader.js';
 
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
@@ -18,9 +18,10 @@ const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section c
   {view.assemblyIssues.length > 0 ? <ul className="proof-issues">{view.assemblyIssues.map((issue, index) => <li key={index}>{issue.code}: {issue.message} {issue.factKind}</li>)}</ul> : null}
 </section>;
 
-const Review = ({ view, onReview }: Readonly<{ view: DecisionTraceView; onReview: (action: 'APPLY' | 'DISCARD') => void }>) => {
+const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView; onReview: (action: 'APPLY' | 'DISCARD') => void; onClose: () => void }>) => {
   const proposal = view.proposal;
-  return <section className="proof-card" aria-labelledby="review-title">
+  return <div className="review-backdrop"><aside className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title">
+    <button type="button" className="sheet-close" onClick={onClose} aria-label="Close exact review">×</button>
     <p className="eyebrow">02 / Explicit review</p><h2 id="review-title">{proposal ? `Review the ${proposal.actorRole} decision` : 'Review not reached'}</h2>
     {proposal ? <>
       <p className="proof-decision">Represented external decision <strong>{proposal.decision}</strong></p>
@@ -36,11 +37,14 @@ const Review = ({ view, onReview }: Readonly<{ view: DecisionTraceView; onReview
       <div className="proof-actions"><button type="button" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
       {view.canReview && view.attempts.length > 0 ? <p>Previous role recorded. This is a new, separate role review; it has not been applied.</p> : null}
     </> : <p>No reviewable proposal. No decision application was attempted.</p>}
-  </section>;
+  </aside></div>;
 };
 
-const Result = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className={`proof-card proof-result proof-${view.outcome.label.toLowerCase()}`} aria-labelledby="result-title" aria-live="polite">
-  <p className="eyebrow">03 / Actual broker outcome</p><p className="proof-outcome">{view.outcome.label}</p><h2 id="result-title">{view.outcome.title}</h2><p className="proof-code">{view.outcome.reason}</p>
+const Result = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
+  const unresolved = view.latest === undefined && view.trustedCaseProduced;
+  const disposition = unresolved ? 'NOT RESOLVED' : view.outcome.label;
+  return <section className={`proof-card proof-result ${unresolved ? 'proof-unresolved' : `proof-${view.outcome.label.toLowerCase()}`}`} aria-labelledby="result-title" aria-live="polite">
+  <p className="eyebrow">03 / Actual broker outcome</p><p className="proof-outcome">{disposition}</p><h2 id="result-title">{view.outcome.title}</h2><p className="proof-code">{view.outcome.reason}</p>
   {view.outcome.label === 'ALLOW' ? <section className="proof-allow-basis" aria-label="Why this result is supportable">
     <h3>Why this result is supportable</h3>
     <ul>
@@ -63,6 +67,7 @@ const Result = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section cla
   </> : <p>No decision application attempted. {view.registered ? 'Only local plan registration has occurred; no approvals, operations or events were recorded.' : ''}</p>}
   <p className="proof-note">Local in-memory proof only. No shipment, ERP/WMS write, or external execution.</p>
 </section>;
+};
 
 const Assessments = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   const assessments = view.assessments;
@@ -81,19 +86,40 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
   review: (session: ProofSession, action: 'APPLY' | 'DISCARD') => ProofSession;
 }>) => {
   const [session, setSession] = useState(() => prepare('H02'));
+  const [reviewOpen, setReviewOpen] = useState(false);
   const view = createDecisionTraceView(session);
+  const control = createDecisionControlView(session);
+  const queue = proofScenarios.map((scenario) => ({ scenario, control: createDecisionControlView(
+    scenario.id === session.inputs.scenario ? session : prepare(scenario.id),
+  ) }));
   const onReview = (action: 'APPLY' | 'DISCARD') => {
     // Use the rendered snapshot, not a functional updater that might consume the next
     // role's proposal on a rapid repeated click. Every next proposal needs a new render.
     if (view.canReview) setSession(review(session, action));
+    setReviewOpen(false);
   };
-  return <div className="app-shell proof-shell"><main>
-    <header className="proof-header"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><p className="eyebrow">Deterministic execution-control proof</p><h1>An approval is not permission to execute.</h1><p>Trusted facts. An exact proposal. Your review. The broker decides whether the action can take effect.</p><span className="proof-mode">Local in-memory demonstration · No live calls or integrations</span></header>
-    <nav className="proof-scenarios" aria-label="Independent proof scenarios">{proofScenarios.map((scenario) => <button type="button" key={scenario.id} aria-pressed={view.scenario === scenario.id} onClick={() => setSession(prepare(scenario.id))}><strong>{scenario.id} / {scenario.title}</strong><span>{scenario.description}</span></button>)}</nav>
-    <div className="proof-reset"><p>Each selection starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" onClick={() => setSession(prepare(view.scenario))}>Reset this scenario</button></div>
+  const focusScenario = (scenario: ProofScenario) => { setSession(prepare(scenario)); setReviewOpen(false); };
+  return <div className="app-shell proof-shell"><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav aria-label="Product"><span aria-current="page">Control / Decisions</span></nav><span className="proof-mode">Local deterministic proof · No external execution</span></header>
+    <div className="product-layout"><aside className="control-queue" aria-labelledby="queue-title"><p className="eyebrow">Decision control queue</p><h1 id="queue-title">Needs attention</h1><p>Three independent local proof sessions.</p>
+      <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
+        <span className="queue-heading"><strong>{scenario.id} / {scenario.title}</strong><b className={`disposition disposition-${item.disposition.toLowerCase().replace(' ', '-')}`}>{item.disposition}</b></span>
+        <span><small>Decision</small>{item.decision}</span><span><small>Authority</small>{item.authority}</span>
+        <span><small>Why</small>{item.why}</span><span><small>Next</small>{item.nextAction}</span><em>{item.provenance}</em>
+      </button>)}</div>
+      <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>
+    </aside><main className="control-workspace">
+    <header className="proof-header"><p className="eyebrow">Decision control surface · {view.scenario}</p><h1>Decision is not authority.</h1><p>Inspect what can happen with this represented decision. The broker evaluates an application attempt—not the word APPROVED.</p></header>
+    <section className="control-summary" aria-label="Decision control model">
+      <article><span>Decision</span><strong className="decision-neutral">{control.decision}</strong><p>Normalized synthetic input</p></article>
+      <article className={view.canReview ? 'control-priority' : ''}><span>Authority</span><strong>{control.authority}</strong><p>{view.canReview ? 'Exact proposal review is still required.' : 'Derived from the current review state.'}</p></article>
+      <article><span>Operational truth</span><strong>{control.operationalTruth}</strong><p>Local represented facts only</p></article>
+      <article><span>Broker disposition</span><strong className={`disposition-text disposition-${control.disposition.toLowerCase().replace(' ', '-')}`}>{control.disposition}</strong><p>{control.why}</p></article>
+    </section>
+    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>{control.provenance}. Applying asks the broker; it never bypasses controls.</p></div>{view.canReview ? <button type="button" onClick={() => setReviewOpen(true)}>Review exact proposal</button> : null}</section>
+    <div className="proof-reset"><p>Each selection starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" onClick={() => focusScenario(view.scenario)}>Reset this scenario</button></div>
     <section className="proof-intent" aria-label="Proposed recovery"><div><p className="eyebrow">Explicit planner proposal / version {view.plan.version}</p><h2>{view.plan.originalQuantityTomorrow} original + {view.plan.substituteQuantityTomorrow} substitute</h2><p>One recovery proposal. No plan generation or autonomous execution.</p></div><details><summary>Plan identity &amp; cost</summary><p>{view.plan.caseId} / {view.plan.id}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (scenario cost units).</p></details></section>
-    <Evidence view={view} /><div className="proof-decision-grid"><Review view={view} onReview={onReview} /><Result view={view} /></div><Assessments view={view} />
+    <div className="proof-decision-grid"><Evidence view={view} /><Result view={view} /></div><Assessments view={view} />
     {view.attempts.length > 0 ? <details className="proof-card"><summary>Earlier / current review attempts ({view.attempts.length})</summary><ol>{view.attempts.map((attempt) => <li key={attempt.review.operationId}>{attempt.review.reviewTarget.actorRole} · {attempt.review.action} · {attempt.result.accepted ? attempt.result.step.result : attempt.result.failure.reason}</li>)}</ol></details> : null}
-    <aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical live CALL-E proof / separate evidence</p><h2 id="historical-title">Real acquisition. A different proof.</h2><p>These reported historical interactions did not produce the scenario above. This browser does not invoke CALL-E.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p><p className="proof-note">No claim of authenticated human authority, no-answer handling, fallback, or production reliability.</p></aside>
-  </main><footer>Exception Broker · Decision acquisition ≠ authority to execute</footer></div>;
+    <aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical observed evidence · read-only</p><h2 id="historical-title">Real CALL-E acquisition. Separate from this browser session.</h2><p>These historical interactions did not produce the selected deterministic scenario. This browser does not invoke CALL-E, and historical runs cannot be reviewed or applied here.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside>
+  </main></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={() => setReviewOpen(false)} /> : null}<footer>Exception Broker · Decision acquisition ≠ authority to execute</footer></div>;
 };

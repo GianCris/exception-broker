@@ -89,14 +89,38 @@ export const createDecisionTraceView = (session: ProofSession) => {
 };
 export type DecisionTraceView = ReturnType<typeof createDecisionTraceView>;
 
-// Provenance: operator-confirmed Runs #4/#5 supplied in the Proof UX v1 implementation
-// request. These are reported historical observations, not a bundled recording or a
-// result computed by this browser. Do not add IDs, timestamps or transcripts without artifacts.
+// Product-control labels are presentation-only projections of the current session snapshot.
+export const createDecisionControlView = (session: ProofSession) => {
+  const view = createDecisionTraceView(session);
+  const latest = view.latest;
+  const authority = !view.trustedCaseProduced ? 'NOT REACHED'
+    : view.canReview ? 'EXACT REVIEW REQUIRED'
+    : latest?.review.action === 'DISCARD' ? 'REVIEW DISCARDED'
+    : latest !== undefined ? 'REVIEW SUBMITTED'
+    : 'NOT AVAILABLE';
+  const operationalTruth = !view.trustedCaseProduced ? 'UNPROVEN — trusted snapshot not assembled'
+    : latest === undefined ? 'Not evaluated for application'
+    : view.assessments?.physical.outcome ?? 'Not established for this attempt';
+  const disposition = latest !== undefined || !view.trustedCaseProduced ? view.outcome.label : 'NOT RESOLVED';
+  const why = !view.trustedCaseProduced ? view.outcome.title
+    : latest !== undefined ? view.outcome.title
+    : 'A normalized decision is ready, but exact review has not been submitted.';
+  const nextAction = view.canReview ? 'Review exact proposal'
+    : !view.trustedCaseProduced ? 'Resolve evidence outside this local proof'
+    : latest === undefined ? 'No review is currently available'
+    : 'Inspect the application result';
+  return { view, decision: view.proposal?.decision ?? 'NO REVIEWABLE DECISION', authority,
+    operationalTruth, disposition, why, nextAction,
+    provenance: view.trustedCaseProduced ? 'Deterministic local proof · configured evidence' : 'Deterministic local proof · unaccepted claims' };
+};
+
+// Provenance: operator-observed historical results recorded in
+// docs/evidence/call-e-live-validation.md. Read-only; never current browser state.
 export const historicalCallProof = {
-  source: 'Operator-confirmed run summaries supplied with the implementation request. No original recording is bundled.',
+  source: 'Operator-observed historical output recorded in docs/evidence/call-e-live-validation.md. No original recording is bundled.',
   runs: [
-    { name: 'Run #4', observation: 'Real CALL-E interaction completed. Structured NEEDS_CLARIFICATION; mapper accepted; Bridge ready.', limit: 'Safe clarification stop. No application of that decision.' },
-    { name: 'Run #5', observation: 'Real CALL-E interaction completed. Structured result null; mapper failed closed.', limit: 'No downstream application or effects from that result.' },
+    { name: 'Operator Run 1 · OPERATOR-LIVE-V1', observation: 'Real CALL-E interaction completed. Structured NEEDS_CLARIFICATION; mapper and Bridge accepted.', limit: 'Clarification safe-stop. Zero new local effects.' },
+    { name: 'Operator Run 2 · OPERATOR-LIVE-V2', observation: 'Real CALL-E interaction completed. Structured APPROVED; exact proposal displayed; operator selected APPLY.', limit: 'Local sandbox ALLOW / LINEAGE_RESOLVED and local records only. No external execution.' },
   ],
-  unproven: 'Live APPROVED / REJECTED → review → mutation: NOT DEMONSTRATED.',
+  unproven: 'Live REJECTED application, authenticated reviewer identity, and external execution: NOT DEMONSTRATED.',
 } as const;
