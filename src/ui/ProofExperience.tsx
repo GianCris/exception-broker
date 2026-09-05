@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProofScenario, ProofSession } from '../demo/proofDemo.js';
 import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, historicalCallProof, type DecisionTraceView } from '../presentation/decisionTraceViewModel.js';
 import { BrokerMark } from './CaseHeader.js';
+
+const attemptVisualFor = (resolved: ProofSession) => {
+  const disposition = createDecisionControlView(resolved).disposition;
+  if (disposition === 'ALLOW') return { continuity: '100%', treatment: 'complete' } as const;
+  if (disposition === 'BLOCK') return { continuity: '58%', treatment: 'interrupted' } as const;
+  if (disposition === 'WAIT') return { continuity: '40%', treatment: 'suspended' } as const;
+  if (disposition === 'REJECTED') return { continuity: '28%', treatment: 'neutral' } as const;
+  return { continuity: '18%', treatment: 'neutral-stopped' } as const;
+};
 
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
   <p className="eyebrow">01 / Operational evidence</p>
@@ -43,7 +52,7 @@ const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView;
 const Result = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   const unresolved = view.latest === undefined && view.trustedCaseProduced;
   const disposition = unresolved ? 'NOT RESOLVED' : view.outcome.label;
-  return <section className={`proof-card proof-result ${unresolved ? 'proof-unresolved' : `proof-${view.outcome.label.toLowerCase().replaceAll(' ', '-')}`}`} aria-labelledby="result-title" aria-live="polite">
+  return <section className={`proof-card proof-result ${unresolved ? 'proof-unresolved' : `proof-${view.outcome.label.toLowerCase().replaceAll(' ', '-')}`}`} aria-labelledby="result-title">
   <p className="eyebrow">03 / Actual broker outcome</p><p className="proof-outcome">{disposition}</p><h2 id="result-title">{view.outcome.title}</h2><p className="proof-code">{view.outcome.reason}</p>
   {view.outcome.label === 'ALLOW' ? <section className="proof-allow-basis" aria-label="Why this result is supportable">
     <h3>Why this result is supportable</h3>
@@ -87,21 +96,48 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
 }>) => {
   const [session, setSession] = useState(() => prepare('H02'));
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [applicationAttempt, setApplicationAttempt] = useState<Readonly<{
+    before: ProofSession;
+    resolved: ProofSession;
+    visual: ReturnType<typeof attemptVisualFor>;
+  }> | null>(null);
+  const [resolvedAnnouncement, setResolvedAnnouncement] = useState('');
+  const applicationLock = useRef(false);
   const view = createDecisionTraceView(session);
   const control = createDecisionControlView(session);
   const queue = proofScenarios.map((scenario) => ({ scenario, control: createDecisionControlView(
     scenario.id === session.inputs.scenario ? session : prepare(scenario.id),
   ) }));
+  useEffect(() => {
+    if (applicationAttempt === null) return undefined;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const timer = window.setTimeout(() => {
+      const resolvedControl = createDecisionControlView(applicationAttempt.resolved);
+      setSession(applicationAttempt.resolved);
+      setResolvedAnnouncement(`Broker disposition ${resolvedControl.disposition}. ${resolvedControl.why}`);
+      setApplicationAttempt(null);
+      applicationLock.current = false;
+    }, reducedMotion ? 0 : 700);
+    return () => window.clearTimeout(timer);
+  }, [applicationAttempt]);
   const onReview = (action: 'APPLY' | 'DISCARD') => {
     // Use the rendered snapshot, not a functional updater that might consume the next
     // role's proposal on a rapid repeated click. Every next proposal needs a new render.
-    if (view.canReview) setSession(review(session, action));
+    if (!view.canReview || applicationLock.current) return;
+    if (action === 'APPLY') {
+      applicationLock.current = true;
+      const resolved = review(session, action);
+      setApplicationAttempt({ before: session, resolved, visual: attemptVisualFor(resolved) });
+    } else setSession(review(session, action));
     setReviewOpen(false);
   };
-  const focusScenario = (scenario: ProofScenario) => { setSession(prepare(scenario)); setReviewOpen(false); };
+  const focusScenario = (scenario: ProofScenario) => {
+    if (applicationLock.current) return;
+    setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement('');
+  };
   return <div className="app-shell proof-shell"><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav aria-label="Product"><span aria-current="page">Control / Decisions</span></nav><span className="proof-mode">Local deterministic proof · No external execution</span></header>
     <div className="product-layout"><aside className="control-queue" aria-labelledby="queue-title"><p className="eyebrow">Decision control queue</p><h1 id="queue-title">Needs attention</h1><p>Three independent local proof sessions.</p>
-      <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
+      <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} disabled={applicationAttempt !== null} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
         <span className="queue-heading"><strong>{scenario.id} / {scenario.title}</strong><b className={`disposition disposition-${item.disposition.toLowerCase().replace(' ', '-')}`}>{item.disposition}</b></span>
         <span><small>Decision</small>{item.decision}</span><span><small>Authority</small>{item.authority}</span>
         <span><small>Why</small>{item.why}</span><span><small>Next</small>{item.nextAction}</span><em>{item.provenance}</em>
@@ -115,6 +151,12 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
       <article><span>Operational truth</span><strong>{control.operationalTruth}</strong><p>Local represented facts only</p></article>
       <article><span>Broker disposition</span><strong className={`disposition-text disposition-${control.disposition.toLowerCase().replace(' ', '-')}`}>{control.disposition}</strong><p>{control.why}</p></article>
     </section>
+    {applicationAttempt ? <section className={`application-attempt attempt-${applicationAttempt.visual.treatment}`} aria-label="Application Attempt">
+      <div><p className="eyebrow">Application Attempt</p><h2>Applying the reviewed decision to the represented local state</h2></div>
+      <dl><div><dt>Decision</dt><dd>{control.decision}</dd></div><div><dt>Proposal</dt><dd>Exact plan version {view.plan.version}</dd></div><div><dt>Review</dt><dd>Exact review bound</dd></div></dl>
+      <div className="attempt-continuity" aria-hidden="true"><span style={{ width: applicationAttempt.visual.continuity }} /></div>
+    </section> : null}
+    <p className="resolved-announcement" aria-live="polite" aria-atomic="true">{resolvedAnnouncement}</p>
     <section className={`outcome-language outcome-${control.disposition.toLowerCase().replace(' ', '-')}`} aria-label="Why this disposition">
       <div><p className="eyebrow">Why?</p><h2>{control.why}</h2></div>
       {control.factors.length > 0 ? <dl>{control.factors.map((factor) => <div key={factor.label}><dt>{factor.label}</dt><dd>{factor.value}</dd></div>)}</dl> : null}
@@ -122,8 +164,8 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
       {control.effectSummary ? <p className="outcome-effects">{control.effectSummary}</p> : null}
       {control.disposition === 'ALLOW' ? <p className="outcome-scope">Eligible for local application under the represented controls. No external execution.</p> : null}
     </section>
-    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>{control.provenance}. Applying asks the broker; it never bypasses controls.</p></div>{view.canReview ? <button type="button" onClick={() => setReviewOpen(true)}>Review exact proposal</button> : null}</section>
-    <div className="proof-reset"><p>Each selection starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" onClick={() => focusScenario(view.scenario)}>Reset this scenario</button></div>
+    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>{control.provenance}. Applying asks the broker; it never bypasses controls.</p></div>{view.canReview && applicationAttempt === null ? <button type="button" onClick={() => setReviewOpen(true)}>Review exact proposal</button> : null}</section>
+    <div className="proof-reset"><p>Each selection starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" disabled={applicationAttempt !== null} onClick={() => focusScenario(view.scenario)}>Reset this scenario</button></div>
     <section className="proof-intent" aria-label="Proposed recovery"><div><p className="eyebrow">Explicit planner proposal / version {view.plan.version}</p><h2>{view.plan.originalQuantityTomorrow} original + {view.plan.substituteQuantityTomorrow} substitute</h2><p>One recovery proposal. No plan generation or autonomous execution.</p></div><details><summary>Plan identity &amp; cost</summary><p>{view.plan.caseId} / {view.plan.id}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (scenario cost units).</p></details></section>
     <details className="supporting-proof"><summary>Supporting proof details</summary><div className="supporting-proof-content">
       <div className="proof-decision-grid"><Evidence view={view} /><Result view={view} /></div><Assessments view={view} />
