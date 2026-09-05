@@ -31,6 +31,15 @@ describe('Evidence-to-decision primary experience', () => {
 
   it('H02 click exposes the real physical reason and operation-scoped zero effects', () => {
     render(<App />); apply();
+    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    expect(within(explanation).getByText('Up to 180 substitute units')).toBeVisible();
+    expect(within(explanation).getByText('150 substitute units required')).toBeVisible();
+    expect(within(explanation).getByText('100 substitute units available')).toBeVisible();
+    expect(within(explanation).getByText('50 substitute units unsupported')).toBeVisible();
+    expect(within(explanation).getByText('Application stopped. No application effects created.')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Resolve the supply gap externally or revise the proposal' })).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('APPROVED')).toBeVisible();
+    expect(screen.getByRole('button', { name: /^H02 \/.*BLOCK/ })).toHaveAttribute('aria-pressed', 'true');
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Physical supply cannot support this approval' })).toBeInTheDocument();
     expect(screen.getAllByText('PLAN_PHYSICALLY_INFEASIBLE').length).toBeGreaterThan(0);
@@ -51,6 +60,11 @@ describe('Evidence-to-decision primary experience', () => {
       expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' }));
     }
+    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    expect(within(explanation).getByText('ALLOW', { exact: true })).toBeVisible();
+    expect(within(explanation).getByText(/1 decision, 1 operation, and 1 event record created locally/)).toBeVisible();
+    expect(within(explanation).getAllByText(/No external execution/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /^H01 \/.*ALLOW/ })).toHaveAttribute('aria-pressed', 'true');
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Recovery authorized locally' })).toBeInTheDocument();
     expect(screen.getAllByText('ALLOW', { exact: true }).length).toBeGreaterThan(0);
@@ -84,6 +98,11 @@ describe('Evidence-to-decision primary experience', () => {
 
   it('H03 shows unaccepted claims and never offers review or fabricated feasibility', () => {
     render(<App />); select('H03');
+    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    expect(within(explanation).getByText(/Conflicting physical-supply claims prevent a trusted operational state/)).toBeVisible();
+    expect(within(explanation).getByText('WAIT', { exact: true })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Resolve the conflicting supply evidence' })).toBeVisible();
+    expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Input claims — not a trusted snapshot' })).toBeInTheDocument();
     expect(screen.getAllByText('Unaccepted input claim')).toHaveLength(4);
@@ -98,6 +117,8 @@ describe('Evidence-to-decision primary experience', () => {
     render(<App />);
     openReview();
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(within(screen.getByRole('region', { name: 'Why this disposition' })).getByText('DISCARDED')).toBeVisible();
+    expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Proposal discarded by reviewer' })).toBeInTheDocument();
     expect(screen.getAllByText('DISCARDED_BY_REVIEWER').length).toBeGreaterThan(0);
@@ -128,10 +149,13 @@ describe('Evidence-to-decision primary experience', () => {
     expect(sources).not.toContain('12/12');
   });
 
-  it('renders an unknown technical failure as WAIT, not a successful or business-safety result', () => {
+  it('renders an unknown technical failure as TECHNICAL STOP, not an operational WAIT or business-safety result', () => {
     const prepared = prepareProof('H02');
     const failed = { ...prepared, stopped: true, registration: { accepted: false as const, state: prepared.state!, failure: { source: 'STATE' as const, reason: 'UNKNOWN_PREPARATION_FAILURE' } } };
     render(<ProofExperience prepare={() => failed} review={reviewProof} />);
+    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    expect(within(explanation).getByText('TECHNICAL STOP')).toBeVisible();
+    expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Preparation stopped — inspect the technical result' })).toBeInTheDocument();
     expect(screen.getByText('UNKNOWN_PREPARATION_FAILURE')).toBeInTheDocument();
@@ -166,6 +190,10 @@ describe('Evidence-to-decision primary experience', () => {
     if (!session.bridge?.ready) throw new Error('Bridge required');
     const rejected = reviewProof({ ...session, bridge: createReadyDecisionBridgeResult({ ...session.bridge.proposal, decision: 'REJECTED' }) }, 'APPLY');
     render(<ProofExperience prepare={() => rejected} review={reviewProof} />);
+    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    expect(within(explanation).getByText('REJECTED', { exact: true })).toBeVisible();
+    expect(within(explanation).getByText(/represented decision rejected the proposal/)).toBeVisible();
+    expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Decision recorded as REJECTED — recovery not authorized' })).toBeInTheDocument();
     expect(screen.getByText('PLAN_REJECTED', { exact: true })).toBeInTheDocument();

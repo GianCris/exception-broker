@@ -43,7 +43,7 @@ const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView;
 const Result = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   const unresolved = view.latest === undefined && view.trustedCaseProduced;
   const disposition = unresolved ? 'NOT RESOLVED' : view.outcome.label;
-  return <section className={`proof-card proof-result ${unresolved ? 'proof-unresolved' : `proof-${view.outcome.label.toLowerCase()}`}`} aria-labelledby="result-title" aria-live="polite">
+  return <section className={`proof-card proof-result ${unresolved ? 'proof-unresolved' : `proof-${view.outcome.label.toLowerCase().replaceAll(' ', '-')}`}`} aria-labelledby="result-title" aria-live="polite">
   <p className="eyebrow">03 / Actual broker outcome</p><p className="proof-outcome">{disposition}</p><h2 id="result-title">{view.outcome.title}</h2><p className="proof-code">{view.outcome.reason}</p>
   {view.outcome.label === 'ALLOW' ? <section className="proof-allow-basis" aria-label="Why this result is supportable">
     <h3>Why this result is supportable</h3>
@@ -114,6 +114,13 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
       <article className={view.canReview ? 'control-priority' : ''}><span>Authority</span><strong>{control.authority}</strong><p>{view.canReview ? 'Exact proposal review is still required.' : 'Derived from the current review state.'}</p></article>
       <article><span>Operational truth</span><strong>{control.operationalTruth}</strong><p>Local represented facts only</p></article>
       <article><span>Broker disposition</span><strong className={`disposition-text disposition-${control.disposition.toLowerCase().replace(' ', '-')}`}>{control.disposition}</strong><p>{control.why}</p></article>
+    </section>
+    <section className={`outcome-language outcome-${control.disposition.toLowerCase().replace(' ', '-')}`} aria-label="Why this disposition">
+      <div><p className="eyebrow">Why?</p><h2>{control.why}</h2></div>
+      {control.factors.length > 0 ? <dl>{control.factors.map((factor) => <div key={factor.label}><dt>{factor.label}</dt><dd>{factor.value}</dd></div>)}</dl> : null}
+      <p className="outcome-therefore"><span>Broker disposition</span><strong>{control.disposition}</strong></p>
+      {control.effectSummary ? <p className="outcome-effects">{control.effectSummary}</p> : null}
+      {control.disposition === 'ALLOW' ? <p className="outcome-scope">Eligible for local application under the represented controls. No external execution.</p> : null}
     </section>
     <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>{control.provenance}. Applying asks the broker; it never bypasses controls.</p></div>{view.canReview ? <button type="button" onClick={() => setReviewOpen(true)}>Review exact proposal</button> : null}</section>
     <div className="proof-reset"><p>Each selection starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" onClick={() => focusScenario(view.scenario)}>Reset this scenario</button></div>

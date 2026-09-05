@@ -134,10 +134,10 @@ describe('Proof UX shared public-contract adapter', () => {
     expect(operationEffects(prior.state!, prior.state!).sameState).toBe(true);
   });
 
-  it('unknown failures and registration success never imply ALLOW or business safety BLOCK', () => {
+  it('unknown failures render as TECHNICAL STOP while registration success remains operationally nonfinal', () => {
     const session = prepareProof('H01');
     const unknown: OrchestrationResult = { accepted: false, state: session.state!, failure: { source: 'STATE', reason: 'UNRECOGNIZED_TECHNICAL_FAILURE' } };
-    expect(presentAttempt(unknown, session.inputs.plan.id)).toEqual({ label: 'WAIT', title: 'Attempt not accepted — inspect the technical result', reason: 'UNRECOGNIZED_TECHNICAL_FAILURE' });
+    expect(presentAttempt(unknown, session.inputs.plan.id)).toEqual({ label: 'TECHNICAL STOP', title: 'Attempt stopped by an unclassified technical result', reason: 'UNRECOGNIZED_TECHNICAL_FAILURE' });
     expect(presentAttempt(session.registration!, session.inputs.plan.id).label).toBe('WAIT');
   });
 
@@ -147,7 +147,7 @@ describe('Proof UX shared public-contract adapter', () => {
     const rejected = reviewProof({ ...session, bridge: createReadyDecisionBridgeResult({ ...session.bridge.proposal, decision: 'REJECTED' }) }, 'APPLY');
     const view = createDecisionTraceView(rejected);
     expect(rejected.attempts[0]?.result).toMatchObject({ accepted: true, step: { applicationResolutionStatus: 'PLAN_REJECTED' } });
-    expect(view.outcome).toEqual({ label: 'WAIT', title: 'Decision recorded as REJECTED — recovery not authorized', reason: 'PLAN_REJECTED' });
+    expect(view.outcome).toEqual({ label: 'REJECTED', title: 'Decision recorded as REJECTED — recovery not authorized', reason: 'PLAN_REJECTED' });
     expect(view.effects?.decisions).toHaveLength(1);
     expect(view.effects?.decisions[0]?.decision).toBe('REJECTED');
     expect(view.effects).toMatchObject({ approvedCount: 0, rejectedCount: 1 });
