@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { App } from '../../src/App.js';
@@ -9,9 +9,12 @@ import { ProofExperience } from '../../src/ui/ProofExperience.js';
 import { prepareProof, reviewProof } from '../../src/demo/proofDemo.js';
 import { createReadyDecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
 
-afterEach(cleanup);
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 const openReview = () => fireEvent.click(screen.getByRole('button', { name: 'Review exact proposal' }));
-const apply = () => { openReview(); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' })); };
+const resolveAttempt = () => act(() => vi.runOnlyPendingTimers());
+const startApply = () => { openReview(); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' })); };
+const apply = () => { startApply(); resolveAttempt(); };
 const select = (id: string) => fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${id} /`) }));
 const revealSupporting = () => fireEvent.click(screen.getByText('Supporting proof details'));
 
@@ -59,6 +62,7 @@ describe('Evidence-to-decision primary experience', () => {
       expect(screen.getByRole('heading', { name: `Review the ${role} decision` })).toBeInTheDocument();
       expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' }));
+      resolveAttempt();
     }
     const explanation = screen.getByRole('region', { name: 'Why this disposition' });
     expect(within(explanation).getByText('ALLOW', { exact: true })).toBeVisible();
@@ -243,5 +247,112 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('heading', { name: 'Trusted snapshot facts' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Your explicit review is required' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Real CALL-E acquisition. Separate from this browser session.' })).toBeInTheDocument();
+  });
+
+  it('computes H02 APPLY exactly once and retains the coherent pre-attempt snapshot until reveal', () => {
+    const review = vi.fn(reviewProof);
+    render(<ProofExperience prepare={prepareProof} review={review} />);
+    openReview();
+    const applyButton = screen.getByRole('button', { name: 'Apply reviewed decision' });
+    fireEvent.click(applyButton);
+    fireEvent.click(applyButton);
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    expect(screen.getByText('Exact review bound')).toBeVisible();
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(within(model).getByText('APPROVED')).toBeVisible();
+    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
+    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^H02 \/.*NOT RESOLVED/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset this scenario' })).toBeDisabled();
+    resolveAttempt();
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
+    expect(screen.getByText(/^Broker disposition BLOCK\./)).toHaveTextContent(/150 substitute units.*100/);
+  });
+
+  it('resolves an H01 intermediate attempt to WAIT and re-derives exact review authority for the next role', () => {
+    const review = vi.fn(reviewProof);
+    render(<ProofExperience prepare={prepareProof} review={review} />);
+    select('H01');
+    startApply();
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    resolveAttempt();
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(within(model).getByText('WAIT', { exact: true })).toBeVisible();
+    expect(within(model).getByText('EXACT REVIEW REQUIRED')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
+  });
+
+  it('never creates an Application Attempt for opening review, DISCARD, H03, or a pre-apply technical stop', () => {
+    render(<App />);
+    openReview();
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Why this disposition' })).getByText('DISCARDED')).toBeVisible();
+    select('H03');
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    cleanup();
+    const prepared = prepareProof('H02');
+    const failed = { ...prepared, stopped: true, registration: { accepted: false as const, state: prepared.state!, failure: { source: 'STATE' as const, reason: 'UNKNOWN_PREPARATION_FAILURE' } } };
+    render(<ProofExperience prepare={() => failed} review={reviewProof} />);
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+  });
+
+  it('uses an Application Attempt for a real REJECTED apply and resolves without BLOCK or WAIT', () => {
+    const prepareRejected = () => {
+      const session = prepareProof('H01');
+      if (!session.bridge?.ready) throw new Error('Bridge required');
+      return { ...session, bridge: createReadyDecisionBridgeResult({ ...session.bridge.proposal, decision: 'REJECTED' }) };
+    };
+    render(<ProofExperience prepare={prepareRejected} review={reviewProof} />);
+    startApply();
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    resolveAttempt();
+    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    expect(within(explanation).getByText('REJECTED', { exact: true })).toBeVisible();
+    expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+    expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('resolves an unclassified post-APPLY result to neutral TECHNICAL STOP', () => {
+    const before = prepareProof('H02');
+    const applied = reviewProof(before, 'APPLY');
+    const priorAttempt = applied.attempts[0]!;
+    const technical = { ...applied, state: priorAttempt.before, attempts: [{ ...priorAttempt, result: {
+      accepted: false as const, state: priorAttempt.before, failure: { source: 'STATE' as const, reason: 'UNCLASSIFIED_AFTER_APPLY' },
+    } }] };
+    render(<ProofExperience prepare={() => before} review={() => technical} />);
+    startApply();
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    resolveAttempt();
+    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    expect(within(explanation).getByText('TECHNICAL STOP')).toBeVisible();
+    expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
+    expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('uses discrete reduced-motion stages without retaining normal reveal latency', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    const review = vi.fn(reviewProof);
+    render(<ProofExperience prepare={prepareProof} review={review} />);
+    startApply();
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    expect(review).toHaveBeenCalledTimes(1);
+    resolveAttempt();
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
+  });
+
+  it('cleans a pending reveal timer on unmount without re-running review', () => {
+    const review = vi.fn(reviewProof);
+    const rendered = render(<ProofExperience prepare={prepareProof} review={review} />);
+    startApply();
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    rendered.unmount();
+    expect(() => resolveAttempt()).not.toThrow();
+    expect(review).toHaveBeenCalledTimes(1);
   });
 });
