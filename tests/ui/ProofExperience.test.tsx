@@ -17,6 +17,7 @@ const startApply = () => { openReview(); fireEvent.click(screen.getByRole('butto
 const apply = () => { startApply(); resolveAttempt(); };
 const select = (id: string) => fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${id} /`) }));
 const revealSupporting = () => fireEvent.click(screen.getByText('Supporting proof details'));
+const continuity = () => screen.getByRole('region', { name: 'Application Attempt' }).querySelector<HTMLElement>('.attempt-continuity span')!;
 
 describe('Evidence-to-decision primary experience', () => {
   it('starts on H02 with factual evidence and a genuine review pause, not a spoiled result', () => {
@@ -258,6 +259,7 @@ describe('Evidence-to-decision primary experience', () => {
     fireEvent.click(applyButton);
     expect(review).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    expect(continuity()).toHaveStyle({ width: '58%' });
     expect(screen.getByText('Exact review bound')).toBeVisible();
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('APPROVED')).toBeVisible();
@@ -265,7 +267,9 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^H02 \/.*NOT RESOLVED/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reset this scenario' })).toBeDisabled();
-    resolveAttempt();
+    act(() => vi.advanceTimersByTime(699));
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    act(() => vi.advanceTimersByTime(1));
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
     expect(screen.getByText(/^Broker disposition BLOCK\./)).toHaveTextContent(/150 substitute units.*100/);
@@ -278,11 +282,24 @@ describe('Evidence-to-decision primary experience', () => {
     startApply();
     expect(review).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    expect(continuity()).toHaveStyle({ width: '40%' });
     resolveAttempt();
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('WAIT', { exact: true })).toBeVisible();
     expect(within(model).getByText('EXACT REVIEW REQUIRED')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+  });
+
+  it('uses completed continuity only for a pending resolved ALLOW, not for the scenario name', () => {
+    let session = prepareProof('H01');
+    session = reviewProof(session, 'APPLY');
+    session = reviewProof(session, 'APPLY');
+    render(<ProofExperience prepare={() => session} review={reviewProof} />);
+    startApply();
+    expect(continuity()).toHaveStyle({ width: '100%' });
+    resolveAttempt();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('ALLOW', { exact: true })).toBeVisible();
   });
 
   it('never creates an Application Attempt for opening review, DISCARD, H03, or a pre-apply technical stop', () => {
@@ -310,6 +327,7 @@ describe('Evidence-to-decision primary experience', () => {
     render(<ProofExperience prepare={prepareRejected} review={reviewProof} />);
     startApply();
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    expect(continuity()).toHaveStyle({ width: '28%' });
     resolveAttempt();
     const explanation = screen.getByRole('region', { name: 'Why this disposition' });
     expect(within(explanation).getByText('REJECTED', { exact: true })).toBeVisible();
@@ -327,6 +345,7 @@ describe('Evidence-to-decision primary experience', () => {
     render(<ProofExperience prepare={() => before} review={() => technical} />);
     startApply();
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    expect(continuity()).toHaveStyle({ width: '18%' });
     resolveAttempt();
     const explanation = screen.getByRole('region', { name: 'Why this disposition' });
     expect(within(explanation).getByText('TECHNICAL STOP')).toBeVisible();
@@ -340,10 +359,13 @@ describe('Evidence-to-decision primary experience', () => {
     render(<ProofExperience prepare={prepareProof} review={review} />);
     startApply();
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+    expect(continuity()).toHaveStyle({ width: '58%' });
     expect(review).toHaveBeenCalledTimes(1);
-    resolveAttempt();
+    act(() => vi.advanceTimersByTime(0));
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
+    const styles = readFileSync('src/styles/app.css', 'utf8');
+    expect(styles).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.attempt-continuity span \{ animation: none; transform: none; \}/);
   });
 
   it('cleans a pending reveal timer on unmount without re-running review', () => {

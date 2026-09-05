@@ -4,6 +4,15 @@ import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, historicalCallProof, type DecisionTraceView } from '../presentation/decisionTraceViewModel.js';
 import { BrokerMark } from './CaseHeader.js';
 
+const attemptVisualFor = (resolved: ProofSession) => {
+  const disposition = createDecisionControlView(resolved).disposition;
+  if (disposition === 'ALLOW') return { continuity: '100%', treatment: 'complete' } as const;
+  if (disposition === 'BLOCK') return { continuity: '58%', treatment: 'interrupted' } as const;
+  if (disposition === 'WAIT') return { continuity: '40%', treatment: 'suspended' } as const;
+  if (disposition === 'REJECTED') return { continuity: '28%', treatment: 'neutral' } as const;
+  return { continuity: '18%', treatment: 'neutral-stopped' } as const;
+};
+
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
   <p className="eyebrow">01 / Operational evidence</p>
   <h2 id="evidence-title">{view.trustedCaseProduced ? 'Trusted snapshot facts' : 'Input claims — not a trusted snapshot'}</h2>
@@ -87,7 +96,11 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
 }>) => {
   const [session, setSession] = useState(() => prepare('H02'));
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [applicationAttempt, setApplicationAttempt] = useState<Readonly<{ before: ProofSession; resolved: ProofSession }> | null>(null);
+  const [applicationAttempt, setApplicationAttempt] = useState<Readonly<{
+    before: ProofSession;
+    resolved: ProofSession;
+    visual: ReturnType<typeof attemptVisualFor>;
+  }> | null>(null);
   const [resolvedAnnouncement, setResolvedAnnouncement] = useState('');
   const applicationLock = useRef(false);
   const view = createDecisionTraceView(session);
@@ -114,7 +127,7 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
     if (action === 'APPLY') {
       applicationLock.current = true;
       const resolved = review(session, action);
-      setApplicationAttempt({ before: session, resolved });
+      setApplicationAttempt({ before: session, resolved, visual: attemptVisualFor(resolved) });
     } else setSession(review(session, action));
     setReviewOpen(false);
   };
@@ -138,10 +151,10 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
       <article><span>Operational truth</span><strong>{control.operationalTruth}</strong><p>Local represented facts only</p></article>
       <article><span>Broker disposition</span><strong className={`disposition-text disposition-${control.disposition.toLowerCase().replace(' ', '-')}`}>{control.disposition}</strong><p>{control.why}</p></article>
     </section>
-    {applicationAttempt ? <section className="application-attempt" aria-label="Application Attempt">
+    {applicationAttempt ? <section className={`application-attempt attempt-${applicationAttempt.visual.treatment}`} aria-label="Application Attempt">
       <div><p className="eyebrow">Application Attempt</p><h2>Applying the reviewed decision to the represented local state</h2></div>
       <dl><div><dt>Decision</dt><dd>{control.decision}</dd></div><div><dt>Proposal</dt><dd>Exact plan version {view.plan.version}</dd></div><div><dt>Review</dt><dd>Exact review bound</dd></div></dl>
-      <div className="attempt-continuity" aria-hidden="true" />
+      <div className="attempt-continuity" aria-hidden="true"><span style={{ width: applicationAttempt.visual.continuity }} /></div>
     </section> : null}
     <p className="resolved-announcement" aria-live="polite" aria-atomic="true">{resolvedAnnouncement}</p>
     <section className={`outcome-language outcome-${control.disposition.toLowerCase().replace(' ', '-')}`} aria-label="Why this disposition">
