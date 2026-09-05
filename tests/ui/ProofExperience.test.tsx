@@ -95,7 +95,7 @@ describe('Evidence-to-decision primary experience', () => {
     render(<App />); apply();
     const explanation = screen.getByRole('region', { name: 'Why this disposition' });
     const truth = screen.getByRole('region', { name: 'Operational truth' });
-    expect(within(truth).getByText('180')).toBeVisible();
+    expect(within(truth).getByText('Up to 180 substitutes')).toBeVisible();
     expect(within(truth).getByText('150')).toBeVisible();
     expect(within(truth).getByText('100')).toBeVisible();
     expect(within(explanation).getByText(/50 units are unsupported/)).toBeVisible();
@@ -322,6 +322,10 @@ describe('Evidence-to-decision primary experience', () => {
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('APPROVED')).toBeVisible();
     expect(within(model).getByText('BLOCK', { exact: true })).toBeVisible();
+    expect(within(model).getByText('ATTEMPT STOPPED')).toBeVisible();
+    expect(within(model).getByText('Required')).toBeVisible();
+    expect(within(model).getByText('Available')).toBeVisible();
+    expect(within(model).getByText('Up to 180 substitutes')).toBeVisible();
     expect(screen.getByRole('button', { name: /^H02 \/.*BLOCK/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Reset demo case' })).toBeEnabled();
     expect(screen.getByText(/^Broker disposition BLOCK\./)).toHaveTextContent(/150 substitute units.*100/);
@@ -360,7 +364,9 @@ describe('Evidence-to-decision primary experience', () => {
     startApply();
     expect(attempt()).toHaveClass('attempt-complete');
     resolveAttempt();
-    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('ALLOW', { exact: true })).toBeVisible();
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(within(model).getByText('ALLOW', { exact: true })).toBeVisible();
+    expect(within(model).getByText('CONTROL PASSED')).toBeVisible();
   });
 
   it('never creates an Application Attempt for opening review, DISCARD, H03, or a pre-apply technical stop', () => {
@@ -372,6 +378,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(screen.getByRole('region', { name: 'Why this disposition' })).getByText('DISCARDED')).toBeVisible();
     select('H03');
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('NOT ENGAGED')).toBeVisible();
     cleanup();
     const prepared = prepareProof('H02');
     const failed = { ...prepared, stopped: true, registration: { accepted: false as const, state: prepared.state!, failure: { source: 'STATE' as const, reason: 'UNKNOWN_PREPARATION_FAILURE' } } };
@@ -394,6 +401,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(explanation).getByText('REJECTED', { exact: true })).toBeVisible();
     expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('DECISION RECORDED')).toBeVisible();
   });
 
   it('resolves an unclassified post-APPLY result to neutral TECHNICAL STOP', () => {

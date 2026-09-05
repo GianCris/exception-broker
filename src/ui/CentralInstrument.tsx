@@ -40,6 +40,12 @@ export const CentralInstrument = forwardRef<HTMLElement, Readonly<{
     : disposition === 'WAIT' ? 'suspended'
     : disposition === 'REJECTED' || disposition === 'PLAN_REJECTED' ? 'neutral'
     : 'neutral-stopped';
+  const boundaryState = disposition === 'ALLOW' ? 'CONTROL PASSED'
+    : disposition === 'BLOCK' ? 'ATTEMPT STOPPED'
+    : disposition === 'WAIT' && attempt ? 'ATTEMPT HELD'
+    : disposition === 'REJECTED' || disposition === 'PLAN_REJECTED' ? 'DECISION RECORDED'
+    : attempt ? 'ATTEMPT STOPPED'
+    : 'NOT ENGAGED';
   return <MotionConfig reducedMotion="user">
     <section ref={ref} className={`central-instrument instrument-${tone}`} aria-label={ariaLabel} tabIndex={-1}>
       <motion.header className="instrument-decision" layout transition={motionTokens.settle}>
@@ -49,20 +55,23 @@ export const CentralInstrument = forwardRef<HTMLElement, Readonly<{
         <div className="instrument-authority"><span>Human review</span><strong>{authority}</strong><small>{authorityContext}</small></div>
       </motion.header>
 
-      {attempt ? <motion.section
-          key={attempt.key}
-          className={`instrument-attempt attempt-${attemptTreatment}`}
-          aria-label="Application Attempt"
-          initial={{ opacity: 0.6, y: -8, scale: 0.985 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0 }}
-          transition={motionTokens.reveal}
-        >
-          <span>Application Attempt</span><strong>{attempt.review}</strong><small>{attempt.proposal}</small>
-        </motion.section> : null}
+      <div className={`instrument-causal ${attempt ? 'causal-engaged' : 'causal-idle'}`}>
+        {attempt ? <motion.section
+            key={attempt.key}
+            className={`instrument-attempt attempt-${attemptTreatment}`}
+            aria-label="Application Attempt"
+            initial={{ opacity: 0.6, x: -8, scale: 0.985 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={motionTokens.reveal}
+          >
+            <span>Application Attempt</span><strong>{attempt.review}</strong><small>{attempt.proposal}</small>
+          </motion.section> : <p className="instrument-no-attempt">No Application Attempt</p>}
 
-      <div className={`instrument-boundary ${attempt ? 'boundary-engaged' : ''}`} aria-label="Execution boundary">
-        <span>Execution boundary</span><motion.i aria-hidden="true" layout initial={false} transition={motionTokens.causal} />
+        <div className={`instrument-boundary ${attempt ? 'boundary-engaged' : ''}`} aria-label="Execution boundary">
+          <motion.i aria-hidden="true" layout initial={false} transition={motionTokens.causal} />
+          <span>Execution boundary</span><strong>{boundaryState}</strong>
+        </div>
       </div>
 
       <motion.section

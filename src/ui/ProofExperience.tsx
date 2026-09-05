@@ -41,14 +41,15 @@ export const ThemeControl = () => {
 const ProofOperationalTruth = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   const supplyClaims = view.facts.filter((fact) => fact.factKind === 'PHYSICAL_SUPPLY');
   const trustedSupply = supplyClaims.find((fact) => fact.trusted);
+  const authorizedSubstitutes = view.assessments?.substituteAuthorized ?? view.facts.find((fact) => fact.factKind === 'CLIENT_AUTHORIZATION')?.payload.authorization.maxSubstituteQuantity ?? '—';
   if (!view.trustedCaseProduced) return <div className="instrument-truth-claims">
     {supplyClaims.map((claim) => <article key={claim.evidenceId}><span>Unaccepted supply claim</span><strong>{claim.value}</strong><small>{claim.sourceId}</small></article>)}
     <p>Conflicting claims remain unresolved. No trusted state or Application Attempt exists.</p>
   </div>;
-  return <div className="instrument-truth-facts">
-    <article><span>Proposal</span><strong>{view.plan.substituteQuantityTomorrow}</strong><small>substitute units required</small></article>
-    {trustedSupply?.payload.supplies.map((supply, index) => <article key={`${trustedSupply.evidenceId}-${index}`}><span>Physical supply</span><strong>{supply.substituteQuantity}</strong><small>substitute units available</small></article>)}
-    <article><span>Client authorization</span><strong>{view.assessments?.substituteAuthorized ?? view.facts.find((fact) => fact.factKind === 'CLIENT_AUTHORIZATION')?.payload.authorization.maxSubstituteQuantity ?? '—'}</strong><small>substitute-unit limit</small></article>
+  return <div className="instrument-truth-facts instrument-truth-comparison">
+    <article className="truth-required"><span>Required</span><strong>{view.plan.substituteQuantityTomorrow}</strong><small>substitute units</small></article>
+    {trustedSupply?.payload.supplies.map((supply, index) => <article className="truth-available" key={`${trustedSupply.evidenceId}-${index}`}><span>Available</span><strong>{supply.substituteQuantity}</strong><small>substitute units</small></article>)}
+    <article className="truth-supporting"><span>Client authorization</span><strong>{`Up to ${authorizedSubstitutes} substitutes`}</strong><small>Authorization is distinct from physical availability.</small></article>
   </div>;
 };
 

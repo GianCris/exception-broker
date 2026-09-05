@@ -493,6 +493,8 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .proof-shell .eyebrow { color: var(--brand); }
 .queue-list { gap: 7px; margin-top: 17px; }
 .queue-list button { gap: 7px; padding: 13px 14px; color: var(--text-secondary); border-color: transparent; border-radius: 8px; background: transparent; transition: border-color 120ms ease, background-color 120ms ease; }
+.queue-list button:not([aria-pressed="true"]) { opacity: .72; }
+.queue-list button:not([aria-pressed="true"]):hover, .queue-list button:not([aria-pressed="true"]):focus-visible { opacity: 1; }
 .queue-list button:hover { border-color: var(--border-subtle); background: var(--surface-control); }
 .queue-list button[aria-pressed="true"] { border-color: var(--border-strong); background: var(--surface-selected); box-shadow: inset 2px 0 var(--brand); }
 .queue-heading > span { display: grid; gap: 3px; }
@@ -656,6 +658,8 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
   .proof-mode { order: 3; }
   .theme-control { margin-left: auto; }
   .control-queue { border-color: var(--border-subtle); }
+  .control-queue .queue-list { grid-auto-columns: minmax(230px, 82vw); grid-auto-flow: column; overflow-x: auto; padding-bottom: 8px; overscroll-behavior-inline: contain; scroll-snap-type: inline proximity; }
+  .control-queue .queue-list button { scroll-snap-align: start; }
   .control-workspace { width: min(100% - 28px, 1080px); }
   .proof-header { display: block; }
   .proof-header h1 { margin-bottom: 7px; }
@@ -696,23 +700,15 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 /* B3 Control signature: one causal instrument, with Motion revealing only known results. */
 .central-instrument {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(240px, .8fr);
-  grid-template-areas:
-    "decision decision"
-    "attempt attempt"
-    "boundary boundary"
-    "truth outcome";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "decision" "causal" "truth" "outcome";
   min-width: 0;
-  margin-bottom: 14px;
-  overflow: hidden;
+  margin: 4px 0 18px;
   color: var(--text-primary);
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  background: var(--surface-control);
-  box-shadow: 0 18px 48px rgb(20 17 24 / 7%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-control) 72%, transparent), transparent 76%);
 }
 .central-instrument > * { min-width: 0; }
-.instrument-label, .instrument-attempt > span, .instrument-outcome > span,
+.instrument-label, .instrument-attempt > span, .instrument-outcome > span, .instrument-boundary span,
 .instrument-truth-facts span, .instrument-truth-claims span {
   color: var(--text-muted);
   font-size: .62rem;
@@ -726,37 +722,103 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 3px 24px;
-  padding: 25px 28px 20px;
+  padding: 24px 4px 21px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .instrument-decision > .instrument-label, .instrument-decision > h2, .instrument-decision > p { grid-column: 1; }
 .instrument-decision h2 { margin: 1px 0; color: var(--text-primary); font-size: clamp(1.7rem, 4vw, 2.8rem); font-weight: 650; letter-spacing: -.04em; }
 .instrument-decision > p:not(.instrument-label) { margin: 0; color: var(--text-muted); font-size: .72rem; }
-.instrument-authority { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 4px; min-width: 210px; padding-left: 22px; border-left: 1px solid var(--border-subtle); }
+.instrument-authority { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 4px; min-width: 210px; padding-left: 22px; }
 .instrument-authority span { color: var(--text-muted); font-size: .62rem; font-weight: 750; text-transform: uppercase; }
 .instrument-authority strong { font-size: .82rem; letter-spacing: .02em; }
 .instrument-authority small { max-width: 260px; color: var(--text-muted); font-size: .66rem; }
+.instrument-causal {
+  grid-area: causal;
+  display: grid;
+  grid-template-columns: minmax(210px, 300px) minmax(180px, 1fr);
+  align-items: stretch;
+  gap: 0;
+  min-height: 118px;
+  padding: 28px 4px 20px;
+}
 .instrument-attempt {
-  grid-area: attempt;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 11px;
-  padding: 10px 20px;
+  position: relative;
+  align-self: center;
+  display: grid;
+  gap: 4px;
+  padding: 14px 17px 14px 22px;
   color: var(--text-secondary);
   background: var(--surface-action);
-  border-top: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px 2px 2px 7px;
+  box-shadow: 0 10px 28px rgb(12 11 15 / 10%);
+}
+.instrument-attempt::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 5px;
+  height: 5px;
+  background: var(--brand);
+  transform: translateY(-50%);
 }
 .instrument-attempt strong { font-size: .76rem; }
 .instrument-attempt small { color: var(--text-muted); }
-.instrument-boundary { grid-area: boundary; position: relative; display: grid; place-items: center; height: 35px; }
-.instrument-boundary::before { content: ""; position: absolute; right: 28px; left: 28px; height: 1px; background: var(--border-strong); }
-.instrument-boundary span { position: relative; z-index: 1; padding: 0 12px; color: var(--text-muted); background: var(--surface-control); font-size: .58rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.instrument-boundary i { position: absolute; z-index: 2; right: 28px; width: 7px; height: 7px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface-control); }
-.boundary-engaged i { right: auto; left: calc(50% + 82px); background: var(--text-secondary); }
-.instrument-block .boundary-engaged i { border-color: var(--block); background: var(--block); border-radius: 1px; transform: rotate(45deg); }
-.instrument-allow .boundary-engaged i { border-color: var(--allow); background: var(--allow); }
-.instrument-wait .boundary-engaged i { border-color: var(--wait); background: var(--wait); }
-.instrument-truth { grid-area: truth; padding: 21px 28px 25px; border-top: 1px solid var(--border-subtle); }
+.instrument-no-attempt { align-self: center; margin: 0; color: var(--text-muted); font-size: .67rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.instrument-boundary {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding-left: 68px;
+}
+.instrument-boundary::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--border-strong);
+}
+.instrument-boundary::after {
+  content: "";
+  position: absolute;
+  top: 17px;
+  bottom: 17px;
+  left: 44px;
+  width: 2px;
+  background: var(--border-strong);
+}
+.instrument-boundary span, .instrument-boundary strong { position: relative; z-index: 2; justify-self: start; padding: 0 8px; background: var(--surface-base); }
+.instrument-boundary span { font-size: .58rem; }
+.instrument-boundary strong { color: var(--text-secondary); font-size: .68rem; letter-spacing: .08em; }
+.instrument-boundary i {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 39px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-base);
+  transform: translateY(-50%);
+}
+.instrument-block .boundary-engaged::before { right: calc(100% - 45px); background: var(--block); }
+.instrument-block .boundary-engaged::after { background: var(--block); }
+.instrument-block .boundary-engaged i { border-color: var(--block); border-radius: 1px; background: var(--block); transform: translateY(-50%) rotate(45deg); }
+.instrument-block .boundary-engaged strong { color: var(--block); }
+.instrument-allow .boundary-engaged::before { background: linear-gradient(90deg, var(--allow) 0 72%, var(--border-strong) 72%); }
+.instrument-allow .boundary-engaged::after { background: var(--allow); transform: scaleY(.55); }
+.instrument-allow .boundary-engaged i { border-color: var(--allow); background: var(--surface-base); box-shadow: inset 0 0 0 3px var(--allow); }
+.instrument-allow .boundary-engaged strong { color: var(--allow); }
+.instrument-wait .boundary-engaged::before { background: repeating-linear-gradient(90deg, var(--wait) 0 6px, transparent 6px 11px); }
+.instrument-wait .boundary-engaged i { border-color: var(--wait); }
+.instrument-wait .boundary-engaged strong { color: var(--wait); }
+.instrument-truth { grid-area: truth; padding: 21px 4px 25px; border-top: 1px solid var(--border-subtle); }
 .instrument-truth h3 { margin: 5px 0 17px; color: var(--text-primary); font-size: .95rem; font-weight: 650; }
 .instrument-truth-facts, .instrument-truth-claims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
 .instrument-truth-facts article, .instrument-truth-claims article { min-width: 0; }
@@ -764,24 +826,44 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .instrument-truth-facts small, .instrument-truth-claims small { color: var(--text-muted); font-size: .65rem; }
 .instrument-truth-claims { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .instrument-truth-claims > p { grid-column: 1 / -1; margin: 2px 0 0; color: var(--wait); font-size: .7rem; }
-.instrument-outcome { grid-area: outcome; display: grid; align-content: center; gap: 7px; padding: 22px 28px; border-top: 1px solid var(--border-subtle); border-left: 1px solid var(--border-subtle); background: var(--surface-resolution); }
-.instrument-outcome strong { color: var(--neutral); font-size: clamp(1.55rem, 3vw, 2.35rem); line-height: 1; letter-spacing: -.035em; }
+.instrument-truth-comparison { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 34px; max-width: 720px; }
+.instrument-truth-comparison .truth-required, .instrument-truth-comparison .truth-available { position: relative; padding-bottom: 14px; }
+.instrument-truth-comparison .truth-required::after { content: "→"; position: absolute; right: -22px; top: 22px; color: var(--text-muted); font-size: .9rem; }
+.instrument-truth-comparison .truth-required strong, .instrument-truth-comparison .truth-available strong { font-size: clamp(2rem, 5vw, 3.25rem); line-height: .95; }
+.instrument-truth-comparison .truth-supporting { grid-column: 1 / -1; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.instrument-truth-comparison .truth-supporting strong { display: inline; margin-right: 8px; font-size: .84rem; letter-spacing: 0; }
+.instrument-truth-comparison .truth-supporting small { font-size: .68rem; }
+.instrument-outcome { grid-area: outcome; display: grid; grid-template-columns: minmax(150px, auto) minmax(0, 1fr); align-items: center; gap: 5px 24px; padding: 23px 4px 8px; border-top: 2px solid var(--border-strong); }
+.instrument-outcome > span, .instrument-outcome > strong { grid-column: 1; }
+.instrument-outcome > p, .instrument-outcome > small { grid-column: 2; }
+.instrument-outcome strong { color: var(--neutral); font-size: clamp(2rem, 4vw, 3.15rem); line-height: 1; letter-spacing: -.045em; }
 .instrument-outcome p { margin: 0; color: var(--text-secondary); font-size: .73rem; line-height: 1.5; }
-.instrument-outcome small { padding-top: 5px; color: var(--text-muted); font-size: .66rem; line-height: 1.45; border-top: 1px solid var(--border-subtle); }
+.instrument-outcome small { padding-top: 5px; color: var(--text-muted); font-size: .66rem; line-height: 1.45; }
 .instrument-block .instrument-outcome strong { color: var(--block); }
 .instrument-allow .instrument-outcome strong { color: var(--allow); }
 .instrument-wait .instrument-outcome strong { color: var(--wait); }
 .instrument-rejected .instrument-outcome strong, .instrument-discarded .instrument-outcome strong { color: var(--neutral); }
 
 @media (max-width: 760px) {
-  .central-instrument { grid-template-columns: 1fr; grid-template-areas: "decision" "attempt" "boundary" "truth" "outcome"; }
   .instrument-decision { grid-template-columns: 1fr; padding: 22px 20px 18px; }
   .instrument-authority { grid-column: 1; grid-row: auto; min-width: 0; margin-top: 13px; padding: 13px 0 0; border-top: 1px solid var(--border-subtle); border-left: 0; }
-  .instrument-attempt { align-items: flex-start; flex-direction: column; gap: 3px; padding-inline: 20px; }
+  .instrument-causal { grid-template-columns: 1fr; min-height: 0; padding: 22px 20px 17px; }
+  .instrument-attempt { width: min(100%, 330px); border-radius: 7px 7px 2px 2px; }
+  .instrument-no-attempt { margin-bottom: 16px; }
+  .instrument-boundary { min-height: 86px; padding: 47px 0 0; }
+  .instrument-boundary::before { top: 30px; right: 0; left: 0; }
+  .instrument-boundary::after { top: 0; bottom: auto; left: 28px; height: 60px; }
+  .instrument-boundary i { top: 25px; left: 23px; }
+  .instrument-boundary span, .instrument-boundary strong { margin-left: 44px; }
+  .instrument-block .boundary-engaged::before { right: calc(100% - 29px); }
   .instrument-truth { padding: 20px; }
   .instrument-truth-facts, .instrument-truth-claims { grid-template-columns: 1fr; gap: 12px; }
   .instrument-truth-claims > p { grid-column: 1; }
-  .instrument-outcome { padding: 22px 20px; border-left: 0; }
+  .instrument-truth-comparison { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 22px; }
+  .instrument-truth-comparison .truth-required::after { right: -16px; }
+  .instrument-truth-comparison .truth-supporting { grid-column: 1 / -1; }
+  .instrument-outcome { grid-template-columns: 1fr; gap: 7px; margin: 0 20px; padding: 20px 0 4px; }
+  .instrument-outcome > span, .instrument-outcome > strong, .instrument-outcome > p, .instrument-outcome > small { grid-column: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
