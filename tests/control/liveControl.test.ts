@@ -9,7 +9,8 @@ import { hashClientToken } from '../../src/acquisition/guardrails.js';
 import { createAcquisitionHttpHandler } from '../../src/acquisition/http.js';
 import { acquisitionRequestDefinitionFingerprint, AcquisitionService } from '../../src/acquisition/service.js';
 import { MemoryAcquisitionStore } from '../../src/acquisition/store.js';
-import { LiveControlService, operatorSandboxContextFingerprint } from '../../src/control/service.js';
+import type { LiveControlReviewMetadata, SourceAcquisitionBinding } from '../../src/control/contracts.js';
+import { controlledContextFingerprint, LiveControlService, operatorSandboxContextFingerprint, sourceBindingsEqual } from '../../src/control/service.js';
 import { JsonFileLiveControlStore, MemoryLiveControlStore, type LiveControlStore } from '../../src/control/store.js';
 import { OPERATOR_SANDBOX_DEFINITION, OPERATOR_SANDBOX_FACTS, OPERATOR_SANDBOX_OBJECTIVE, operatorSandboxContext } from '../../src/sandbox/operatorDefinition.js';
 import { createOperatorControlledState } from '../../src/sandbox/operatorContext.js';
@@ -48,6 +49,28 @@ describe('canonical controlled V1 definition', () => {
     expect(plan).toMatchObject({ originalQuantityTomorrow: 350, substituteQuantityTomorrow: 150, clientAdditionalCost: 0, supplierAbsorbedCost: 75 });
     expect(state.approvals.map(({ actorRole }) => actorRole).sort()).toEqual(['production', 'supplier']);
     expect(operatorSandboxContextFingerprint()).toHaveLength(64);
+  });
+
+  it('fingerprints equivalent unordered collections canonically and detects control-relevant changes', () => {
+    const state = createOperatorControlledState(); const minimum = state.exceptionCase.actors.find(({ role }) => role === 'production')!.constraints[0]!;
+    const withMultipleConstraints = { ...state, exceptionCase: { ...state.exceptionCase, actors: state.exceptionCase.actors.map((actor) => actor.role === 'supplier' ? { ...actor, constraints: [...actor.constraints, minimum] } : actor) } };
+    const reordered = { ...withMultipleConstraints, exceptionCase: { ...withMultipleConstraints.exceptionCase, actors: [...withMultipleConstraints.exceptionCase.actors].reverse().map((actor) => ({ ...actor, constraints: [...actor.constraints].reverse() })) },
+      plans: [...state.plans].reverse(), planLineages: [...state.planLineages].reverse(), approvals: [...state.approvals].reverse(), operationHistory: [...state.operationHistory].reverse(), events: [...state.events].reverse() };
+    expect(controlledContextFingerprint(reordered)).toBe(controlledContextFingerprint(withMultipleConstraints));
+    const changed = { ...state, exceptionCase: { ...state.exceptionCase, actors: state.exceptionCase.actors.map((actor) => actor.role === 'client'
+      ? { ...actor, authorization: { ...actor.authorization, maxSubstituteQuantity: actor.authorization.maxSubstituteQuantity - 1 } } : actor) } };
+    expect(controlledContextFingerprint(changed)).not.toBe(controlledContextFingerprint(state));
+  });
+
+  it('compares complete source bindings structurally, independent of property insertion order', () => {
+    const binding: SourceAcquisitionBinding = { acquisitionId: 'A', callId: 'C', requestId: 'R', receivedAt: '2027-01-01T00:00:00Z', terminalAt: '2027-01-01T00:01:00Z', caseId: 'CASE', planId: 'PLAN', actorId: 'ACTOR', actorRole: 'client', normalizedDecisionFingerprint: 'HASH' };
+    const reordered: SourceAcquisitionBinding = { normalizedDecisionFingerprint: 'HASH', actorRole: 'client', actorId: 'ACTOR', planId: 'PLAN', caseId: 'CASE', terminalAt: '2027-01-01T00:01:00Z', receivedAt: '2027-01-01T00:00:00Z', requestId: 'R', callId: 'C', acquisitionId: 'A' };
+    expect(sourceBindingsEqual(binding, reordered)).toBe(true);
+  });
+
+  it.each(['acquisitionId', 'callId', 'requestId', 'receivedAt', 'terminalAt', 'caseId', 'planId', 'actorId', 'actorRole', 'normalizedDecisionFingerprint'] as const)('detects source binding mismatch in %s', (field) => {
+    const binding: SourceAcquisitionBinding = { acquisitionId: 'A', callId: 'C', requestId: 'R', receivedAt: '2027-01-01T00:00:00Z', terminalAt: '2027-01-01T00:01:00Z', caseId: 'CASE', planId: 'PLAN', actorId: 'ACTOR', actorRole: 'client', normalizedDecisionFingerprint: 'HASH' };
+    expect(sourceBindingsEqual(binding, { ...binding, [field]: `${binding[field]}-OTHER` })).toBe(false);
   });
 });
 
@@ -101,6 +124,7 @@ describe('Live Control handoff', () => {
 });
 
 describe('Live Control exact review and Broker execution', () => {
+  const ownedReview = (action: 'APPLY' | 'DISCARD'): LiveControlReviewMetadata => ({ action, operationId: 'OPERATION-OWNED', eventId: 'EVENT-OWNED', approvalId: 'APPROVAL-OWNED', reviewedAt: '2027-07-01T17:04:00-05:00', reviewer: 'LOCAL-SANDBOX-OPERATOR-NOT-AUTHENTICATED' });
   it('APPLY uses existing orchestration once, resolves APPROVED, and replays stable metadata/result', async () => {
     const { controls } = await setup(); const handoff = await controls.create('ACQ-LIVE-CONTROL-1', token); if (!handoff.accepted) throw new Error('required');
     const first = await controls.review(handoff.record.controlSessionId, token, 'APPLY'); const second = await controls.review(handoff.record.controlSessionId, token, 'APPLY');
@@ -144,6 +168,33 @@ describe('Live Control exact review and Broker execution', () => {
     const { controls } = await setup(); const handoff = await controls.create('ACQ-LIVE-CONTROL-1', token); if (!handoff.accepted) throw new Error('required');
     const results = await Promise.all([controls.review(handoff.record.controlSessionId, token, 'APPLY'), controls.review(handoff.record.controlSessionId, token, 'DISCARD')]);
     expect(results.filter(({ accepted }) => accepted)).toHaveLength(1); expect(results.find(({ accepted }) => !accepted)).toMatchObject({ code: 'REVIEW_CONFLICT' });
+  });
+
+  it('resumes REVIEWING(APPLY) with the exact owned identity, then replays the same terminal result', async () => {
+    const { controls, controlStore } = await setup(); const handoff = await controls.create('ACQ-LIVE-CONTROL-1', token); if (!handoff.accepted) throw new Error('required');
+    const stored = await controlStore.get(handoff.record.controlSessionId); if (!stored) throw new Error('required'); await controlStore.put({ ...stored, status: 'REVIEWING', review: ownedReview('APPLY') });
+    const recovered = await setup(acquisition(), controlStore); const resumed = await recovered.controls.review(stored.controlSessionId, token, 'APPLY'); const replay = await recovered.controls.review(stored.controlSessionId, token, 'APPLY');
+    expect(resumed).toEqual(replay); expect(resumed).toMatchObject({ accepted: true, record: { status: 'TERMINAL', review: ownedReview('APPLY'), receipt: { disposition: 'ALLOW', effects: { decisions: 1, operations: 1, events: 1 } } } });
+    expect(recovered.gateway.create).not.toHaveBeenCalled(); expect(recovered.gateway.get).not.toHaveBeenCalled();
+  });
+
+  it('rejects DISCARD against REVIEWING(APPLY) and preserves the owned intent', async () => {
+    const { controls, controlStore } = await setup(); const handoff = await controls.create('ACQ-LIVE-CONTROL-1', token); if (!handoff.accepted) throw new Error('required');
+    const stored = await controlStore.get(handoff.record.controlSessionId); if (!stored) throw new Error('required'); const reviewing = { ...stored, status: 'REVIEWING' as const, review: ownedReview('APPLY') }; await controlStore.put(reviewing);
+    expect(await controls.review(stored.controlSessionId, token, 'DISCARD')).toMatchObject({ accepted: false, code: 'REVIEW_CONFLICT' }); expect(await controlStore.get(stored.controlSessionId)).toEqual(reviewing);
+  });
+
+  it('resumes REVIEWING(DISCARD) with the exact owned identity and zero effects', async () => {
+    const { controls, controlStore } = await setup(); const handoff = await controls.create('ACQ-LIVE-CONTROL-1', token); if (!handoff.accepted) throw new Error('required');
+    const stored = await controlStore.get(handoff.record.controlSessionId); if (!stored) throw new Error('required'); await controlStore.put({ ...stored, status: 'REVIEWING', review: ownedReview('DISCARD') });
+    const recovered = (await setup(acquisition(), controlStore)).controls; const resumed = await recovered.review(stored.controlSessionId, token, 'DISCARD'); const replay = await recovered.review(stored.controlSessionId, token, 'DISCARD');
+    expect(resumed).toEqual(replay); expect(resumed).toMatchObject({ accepted: true, record: { status: 'TERMINAL', review: ownedReview('DISCARD'), receipt: { disposition: 'DISCARDED', effects: { decisions: 0, operations: 0, events: 0 } } } });
+  });
+
+  it('rejects APPLY against REVIEWING(DISCARD) and preserves the owned intent', async () => {
+    const { controls, controlStore } = await setup(); const handoff = await controls.create('ACQ-LIVE-CONTROL-1', token); if (!handoff.accepted) throw new Error('required');
+    const stored = await controlStore.get(handoff.record.controlSessionId); if (!stored) throw new Error('required'); const reviewing = { ...stored, status: 'REVIEWING' as const, review: ownedReview('DISCARD') }; await controlStore.put(reviewing);
+    expect(await controls.review(stored.controlSessionId, token, 'APPLY')).toMatchObject({ accepted: false, code: 'REVIEW_CONFLICT' }); expect(await controlStore.get(stored.controlSessionId)).toEqual(reviewing);
   });
 
   it('fails closed before review when the persisted controlled context fingerprint changes', async () => {

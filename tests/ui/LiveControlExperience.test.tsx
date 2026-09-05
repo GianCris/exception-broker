@@ -55,11 +55,19 @@ describe('Live Control browser experience', () => {
     expect((await screen.findAllByText('PLAN_APPROVED')).length).toBeGreaterThan(0); expect(screen.queryByRole('button', { name: 'Review exact decision' })).not.toBeInTheDocument(); expect(client.review).not.toHaveBeenCalled();
   });
 
-  it('fails closed visibly when an owned review did not publish a terminal result', async () => {
+  it('offers an explicit same-intent resume when an owned review did not publish a terminal result', async () => {
     localStorage.setItem(controlSessionStorageKey, 'CONTROL-ACQ-LIVE-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); const client = api();
-    vi.mocked(client.getControl).mockResolvedValue({ accepted: true, record: { ...awaiting(), status: 'REVIEWING', review: terminal().review! }, existing: true });
+    const reviewing = { ...awaiting(), status: 'REVIEWING' as const, review: terminal().review! }; vi.mocked(client.getControl).mockResolvedValue({ accepted: true, record: reviewing, existing: true });
+    vi.mocked(client.review).mockResolvedValue({ accepted: true, record: terminal(), existing: true });
     render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
-    expect(await screen.findByText('REVIEW INCOMPLETE')).toBeVisible(); expect(screen.getByText('Review stopped safely')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Review exact decision' })).not.toBeInTheDocument(); expect(client.review).not.toHaveBeenCalled();
+    expect(await screen.findByText('REVIEW RESUME REQUIRED')).toBeVisible(); fireEvent.click(screen.getByRole('button', { name: 'Resume APPLY review' }));
+    await waitFor(() => expect(client.review).toHaveBeenCalledWith('CONTROL-ACQ-LIVE-1', 'ACCESS', 'APPLY'));
+  });
+
+  it('keeps REVIEWING without owned metadata non-resumable and fail closed', async () => {
+    localStorage.setItem(controlSessionStorageKey, 'CONTROL-ACQ-LIVE-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); const client = api();
+    vi.mocked(client.getControl).mockResolvedValue({ accepted: true, record: { ...awaiting(), status: 'REVIEWING' }, existing: true });
+    render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    expect(await screen.findByText('REVIEW INCOMPLETE')).toBeVisible(); expect(screen.getByText('Review stopped safely')).toBeVisible(); expect(client.review).not.toHaveBeenCalled();
   });
 });

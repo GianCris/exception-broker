@@ -12,22 +12,35 @@ import type { LiveControlStore } from './store.js';
 
 type Clock = () => string;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
-const canonicalContextProjection = () => {
-  const state = createOperatorControlledState(); const plan = state.plans[0]!;
+const compareText = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+const constraintProjection = (constraint: OrchestrationState['exceptionCase']['actors'][number]['constraints'][number]) => constraint.type === 'SUPPLY'
+  ? { type: constraint.type, originalQuantity: constraint.originalQuantity, substituteQuantity: constraint.substituteQuantity,
+      deliveryDate: constraint.deliveryDate, substituteUnitAdditionalCost: constraint.substituteUnitAdditionalCost }
+  : { type: constraint.type, minimumRequiredQuantity: constraint.minimumRequiredQuantity, deliveryDate: constraint.deliveryDate,
+      allowsOriginalAndSubstituteMix: constraint.allowsOriginalAndSubstituteMix };
+const canonicalContextProjection = (state: OrchestrationState) => {
   return {
     definitionId: OPERATOR_SANDBOX_DEFINITION.definitionId, definitionVersion: OPERATOR_SANDBOX_DEFINITION.definitionVersion,
     exceptionCase: { id: state.exceptionCase.id, status: state.exceptionCase.status, requestedQuantity: state.exceptionCase.requestedQuantity,
-      targetDeliveryDate: state.exceptionCase.targetDeliveryDate, actors: [...state.exceptionCase.actors].sort((left, right) => left.id.localeCompare(right.id)).map((actor) => ({
-        id: actor.id, role: actor.role, authorization: { ...actor.authorization }, constraints: actor.constraints.map((constraint) => ({ ...constraint })),
+      targetDeliveryDate: state.exceptionCase.targetDeliveryDate, actors: [...state.exceptionCase.actors].sort((left, right) => compareText(left.id, right.id)).map((actor) => ({
+        id: actor.id, role: actor.role,
+        authorization: { maxAbsorbableAdditionalCost: actor.authorization.maxAbsorbableAdditionalCost, maxSubstituteQuantity: actor.authorization.maxSubstituteQuantity,
+          latestAcceptedDeliveryDate: actor.authorization.latestAcceptedDeliveryDate },
+        constraints: actor.constraints.map(constraintProjection).sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right))),
       })) },
-    plan: { ...plan },
-    lineage: state.planLineages.map((lineage) => ({ lineageId: lineage.lineageId, caseId: lineage.caseId, planIds: [...lineage.planIds] })),
-    prerequisites: [...state.approvals].sort((left, right) => left.actorId.localeCompare(right.actorId)).map((approval) => ({
+    plans: [...state.plans].sort((left, right) => compareText(`${left.id}:${left.version}`, `${right.id}:${right.version}`)).map((plan) => ({ ...plan })),
+    lineages: [...state.planLineages].sort((left, right) => compareText(left.lineageId, right.lineageId)).map((lineage) => ({
+      lineageId: lineage.lineageId, caseId: lineage.caseId, planIds: [...lineage.planIds],
+    })),
+    prerequisites: [...state.approvals].sort((left, right) => compareText(`${left.actorId}:${left.actorRole}:${left.planId}`, `${right.actorId}:${right.actorRole}:${right.planId}`)).map((approval) => ({
       caseId: approval.caseId, planId: approval.planId, actorId: approval.actorId, actorRole: approval.actorRole, decision: approval.decision,
     })),
+    processedOperations: [...state.operationHistory].map(({ operationId, caseId }) => ({ operationId, caseId })).sort((left, right) => compareText(left.operationId, right.operationId)),
+    existingEventIds: state.events.map(({ eventId }) => eventId).sort(compareText),
   };
 };
-export const operatorSandboxContextFingerprint = () => hash(canonicalContextProjection());
+export const controlledContextFingerprint = (state: OrchestrationState) => hash(canonicalContextProjection(state));
+export const operatorSandboxContextFingerprint = () => controlledContextFingerprint(createOperatorControlledState());
 const normalizedProjection = (record: AcquisitionRecord) => {
   const value = record.normalizedResult!;
   return { requestId: value.requestId, createdAt: value.createdAt, receivedAt: value.receivedAt, caseId: value.caseId, planId: value.planId,
@@ -41,7 +54,17 @@ const sourceBindingFor = (record: AcquisitionRecord): SourceAcquisitionBinding =
   planId: record.normalizedResult!.planId, actorId: record.normalizedResult!.actorId, actorRole: record.normalizedResult!.actorRole,
   normalizedDecisionFingerprint: hash(normalizedProjection(record)),
 });
-const sourceBindingsEqual = (left: SourceAcquisitionBinding, right: SourceAcquisitionBinding) => JSON.stringify(left) === JSON.stringify(right);
+export const sourceBindingsEqual = (left: SourceAcquisitionBinding, right: SourceAcquisitionBinding) =>
+  left.acquisitionId === right.acquisitionId
+  && left.callId === right.callId
+  && left.requestId === right.requestId
+  && left.receivedAt === right.receivedAt
+  && left.terminalAt === right.terminalAt
+  && left.caseId === right.caseId
+  && left.planId === right.planId
+  && left.actorId === right.actorId
+  && left.actorRole === right.actorRole
+  && left.normalizedDecisionFingerprint === right.normalizedDecisionFingerprint;
 const contextBindingIsCurrent = (session: LiveControlSession) => session.contextFingerprint === operatorSandboxContextFingerprint()
   && session.definitionId === OPERATOR_SANDBOX_DEFINITION.definitionId
   && session.definitionVersion === OPERATOR_SANDBOX_DEFINITION.definitionVersion;
@@ -112,12 +135,14 @@ export class LiveControlService {
   async #review(id: string, token: string, action: 'APPLY' | 'DISCARD'): Promise<LiveControlResult> {
     const session = await this.#loadAuthorized(id, token); if (session === undefined) return { accepted: false, code: 'NOT_FOUND', reason: 'Control session not found' };
     if (session.status === 'TERMINAL') return session.review?.action === action ? { accepted: true, record: toPublicLiveControlRecord(session), existing: true } : { accepted: false, code: 'REVIEW_CONFLICT', reason: 'Control session was already reviewed with another action' };
-    if (session.status === 'REVIEWING') return { accepted: false, code: 'REVIEW_INCOMPLETE', reason: 'The owned review intent did not publish a terminal result' };
+    if (session.status === 'REVIEWING' && session.review?.action !== action) return session.review === undefined
+      ? { accepted: false, code: 'REVIEW_INCOMPLETE', reason: 'The owned review intent has no recoverable metadata' }
+      : { accepted: false, code: 'REVIEW_CONFLICT', reason: 'Control session has a different owned review intent' };
     if (!contextBindingIsCurrent(session)) return { accepted: false, code: 'CONTEXT_STALE', reason: 'Controlled context definition changed' };
-    const source = await this.#acquisitions.get(session.acquisitionId, token); if (!source) return { accepted: false, code: 'NOT_FOUND', reason: 'Control session not found' };
+    const source = await this.#acquisitions.get(session.acquisitionId, token); if (!source || source.normalizedResult === null || !sourceBindingsEqual(session.sourceBinding, sourceBindingFor(source))) return { accepted: false, code: 'NOT_FOUND', reason: 'Control session not found' };
     const bridge = bridgeFor(source); if (!bridge.ready || !reviewTargetsEqual(bridge.reviewTarget, session.reviewTarget as ReviewTarget)) return { accepted: false, code: 'BINDING_INVALID', reason: 'Exact review target no longer matches its source' };
-    const metadata: LiveControlReviewMetadata = { action, operationId: `OPERATION-${id}`, eventId: `EVENT-${id}`, approvalId: `APPROVAL-${id}`, reviewedAt: this.#clock(), reviewer: 'LOCAL-SANDBOX-OPERATOR-NOT-AUTHENTICATED' };
-    const claimed: LiveControlSession = { ...session, status: 'REVIEWING', review: metadata }; await this.#store.put(claimed);
+    const metadata: LiveControlReviewMetadata = session.status === 'REVIEWING' ? session.review! : { action, operationId: `OPERATION-${id}`, eventId: `EVENT-${id}`, approvalId: `APPROVAL-${id}`, reviewedAt: this.#clock(), reviewer: 'LOCAL-SANDBOX-OPERATOR-NOT-AUTHENTICATED' };
+    const claimed: LiveControlSession = session.status === 'REVIEWING' ? session : { ...session, status: 'REVIEWING', review: metadata }; if (session.status !== 'REVIEWING') await this.#store.put(claimed);
     const resolved = context();
     if (action === 'DISCARD') { const terminal: LiveControlSession = { ...claimed, status: 'TERMINAL', receipt: { disposition: 'DISCARDED', reason: 'DISCARDED_BY_REVIEWER', planStatus: resolved.state.plans[0]?.status ?? 'UNKNOWN', before: counts(resolved.state), effects: { decisions: 0, operations: 0, events: 0 } } }; await this.#store.put(terminal); return { accepted: true, record: toPublicLiveControlRecord(terminal), existing: true }; }
     const command = bindReviewCommand({ action: 'APPLY', operationId: metadata.operationId, eventId: metadata.eventId, approvalId: metadata.approvalId, reviewedBy: metadata.reviewer, reviewedAt: metadata.reviewedAt, authorizationReviews: [] }, bridge.reviewTarget);
