@@ -11,9 +11,8 @@ type CaseHeaderProps = Readonly<{
 
 export const BrokerMark = () => (
   <svg className="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="3" cy="5" r="1.5" /><circle cx="3" cy="12" r="1.5" /><circle cx="3" cy="19" r="1.5" />
-    <path d="M4.5 5 10 11.1M4.5 12H10M4.5 19 10 12.9" />
-    <circle cx="11.5" cy="12" r="2" /><path d="M13.5 12H17M17 12l1.6 1.8L22 9.5" />
+    <path d="M5 9V4l4 2.4A9 9 0 0 1 12 6a9 9 0 0 1 3 .4L19 4v5a8 8 0 0 1 1 3.8C20 17.3 16.4 20 12 20s-8-2.7-8-7.2A8 8 0 0 1 5 9Z" />
+    <path d="M8.2 12h.1M15.7 12h.1M9.5 15.1c1.7 1.2 3.3 1.2 5 0" />
   </svg>
 );
 
