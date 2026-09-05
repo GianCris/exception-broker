@@ -11,7 +11,7 @@ import { createReadyDecisionBridgeResult } from '../../src/integrations/calle/de
 import { createDecisionTransitionView } from '../../src/presentation/decisionTraceViewModel.js';
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); window.localStorage.clear(); delete document.documentElement.dataset.theme; delete document.documentElement.dataset.themeMode; vi.useRealTimers(); vi.unstubAllGlobals(); });
 const openReview = () => fireEvent.click(screen.getByRole('button', { name: 'Review exact proposal' }));
 const resolveAttempt = () => act(() => vi.runOnlyPendingTimers());
 const startApply = () => { openReview(); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' })); };
@@ -21,6 +21,50 @@ const revealSupporting = () => fireEvent.click(screen.getByText('Verify current 
 const attempt = () => screen.getByRole('region', { name: 'Application Attempt' });
 
 describe('Evidence-to-decision primary experience', () => {
+  it('defaults to accessible System theme and supports explicit persisted finishes', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const rendered = render(<App />);
+    const theme = screen.getByRole('combobox', { name: 'Theme' });
+    expect(theme).toHaveValue('system');
+    expect(document.documentElement).toHaveAttribute('data-theme-mode', 'system');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+    fireEvent.change(theme, { target: { value: 'light' } });
+    expect(theme).toHaveValue('light');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+    fireEvent.change(theme, { target: { value: 'dark' } });
+    expect(theme).toHaveValue('dark');
+    expect(window.localStorage.getItem('exception-broker-theme')).toBe('dark');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    rendered.unmount();
+    render(<App />);
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('dark');
+  });
+
+  it('keeps System selection distinct and reacts to operating-system theme changes', () => {
+    let listener: ((event: MediaQueryListEvent) => void) | undefined;
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: false,
+      addEventListener: (_type: string, next: (event: MediaQueryListEvent) => void) => { listener = next; },
+      removeEventListener: vi.fn(),
+    })));
+    render(<App />);
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('system');
+    act(() => listener?.({ matches: true } as MediaQueryListEvent));
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('system');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+  });
+
+  it('keeps compressed queue truth and primary controls available in every theme', () => {
+    render(<App />);
+    const selected = screen.getByRole('button', { name: /^H02 \/.*NOT RESOLVED/ });
+    expect(within(selected).getByText('APPROVED')).toBeVisible();
+    expect(within(selected).getByText('EXACT REVIEW REQUIRED')).toBeVisible();
+    expect(within(selected).getByText(/normalized decision is ready/i)).toBeVisible();
+    expect(within(selected).getByText('Review exact proposal')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Decision control model' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
+  });
+
   it('starts on H02 with factual evidence and a genuine review pause, not a spoiled result', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: /^H02 \// })).toHaveAttribute('aria-pressed', 'true');
@@ -234,7 +278,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(model).getByText('Not evaluated for application')).toBeVisible();
     expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
     expect(within(model).getByText(/normalized decision is ready/)).toBeVisible();
-    expect(screen.getAllByText(/Deterministic local proof · configured evidence/).some((element) => element.closest('.control-next'))).toBe(true);
+    expect(screen.getByText(/Deterministic local proof · configured evidence/)).toHaveClass('proof-mode');
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
     expect(screen.getByRole('heading', { name: 'Trusted snapshot facts' })).not.toBeVisible();
     expect(screen.getByRole('heading', { name: 'Technical result' })).not.toBeVisible();
