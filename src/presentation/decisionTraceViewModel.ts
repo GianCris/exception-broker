@@ -101,6 +101,7 @@ export const createDecisionControlView = (session: ProofSession) => {
   const physicalTruth = view.assessments?.physical.outcome;
   const operationalTruth = !view.trustedCaseProduced ? 'UNPROVEN — trusted snapshot not assembled'
     : latest === undefined ? 'Not evaluated for application'
+    : latest.review.action === 'DISCARD' ? 'Not evaluated for application'
     : physicalTruth === 'PHYSICALLY_FEASIBLE' ? 'Modeled supply snapshot is sufficient'
     : physicalTruth === 'PHYSICALLY_INFEASIBLE' ? 'Modeled supply snapshot is insufficient'
     : physicalTruth === 'PHYSICAL_FEASIBILITY_UNPROVEN' ? 'Modeled supply snapshot is unresolved'
@@ -159,6 +160,75 @@ export const createDecisionControlView = (session: ProofSession) => {
     operationalTruth, disposition, why, nextAction, factors, effectSummary,
     provenance: view.trustedCaseProduced ? 'Deterministic local proof · configured evidence' : 'Deterministic local proof · unaccepted claims' };
 };
+
+type ReviewAction = 'APPLY' | 'DISCARD';
+
+const authorityContext = (session: ProofSession, action?: ReviewAction) => {
+  const view = createDecisionTraceView(session);
+  if (action === 'DISCARD' && view.latest) return `Review discarded · ${view.latest.review.reviewTarget.actorRole}`;
+  if (view.canReview && view.proposal) return `Exact review required · ${view.proposal.actorRole}`;
+  if (view.latest) return `Review submitted · ${view.latest.review.reviewTarget.actorRole}`;
+  return createDecisionControlView(session).authority;
+};
+
+const proposalContext = (session: ProofSession) => {
+  const proposal = createDecisionTraceView(session).proposal;
+  if (!proposal) return 'No reviewable proposal';
+  const plan = proposal.operationType === 'PLAN_DECISION' ? proposal.planId : 'Case authorization';
+  return `${proposal.caseId} · ${plan} · ${proposal.requestId}`;
+};
+
+// Presentation-only comparison of an action's already-produced before/after snapshots.
+// It never executes or replays a review.
+export const createDecisionTransitionView = ({ beforeSession, afterSession, action }: Readonly<{
+  beforeSession: ProofSession;
+  afterSession: ProofSession;
+  action: ReviewAction;
+}>) => {
+  const before = createDecisionControlView(beforeSession);
+  const after = createDecisionControlView(afterSession);
+  const latest = createDecisionTraceView(afterSession).latest;
+  const effects = latest === undefined ? undefined : operationEffects(latest.before, latest.result.state);
+  const actedDecision = before.view.proposal?.decision ?? before.decision;
+  const beforeAuthority = authorityContext(beforeSession);
+  const afterAuthority = authorityContext(afterSession, action);
+  const beforeProposal = proposalContext(beforeSession);
+  const afterProposal = after.view.canReview ? proposalContext(afterSession) : beforeProposal;
+  const beforeOperationalTruth = action === 'DISCARD' ? 'Not evaluated for application' : before.operationalTruth;
+  const afterOperationalTruth = action === 'DISCARD' ? 'Not evaluated for application' : after.operationalTruth;
+  const comparison = [
+    { label: 'Decision', before: actedDecision, after: actedDecision, meaning: 'UNCHANGED' },
+    { label: 'Authority', before: beforeAuthority, after: afterAuthority, meaning: beforeAuthority === afterAuthority ? 'UNCHANGED' : 'CHANGED' },
+    { label: 'Exact proposal', before: beforeProposal, after: afterProposal, meaning: beforeProposal === afterProposal ? 'UNCHANGED' : 'CHANGED' },
+    { label: 'Operational Truth', before: beforeOperationalTruth, after: afterOperationalTruth,
+      meaning: beforeOperationalTruth === afterOperationalTruth ? 'UNCHANGED' : beforeOperationalTruth === 'Not evaluated for application' ? 'ESTABLISHED BY THIS ATTEMPT' : 'CHANGED' },
+    { label: 'Broker Disposition', before: before.disposition, after: after.disposition, meaning: before.disposition === after.disposition ? 'UNCHANGED' : 'CHANGED' },
+  ] as const;
+  const targetChanged = beforeAuthority !== afterAuthority && before.authority === after.authority;
+  const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+  const effectCount = effects === undefined ? 0 : effects.decisions.length + effects.operations.length + effects.events.length;
+  const effectSentence = effectCount === 0
+    ? 'No local application effects were created.'
+    : `Local records created: ${effects!.decisions.length} decision, ${effects!.operations.length} operation, and ${effects!.events.length} event.`;
+  const decisionSentence = `Decision stayed ${actedDecision}.`;
+  const dispositionSentence = before.disposition === after.disposition
+    ? `Broker disposition remains ${after.disposition}.`
+    : `Broker disposition resolved to ${after.disposition}.`;
+  const operationalSentence = beforeOperationalTruth === 'Not evaluated for application' && afterOperationalTruth === 'Modeled supply snapshot is insufficient'
+    ? 'Application evaluation established that represented supply was insufficient.'
+    : beforeOperationalTruth === 'Not evaluated for application' && afterOperationalTruth === 'Modeled supply snapshot is sufficient'
+      ? 'Application evaluation established that represented supply was sufficient.'
+      : undefined;
+  const targetSentence = targetChanged
+    ? `The next exact review target changed from ${capitalize(beforeAuthority.split(' · ').at(-1)!)} to ${capitalize(afterAuthority.split(' · ').at(-1)!)}.`
+    : undefined;
+  const submittedRole = capitalize(latest?.review.reviewTarget.actorRole ?? 'proposal');
+  const summary = action === 'DISCARD'
+    ? `The operator discarded the exact ${submittedRole} review. No Application Attempt occurred. No application evaluation occurred. ${effectSentence}`
+    : [decisionSentence, operationalSentence, targetSentence ?? `The exact ${submittedRole} review was submitted.`, dispositionSentence, effectSentence].filter(Boolean).join(' ');
+  return { action, summary, comparison, effects } as const;
+};
+export type DecisionTransitionView = ReturnType<typeof createDecisionTransitionView>;
 
 // Provenance: operator-observed historical results recorded in
 // docs/evidence/call-e-live-validation.md. Read-only; never current browser state.
