@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, MotionConfig } from 'motion/react';
 import type { ProofScenario, ProofSession } from '../demo/proofDemo.js';
 import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, createDecisionTransitionView, historicalCallProof, type DecisionTraceView, type DecisionTransitionView } from '../presentation/decisionTraceViewModel.js';
 import { BrokerMark } from './CaseHeader.js';
+import { CentralInstrument } from './CentralInstrument.js';
+import { motionTokens } from './motion.js';
 
 type ThemeMode = 'system' | 'light' | 'dark';
 const themeStorageKey = 'exception-broker-theme';
@@ -35,13 +38,18 @@ export const ThemeControl = () => {
   </select></label>;
 };
 
-const attemptVisualFor = (resolved: ProofSession) => {
-  const disposition = createDecisionControlView(resolved).disposition;
-  if (disposition === 'ALLOW') return { treatment: 'complete' } as const;
-  if (disposition === 'BLOCK') return { treatment: 'interrupted' } as const;
-  if (disposition === 'WAIT') return { treatment: 'suspended' } as const;
-  if (disposition === 'REJECTED') return { treatment: 'neutral' } as const;
-  return { treatment: 'neutral-stopped' } as const;
+const ProofOperationalTruth = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
+  const supplyClaims = view.facts.filter((fact) => fact.factKind === 'PHYSICAL_SUPPLY');
+  const trustedSupply = supplyClaims.find((fact) => fact.trusted);
+  if (!view.trustedCaseProduced) return <div className="instrument-truth-claims">
+    {supplyClaims.map((claim) => <article key={claim.evidenceId}><span>Unaccepted supply claim</span><strong>{claim.value}</strong><small>{claim.sourceId}</small></article>)}
+    <p>Conflicting claims remain unresolved. No trusted state or Application Attempt exists.</p>
+  </div>;
+  return <div className="instrument-truth-facts">
+    <article><span>Proposal</span><strong>{view.plan.substituteQuantityTomorrow}</strong><small>substitute units required</small></article>
+    {trustedSupply?.payload.supplies.map((supply, index) => <article key={`${trustedSupply.evidenceId}-${index}`}><span>Physical supply</span><strong>{supply.substituteQuantity}</strong><small>substitute units available</small></article>)}
+    <article><span>Client authorization</span><strong>{view.assessments?.substituteAuthorized ?? view.facts.find((fact) => fact.factKind === 'CLIENT_AUTHORIZATION')?.payload.authorization.maxSubstituteQuantity ?? '—'}</strong><small>substitute-unit limit</small></article>
+  </div>;
 };
 
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
@@ -73,7 +81,7 @@ const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView;
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
-  return <div className="review-backdrop"><aside ref={dialogRef} className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title" onKeyDown={onDialogKeyDown}>
+  return <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.6 }} animate={{ opacity: 1 }} transition={motionTokens.reveal}><motion.aside ref={dialogRef} className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title" onKeyDown={onDialogKeyDown} initial={{ x: 18, opacity: 0.7 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.reveal}>
     <button ref={closeRef} type="button" className="sheet-close" onClick={onClose} aria-label="Close exact review">×</button>
     <p className="eyebrow">02 / Explicit review</p><h2 id="review-title">{proposal ? `Review the ${proposal.actorRole} decision` : 'Review not reached'}</h2>
     {proposal ? <>
@@ -90,7 +98,7 @@ const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView;
       <div className="proof-actions"><button type="button" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
       {view.canReview && view.attempts.length > 0 ? <p>Previous role recorded. This is a new, separate role review; it has not been applied.</p> : null}
     </> : <p>No reviewable proposal. No decision application was attempted.</p>}
-  </aside></div>;
+  </motion.aside></motion.div></MotionConfig>;
 };
 
 const ActionReceipt = ({ receipt }: Readonly<{ receipt: DecisionTransitionView }>) => <section className="action-receipt" aria-labelledby="changed-title">
@@ -155,11 +163,6 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition }: Read
 }>) => {
   const [session, setSession] = useState(() => prepare('H02'));
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [applicationAttempt, setApplicationAttempt] = useState<Readonly<{
-    before: ProofSession;
-    resolved: ProofSession;
-    visual: ReturnType<typeof attemptVisualFor>;
-  }> | null>(null);
   const [resolvedAnnouncement, setResolvedAnnouncement] = useState('');
   const [receipt, setReceipt] = useState<DecisionTransitionView | null>(null);
   const applicationLock = useRef(false);
@@ -173,32 +176,19 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition }: Read
   const queue = proofScenarios.map((scenario) => ({ scenario, control: createDecisionControlView(
     scenario.id === session.inputs.scenario ? session : prepare(scenario.id),
   ) }));
-  useEffect(() => {
-    if (applicationAttempt === null) return undefined;
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    const timer = window.setTimeout(() => {
-      const resolvedControl = createDecisionControlView(applicationAttempt.resolved);
-      setSession(applicationAttempt.resolved);
-      setReceipt(createDecisionTransitionView({ beforeSession: applicationAttempt.before, afterSession: applicationAttempt.resolved, action: 'APPLY' }));
-      setResolvedAnnouncement(`Broker disposition ${resolvedControl.disposition}. ${resolvedControl.why}`);
-      setApplicationAttempt(null);
-      applicationLock.current = false;
-    }, reducedMotion ? 0 : 700);
-    return () => window.clearTimeout(timer);
-  }, [applicationAttempt]);
+  useEffect(() => { applicationLock.current = false; }, [session]);
   const onReview = (action: 'APPLY' | 'DISCARD') => {
     // Use the rendered snapshot, not a functional updater that might consume the next
     // role's proposal on a rapid repeated click. Every next proposal needs a new render.
     if (!view.canReview || applicationLock.current) return;
     reviewCloseDestination.current = 'surface';
+    applicationLock.current = true;
+    const resolved = review(session, action);
+    setSession(resolved);
+    setReceipt(createDecisionTransitionView({ beforeSession: session, afterSession: resolved, action }));
     if (action === 'APPLY') {
-      applicationLock.current = true;
-      const resolved = review(session, action);
-      setApplicationAttempt({ before: session, resolved, visual: attemptVisualFor(resolved) });
-    } else {
-      const resolved = review(session, action);
-      setSession(resolved);
-      setReceipt(createDecisionTransitionView({ beforeSession: session, afterSession: resolved, action: 'DISCARD' }));
+      const resolvedControl = createDecisionControlView(resolved);
+      setResolvedAnnouncement(`Broker disposition ${resolvedControl.disposition}. ${resolvedControl.why}`);
     }
     setReviewOpen(false);
   };
@@ -216,9 +206,15 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition }: Read
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
+  const latestApply = view.latest?.review.action === 'APPLY' ? view.latest : undefined;
+  const instrumentAttempt = latestApply ? {
+    key: latestApply.review.operationId,
+    review: `${latestApply.review.reviewTarget.actorRole} review APPLIED`,
+    proposal: `Exact review bound · plan version ${view.plan.version}`,
+  } : undefined;
   return <div className="app-shell proof-shell"><div ref={backgroundRef}><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav className="product-nav" aria-label="Product"><button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page">Control</button></nav><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></header>
     <div className="product-layout"><aside className="control-queue" aria-labelledby="queue-title"><p className="eyebrow">Decision control queue</p><h1 id="queue-title">Needs attention</h1><p>Three independent deterministic demo cases.</p>
-      <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} disabled={applicationAttempt !== null} aria-label={`${scenario.id} / ${scenario.title} · ${item.disposition}`} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
+      <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} aria-label={`${scenario.id} / ${scenario.title} · ${item.disposition}`} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
         <span className="queue-heading"><span><strong>{scenario.title}</strong><small>Demo case {scenario.id}</small></span><b className={`disposition disposition-${item.disposition.toLowerCase().replace(' ', '-')}`}>{item.disposition}</b></span>
         <span className="queue-state"><b>{item.decision}</b><i aria-hidden="true">·</i><b>{item.authority}</b></span>
         <span className="queue-reason">{item.why}</span><span className="queue-action"><small>Next</small>{item.nextAction}</span>
@@ -227,27 +223,23 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition }: Read
     </aside><main className="control-workspace">
     <header className="proof-header"><p>Decision control</p><h1>Decision is not authority.</h1><p>The broker evaluates the application attempt—not the word APPROVED.</p></header>
     <section className="case-context" aria-label="Demo case context"><div><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><p>Supply exception <span aria-hidden="true">·</span> Demo case {view.scenario}</p></div><strong>Deterministic workspace</strong></section>
-    <section ref={controlSummaryRef} tabIndex={-1} className="control-summary" aria-label="Decision control model">
-      <article><span>Decision</span><strong className="decision-neutral">{control.decision}</strong><p>Normalized synthetic input</p></article>
-      <article className={view.canReview ? 'control-priority' : ''}><span>Authority</span><strong>{control.authority}</strong><p>{view.canReview ? 'Exact proposal review is still required.' : 'Derived from the current review state.'}</p></article>
-      <article><span>Operational truth</span><strong>{control.operationalTruth}</strong><p>Local represented facts only</p></article>
-      <article><span>Broker disposition</span><strong className={`disposition-text disposition-${control.disposition.toLowerCase().replace(' ', '-')}`}>{control.disposition}</strong><p>{control.why}</p></article>
-    </section>
-    {applicationAttempt ? <section className={`application-attempt attempt-${applicationAttempt.visual.treatment}`} aria-label="Application Attempt">
-      <div><p className="eyebrow">Application Attempt</p><h2>Applying the reviewed decision to the represented local state</h2></div>
-      <dl><div><dt>Decision</dt><dd>{control.decision}</dd></div><div><dt>Proposal</dt><dd>Exact plan version {view.plan.version}</dd></div><div><dt>Review</dt><dd>Exact review bound</dd></div></dl>
-      <div className="attempt-continuity" aria-hidden="true"><span /><i /><span /></div>
-    </section> : null}
+    <CentralInstrument
+      ref={controlSummaryRef}
+      ariaLabel="Decision control model"
+      decision={control.decision}
+      decisionContext="Normalized synthetic input"
+      authority={control.authority}
+      authorityContext={view.canReview ? 'Exact proposal review is still required.' : 'Derived from the current review state.'}
+      operationalTruthSummary={control.operationalTruth}
+      operationalTruth={<ProofOperationalTruth view={view} />}
+      disposition={control.disposition}
+      why={control.why}
+      {...(control.effectSummary === undefined ? {} : { effects: control.effectSummary })}
+      {...(instrumentAttempt === undefined ? {} : { attempt: instrumentAttempt })}
+    />
     <p className="resolved-announcement" aria-live="polite" aria-atomic="true">{resolvedAnnouncement}</p>
-    <section className={`outcome-language outcome-${control.disposition.toLowerCase().replace(' ', '-')}`} aria-label="Why this disposition">
-      <div><p className="eyebrow">Why?</p><h2>{control.why}</h2></div>
-      {control.factors.length > 0 ? <dl>{control.factors.map((factor) => <div key={factor.label}><dt>{factor.label}</dt><dd>{factor.value}</dd></div>)}</dl> : null}
-      <p className="outcome-therefore"><span>Broker disposition</span><strong>{control.disposition}</strong></p>
-      {control.effectSummary ? <p className="outcome-effects">{control.effectSummary}</p> : null}
-      {control.disposition === 'ALLOW' ? <p className="outcome-scope">Eligible for local application under the represented controls. No external execution.</p> : null}
-    </section>
-    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>Applying asks the broker; it never bypasses controls.</p></div>{view.canReview && applicationAttempt === null ? <button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal</button> : null}</section>
-    <div className="proof-reset"><p>Each demo case starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" disabled={applicationAttempt !== null} onClick={() => focusScenario(view.scenario)}>Reset demo case</button></div>
+    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>Applying asks the broker; it never bypasses controls.</p></div>{view.canReview ? <button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal</button> : null}</section>
+    <div className="proof-reset"><p>Each demo case starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" onClick={() => focusScenario(view.scenario)}>Reset demo case</button></div>
     <section className="proof-intent" aria-label="Proposed recovery"><div><p className="eyebrow">Explicit planner proposal / version {view.plan.version}</p><h2>{view.plan.originalQuantityTomorrow} original + {view.plan.substituteQuantityTomorrow} substitute</h2><p>One recovery proposal. No plan generation or autonomous execution.</p></div><details><summary>Plan identity &amp; cost</summary><p>{view.plan.caseId} / {view.plan.id}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></details></section>
     {receipt ? <ActionReceipt receipt={receipt} /> : null}
     <details className="supporting-proof"><summary>Verify current decision</summary><div className="supporting-proof-content">

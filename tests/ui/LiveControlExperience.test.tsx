@@ -37,6 +37,25 @@ describe('Live Control browser experience', () => {
     expect((await screen.findAllByText('PLAN_APPROVED')).length).toBeGreaterThan(0); expect(screen.getByText(/Local controlled effects only; no external execution/)).toBeVisible();
   });
 
+  it('shows only truthful submission feedback while HTTP is pending and reveals no anticipated result', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    const client = api();
+    let publish!: (value: Awaited<ReturnType<AcquisitionBrowserApi['review']>>) => void;
+    vi.mocked(client.review).mockReturnValue(new Promise((resolve) => { publish = resolve; }));
+    render(<LiveControlExperience api={client} initial={awaiting()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review exact decision' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' }));
+    expect(screen.getByText('Submitting review intent to the server…')).toBeVisible();
+    const model = screen.getByRole('region', { name: 'Live decision control model' });
+    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
+    expect(within(model).queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(model).queryByText('ALLOW', { exact: true })).not.toBeInTheDocument();
+    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+    publish({ accepted: true, record: terminal(), existing: true });
+    expect(await within(model).findByText('ALLOW', { exact: true })).toBeVisible();
+    expect(within(model).getByRole('region', { name: 'Application Attempt' })).toBeVisible();
+  });
+
   it('preserves a non-sensitive pointer and locks recovery when session access is absent', () => {
     localStorage.setItem(controlSessionStorageKey, 'CONTROL-ACQ-LIVE-1'); const client = api();
     render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);

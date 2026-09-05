@@ -692,3 +692,98 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 @media (prefers-reduced-motion: reduce) {
   .proof-shell, .queue-list button, .product-nav button { transition: none; }
 }
+
+/* B3 Control signature: one causal instrument, with Motion revealing only known results. */
+.central-instrument {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, .8fr);
+  grid-template-areas:
+    "decision decision"
+    "attempt attempt"
+    "boundary boundary"
+    "truth outcome";
+  min-width: 0;
+  margin-bottom: 14px;
+  overflow: hidden;
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-control);
+  box-shadow: 0 18px 48px rgb(20 17 24 / 7%);
+}
+.central-instrument > * { min-width: 0; }
+.instrument-label, .instrument-attempt > span, .instrument-outcome > span,
+.instrument-truth-facts span, .instrument-truth-claims span {
+  color: var(--text-muted);
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.instrument-decision {
+  grid-area: decision;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 3px 24px;
+  padding: 25px 28px 20px;
+}
+.instrument-decision > .instrument-label, .instrument-decision > h2, .instrument-decision > p { grid-column: 1; }
+.instrument-decision h2 { margin: 1px 0; color: var(--text-primary); font-size: clamp(1.7rem, 4vw, 2.8rem); font-weight: 650; letter-spacing: -.04em; }
+.instrument-decision > p:not(.instrument-label) { margin: 0; color: var(--text-muted); font-size: .72rem; }
+.instrument-authority { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 4px; min-width: 210px; padding-left: 22px; border-left: 1px solid var(--border-subtle); }
+.instrument-authority span { color: var(--text-muted); font-size: .62rem; font-weight: 750; text-transform: uppercase; }
+.instrument-authority strong { font-size: .82rem; letter-spacing: .02em; }
+.instrument-authority small { max-width: 260px; color: var(--text-muted); font-size: .66rem; }
+.instrument-attempt {
+  grid-area: attempt;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 11px;
+  padding: 10px 20px;
+  color: var(--text-secondary);
+  background: var(--surface-action);
+  border-top: 1px solid var(--border-subtle);
+}
+.instrument-attempt strong { font-size: .76rem; }
+.instrument-attempt small { color: var(--text-muted); }
+.instrument-boundary { grid-area: boundary; position: relative; display: grid; place-items: center; height: 35px; }
+.instrument-boundary::before { content: ""; position: absolute; right: 28px; left: 28px; height: 1px; background: var(--border-strong); }
+.instrument-boundary span { position: relative; z-index: 1; padding: 0 12px; color: var(--text-muted); background: var(--surface-control); font-size: .58rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.instrument-boundary i { position: absolute; z-index: 2; right: 28px; width: 7px; height: 7px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface-control); }
+.boundary-engaged i { right: auto; left: calc(50% + 82px); background: var(--text-secondary); }
+.instrument-block .boundary-engaged i { border-color: var(--block); background: var(--block); border-radius: 1px; transform: rotate(45deg); }
+.instrument-allow .boundary-engaged i { border-color: var(--allow); background: var(--allow); }
+.instrument-wait .boundary-engaged i { border-color: var(--wait); background: var(--wait); }
+.instrument-truth { grid-area: truth; padding: 21px 28px 25px; border-top: 1px solid var(--border-subtle); }
+.instrument-truth h3 { margin: 5px 0 17px; color: var(--text-primary); font-size: .95rem; font-weight: 650; }
+.instrument-truth-facts, .instrument-truth-claims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+.instrument-truth-facts article, .instrument-truth-claims article { min-width: 0; }
+.instrument-truth-facts strong, .instrument-truth-claims strong { display: block; margin: 5px 0 1px; overflow-wrap: anywhere; font-size: 1.45rem; font-weight: 600; letter-spacing: -.03em; }
+.instrument-truth-facts small, .instrument-truth-claims small { color: var(--text-muted); font-size: .65rem; }
+.instrument-truth-claims { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.instrument-truth-claims > p { grid-column: 1 / -1; margin: 2px 0 0; color: var(--wait); font-size: .7rem; }
+.instrument-outcome { grid-area: outcome; display: grid; align-content: center; gap: 7px; padding: 22px 28px; border-top: 1px solid var(--border-subtle); border-left: 1px solid var(--border-subtle); background: var(--surface-resolution); }
+.instrument-outcome strong { color: var(--neutral); font-size: clamp(1.55rem, 3vw, 2.35rem); line-height: 1; letter-spacing: -.035em; }
+.instrument-outcome p { margin: 0; color: var(--text-secondary); font-size: .73rem; line-height: 1.5; }
+.instrument-outcome small { padding-top: 5px; color: var(--text-muted); font-size: .66rem; line-height: 1.45; border-top: 1px solid var(--border-subtle); }
+.instrument-block .instrument-outcome strong { color: var(--block); }
+.instrument-allow .instrument-outcome strong { color: var(--allow); }
+.instrument-wait .instrument-outcome strong { color: var(--wait); }
+.instrument-rejected .instrument-outcome strong, .instrument-discarded .instrument-outcome strong { color: var(--neutral); }
+
+@media (max-width: 760px) {
+  .central-instrument { grid-template-columns: 1fr; grid-template-areas: "decision" "attempt" "boundary" "truth" "outcome"; }
+  .instrument-decision { grid-template-columns: 1fr; padding: 22px 20px 18px; }
+  .instrument-authority { grid-column: 1; grid-row: auto; min-width: 0; margin-top: 13px; padding: 13px 0 0; border-top: 1px solid var(--border-subtle); border-left: 0; }
+  .instrument-attempt { align-items: flex-start; flex-direction: column; gap: 3px; padding-inline: 20px; }
+  .instrument-truth { padding: 20px; }
+  .instrument-truth-facts, .instrument-truth-claims { grid-template-columns: 1fr; gap: 12px; }
+  .instrument-truth-claims > p { grid-column: 1; }
+  .instrument-outcome { padding: 22px 20px; border-left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .central-instrument *, .review-sheet, .review-backdrop { scroll-behavior: auto; }
+}

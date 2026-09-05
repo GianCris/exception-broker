@@ -94,10 +94,11 @@ describe('Evidence-to-decision primary experience', () => {
   it('H02 click exposes the real physical reason and operation-scoped zero effects', () => {
     render(<App />); apply();
     const explanation = screen.getByRole('region', { name: 'Why this disposition' });
-    expect(within(explanation).getByText('Up to 180 substitute units')).toBeVisible();
-    expect(within(explanation).getByText('150 substitute units required')).toBeVisible();
-    expect(within(explanation).getByText('100 substitute units available')).toBeVisible();
-    expect(within(explanation).getByText('50 substitute units unsupported')).toBeVisible();
+    const truth = screen.getByRole('region', { name: 'Operational truth' });
+    expect(within(truth).getByText('180')).toBeVisible();
+    expect(within(truth).getByText('150')).toBeVisible();
+    expect(within(truth).getByText('100')).toBeVisible();
+    expect(within(explanation).getByText(/50 units are unsupported/)).toBeVisible();
     expect(within(explanation).getByText('Application stopped. No application effects created.')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Resolve the supply gap externally or revise the proposal' })).toBeVisible();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('APPROVED')).toBeVisible();
@@ -307,7 +308,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByText('Technical basis & local effects')).toBeInTheDocument();
   });
 
-  it('computes H02 APPLY exactly once and retains the coherent pre-attempt snapshot until reveal', () => {
+  it('computes H02 APPLY exactly once and reveals the already-known result without fake latency', () => {
     const review = vi.fn(reviewProof);
     render(<ProofExperience prepare={prepareProof} review={review} />);
     openReview();
@@ -317,19 +318,23 @@ describe('Evidence-to-decision primary experience', () => {
     expect(review).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-interrupted');
-    expect(screen.getByText('Exact review bound')).toBeVisible();
+    expect(screen.getByText(/Exact review bound/)).toBeVisible();
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('APPROVED')).toBeVisible();
-    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
-    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^H02 \/.*NOT RESOLVED/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reset demo case' })).toBeDisabled();
-    act(() => vi.advanceTimersByTime(699));
-    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
-    act(() => vi.advanceTimersByTime(1));
-    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
+    expect(within(model).getByText('BLOCK', { exact: true })).toBeVisible();
+    expect(screen.getByRole('button', { name: /^H02 \/.*BLOCK/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reset demo case' })).toBeEnabled();
     expect(screen.getByText(/^Broker disposition BLOCK\./)).toHaveTextContent(/150 substitute units.*100/);
+  });
+
+  it('uses one compositional instrument without turning APPROVED into the Broker disposition', () => {
+    render(<App />);
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(model).toHaveClass('central-instrument');
+    expect(within(model).getByRole('heading', { name: 'APPROVED' })).toBeVisible();
+    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
+    const source = readFileSync('src/ui/CentralInstrument.tsx', 'utf8');
+    expect(source).not.toMatch(/leftMetric|rightMetric/);
   });
 
   it('resolves an H01 intermediate attempt to WAIT and re-derives exact review authority for the next role', () => {
@@ -340,12 +345,11 @@ describe('Evidence-to-decision primary experience', () => {
     expect(review).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-suspended');
-    resolveAttempt();
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('WAIT', { exact: true })).toBeVisible();
     expect(within(model).getByText('EXACT REVIEW REQUIRED')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
-    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toHaveTextContent('client review APPLIED');
   });
 
   it('uses completed continuity only for a pending resolved ALLOW, not for the scenario name', () => {
@@ -410,7 +414,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
   });
 
-  it('uses discrete reduced-motion stages without retaining normal reveal latency', () => {
+  it('preserves the complete causal state under reduced motion without relying on spatial travel', () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
     const review = vi.fn(reviewProof);
     render(<ProofExperience prepare={prepareProof} review={review} />);
@@ -418,14 +422,12 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-interrupted');
     expect(review).toHaveBeenCalledTimes(1);
-    act(() => vi.advanceTimersByTime(0));
-    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
-    const styles = readFileSync('src/styles/app.css', 'utf8');
-    expect(styles).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.attempt-continuity span \{ animation: none; transform: none; \}/);
+    const instrument = readFileSync('src/ui/CentralInstrument.tsx', 'utf8');
+    expect(instrument).toContain('reducedMotion="user"');
   });
 
-  it('cleans a pending reveal timer on unmount without re-running review', () => {
+  it('unmounts a known result presentation without re-running review', () => {
     const review = vi.fn(reviewProof);
     const rendered = render(<ProofExperience prepare={prepareProof} review={review} />);
     startApply();
@@ -450,13 +452,11 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
   });
 
-  it('reveals one H02 receipt only after commit and separates established interpretation from zero local effects', () => {
+  it('reveals one H02 receipt with the known result and separates interpretation from zero local effects', () => {
     const review = vi.fn(reviewProof);
     render(<ProofExperience prepare={prepareProof} review={review} />);
     startApply();
     expect(review).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
-    resolveAttempt();
     const receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
     expect(within(receipt).getByText(/Decision stayed APPROVED.*represented supply was insufficient.*resolved to BLOCK.*No local application effects/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
@@ -637,15 +637,14 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(technical).getByText(/Lineage-scoped resolution: CASE-PROOF-H01/)).toBeInTheDocument();
   });
 
-  it('returns post-action focus to the stable control model without revealing pending APPLY outcome', () => {
+  it('returns post-action focus to the stable control model with the known APPLY outcome', () => {
     render(<App />);
     openReview(); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' }));
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(model).toHaveFocus();
     expect(model.parentElement?.parentElement).not.toHaveAttribute('inert');
     expect(screen.getByRole('region', { name: 'Application Attempt' })).not.toHaveFocus();
-    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
-    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+    expect(within(model).getByText('BLOCK', { exact: true })).toBeVisible();
   });
 
   it('returns post-DISCARD focus to the stable control model and restores the background', () => {
