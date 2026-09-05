@@ -2,6 +2,29 @@
 
 This is a manually authorized server-side validation procedure. It does not grant a CALL-E result authority, does not apply a review, and does not create external business effects. Use only a recipient who has explicitly consented to the call.
 
+## Observed Live Validation — Acquisition V1
+
+Live verified in a controlled local environment using the real CALL-E provider. This observation is specific to the Acquisition V1 server boundary and is separate from earlier historical live sandbox evidence.
+
+One real acquisition was created through the acquisition server boundary. The observed top-level lifecycle included `queued` → `completed`; recipient and attempt evidence showed `in_progress` before terminal completion.
+
+The observed terminal provider result contained:
+
+- `taskCompleted: true`;
+- `completionConfidence.score: 0.93`;
+- `completionConfidence.level: high`;
+- `structuredResult.decision: PENDING`.
+
+Exception Broker classified the result conservatively:
+
+- `normalizationStatus: SAFE_STOP`;
+- `handoffState: SAFE_STOP`;
+- reason: `Decision PENDING requires a safe stop before review`.
+
+The sanitized acquisition record included transcript turns, summary, evidence, timestamps, and the structured result. Transcript questions or clarification language remain conversation evidence only; they were not promoted into additional structured provider states.
+
+No review occurred, no authority was created, no `APPLY` occurred, and no external execution or effect occurred. This was controlled local validation—not a production deployment, authenticated commercial-user validation, live UI acquisition, or proof of multi-instance durability. Raw recording/audio availability was not established.
+
 ## Server configuration
 
 The acquisition server recognizes these server-only environment variables:
