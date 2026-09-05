@@ -319,6 +319,11 @@ footer { padding: 18px 16px 25px; color: #7d8582; font-size: .69rem; text-align:
 .proof-reset button { color: #aab0c4; }
 .proof-intent { color: #e9eaed; border: 1px solid #2c3038; background: #13161a; }
 .proof-intent h2 { color: #f0f1f3; }
+.supporting-proof { margin-top: 18px; border: 1px solid #2c3038; border-radius: 12px; background: #12151a; }
+.supporting-proof > summary { padding: 18px 20px; color: #bfc2c9; font-size: .78rem; font-weight: 800; cursor: pointer; }
+.supporting-proof[open] > summary { border-bottom: 1px solid #2c3038; }
+.supporting-proof-content { padding: 20px; }
+.supporting-proof-content > :first-child { margin-top: 0; }
 .proof-card { color: #d3d5da; border-color: #2a2e35; background: #15181d; box-shadow: none; }
 .proof-card h2, .proof-card h3, .proof-shell dd { color: #ececef; }
 .proof-note, .proof-card > p, .proof-shell dt { color: #8d929c; }
