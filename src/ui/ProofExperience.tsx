@@ -70,30 +70,36 @@ const ActionReceipt = ({ receipt }: Readonly<{ receipt: DecisionTransitionView }
   </div></details>
 </section>;
 
-const Result = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
+const ReviewApplicationProof = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card review-application-proof" aria-label="Exact review and application proof">
+  {view.canReview && view.proposal ? <section aria-labelledby="pending-review-title"><h3 id="pending-review-title">Current pending exact review</h3><dl>
+    <dt>Case / plan</dt><dd>{view.proposal.caseId} / {view.proposal.operationType === 'PLAN_DECISION' ? view.proposal.planId : 'Case authorization'}</dd>
+    <dt>Actor / role</dt><dd>{view.proposal.actorId} / {view.proposal.actorRole}</dd><dt>Request</dt><dd>{view.proposal.requestId}</dd>
+    <dt>Binding</dt><dd>Exact proposal target retained · {view.proposal.reviewState}</dd>
+  </dl></section> : <p>No current review is pending.</p>}
+  {view.attempts.length > 0 ? <section aria-labelledby="completed-attempts-title"><h3 id="completed-attempts-title">Completed review/application attempts</h3><ol>{view.attempts.map((attempt, index) => {
+    const target = attempt.review.reviewTarget;
+    return <li key={attempt.review.operationId}><strong>Attempt {index + 1} · {target.actorRole}</strong><dl>
+      <dt>Decision / action</dt><dd>{target.decision} / {attempt.review.action}</dd><dt>Case / plan</dt><dd>{target.caseId} / {target.operationType === 'PLAN_DECISION' ? target.planId : 'Case authorization'}</dd>
+      <dt>Actor / role</dt><dd>{target.actorId} / {target.actorRole}</dd><dt>Request</dt><dd>{target.requestId}</dd><dt>Exact binding</dt><dd>Bound review target retained</dd>
+      <dt>Review metadata</dt><dd>{attempt.review.reviewedBy} · {attempt.review.reviewedAt}</dd><dt>Operation</dt><dd>{attempt.review.operationId}</dd>
+    </dl></li>;
+  })}</ol></section> : <p>No completed review/application attempt.</p>}
+</section>;
+
+const TechnicalResult = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   const unresolved = view.latest === undefined && view.trustedCaseProduced;
   const disposition = unresolved ? 'NOT RESOLVED' : view.outcome.label;
-  return <section className={`proof-card proof-result ${unresolved ? 'proof-unresolved' : `proof-${view.outcome.label.toLowerCase().replaceAll(' ', '-')}`}`} aria-labelledby="result-title">
-  <p className="eyebrow">03 / Actual broker outcome</p><p className="proof-outcome">{disposition}</p><h2 id="result-title">{view.outcome.title}</h2><p className="proof-code">{view.outcome.reason}</p>
-  {view.outcome.label === 'ALLOW' ? <section className="proof-allow-basis" aria-label="Why this result is supportable">
-    <h3>Why this result is supportable</h3>
-    <ul>
-      <li>Formal snapshot: {view.assessments ? view.assessments.formal.valid ? 'PLAN_VALID' : 'PLAN_INVALID' : 'unavailable'}.</li>
-      <li>Physical snapshot: {view.assessments?.physical.outcome ?? 'unavailable'}.
-        {view.assessments?.physical.outcome === 'PHYSICALLY_FEASIBLE' ? <span> {view.assessments.physical.checks.map((check) => `${check.quantityType}: ${check.requiredQuantity} required / ${check.availableQuantity} available`).join('; ')}.</span> : null}</li>
-      <li>Exact version: {view.assessments ? view.assessments.currentness.valid ? `version ${view.assessments.currentness.plan.version}, current in its lineage at the attempted snapshot` : view.assessments.currentness.reason : 'unavailable'}.</li>
-      <li>Local result: {view.planStatus ?? 'unavailable'} · {view.outcome.reason}. No external execution.</li>
-    </ul><p className="proof-note">Supporting snapshot assessments, not a sequential gate-execution trace.</p>
-  </section> : null}
+  return <section className={`proof-card technical-result ${unresolved ? 'proof-unresolved' : `proof-${view.outcome.label.toLowerCase().replaceAll(' ', '-')}`}`} aria-label="Technical result and local effects">
+  <h3>Technical result</h3><p className="proof-outcome">{disposition}</p><p className="proof-code">{view.outcome.reason}</p>
   {!view.trustedCaseProduced ? <p>No trusted case produced. Registration and execution/application were not attempted. Resolve the evidence issues externally; no automatic retry.</p> : null}
-  {view.latest ? <><p>Attempted {view.latest.review.action} · {view.latest.review.reviewTarget.actorRole} · plan version {view.plan.version}</p>
+  {view.latest ? <><p>Completed result for {view.latest.review.reviewTarget.actorRole} {view.latest.review.action} · plan version {view.plan.version}</p>
     {!view.latest.result.accepted ? <ul>{view.latest.result.failure.issues?.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
-    <h3>Effects of this attempt only</h3><dl className="proof-effects">
+    <h3>Local effects of this attempt</h3><dl className="proof-effects">
       <div><dt>New decision records</dt><dd>{view.effects?.decisions.length}</dd></div><div><dt>New operations</dt><dd>{view.effects?.operations.length}</dd></div><div><dt>New events</dt><dd>{view.effects?.events.length}</dd></div>
     </dl><p>New decision breakdown: {view.effects?.approvedCount} APPROVED / {view.effects?.rejectedCount} REJECTED.</p><p>{view.effects?.stateEvidence}</p>
     <p className="proof-note">Before this attempt: {view.effects?.previous.decisions} decision records, {view.effects?.previous.operations} operations, {view.effects?.previous.events} events. Counts above are new records, not lifetime totals.</p>
     <p>Plan status: <strong>{view.planStatus}</strong></p>
-    <details><summary>Operation evidence</summary><p>{view.latest.review.operationId}</p><ul>{view.effects?.events.map((event) => <li key={event.eventId}>{event.result} · {event.eventId} · {event.approvalId}</li>)}</ul>{view.scope ? <p>Lineage-scoped resolution: {view.scope.caseId} / {view.scope.lineageId} / {view.scope.planId}</p> : null}</details>
+    <details><summary>Event and lineage evidence</summary><ul>{view.effects?.events.map((event) => <li key={event.eventId}>{event.result} · {event.eventId} · {event.approvalId}</li>)}</ul>{view.scope ? <p>Lineage-scoped resolution: {view.scope.caseId} / {view.scope.lineageId} / {view.scope.planId}</p> : null}</details>
   </> : <p>No decision application attempted. {view.registered ? 'Only local plan registration has occurred; no approvals, operations or events were recorded.' : ''}</p>}
   <p className="proof-note">Local in-memory proof only. No shipment, ERP/WMS write, or external execution.</p>
 </section>;
@@ -126,8 +132,10 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
   const [receipt, setReceipt] = useState<DecisionTransitionView | null>(null);
   const applicationLock = useRef(false);
   const reviewButtonRef = useRef<HTMLButtonElement>(null);
+  const controlSummaryRef = useRef<HTMLElement>(null);
   const backgroundRef = useRef<HTMLDivElement>(null);
   const reviewWasOpen = useRef(false);
+  const reviewCloseDestination = useRef<'trigger' | 'surface'>('trigger');
   const view = createDecisionTraceView(session);
   const control = createDecisionControlView(session);
   const queue = proofScenarios.map((scenario) => ({ scenario, control: createDecisionControlView(
@@ -150,6 +158,7 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
     // Use the rendered snapshot, not a functional updater that might consume the next
     // role's proposal on a rapid repeated click. Every next proposal needs a new render.
     if (!view.canReview || applicationLock.current) return;
+    reviewCloseDestination.current = 'surface';
     if (action === 'APPLY') {
       applicationLock.current = true;
       const resolved = review(session, action);
@@ -164,8 +173,13 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
   useEffect(() => {
     if (backgroundRef.current) backgroundRef.current.inert = reviewOpen;
     if (reviewOpen) reviewWasOpen.current = true;
-    else if (reviewWasOpen.current) { reviewWasOpen.current = false; reviewButtonRef.current?.focus(); }
+    else if (reviewWasOpen.current) {
+      reviewWasOpen.current = false;
+      (reviewCloseDestination.current === 'trigger' ? reviewButtonRef.current : controlSummaryRef.current)?.focus();
+    }
   }, [reviewOpen]);
+  const openReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(true); };
+  const closeReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(false); };
   const focusScenario = (scenario: ProofScenario) => {
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
@@ -180,7 +194,7 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
       <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>
     </aside><main className="control-workspace">
     <header className="proof-header"><p className="eyebrow">Decision control surface · {view.scenario}</p><h1>Decision is not authority.</h1><p>Inspect what can happen with this represented decision. The broker evaluates an application attempt—not the word APPROVED.</p></header>
-    <section className="control-summary" aria-label="Decision control model">
+    <section ref={controlSummaryRef} tabIndex={-1} className="control-summary" aria-label="Decision control model">
       <article><span>Decision</span><strong className="decision-neutral">{control.decision}</strong><p>Normalized synthetic input</p></article>
       <article className={view.canReview ? 'control-priority' : ''}><span>Authority</span><strong>{control.authority}</strong><p>{view.canReview ? 'Exact proposal review is still required.' : 'Derived from the current review state.'}</p></article>
       <article><span>Operational truth</span><strong>{control.operationalTruth}</strong><p>Local represented facts only</p></article>
@@ -199,15 +213,15 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
       {control.effectSummary ? <p className="outcome-effects">{control.effectSummary}</p> : null}
       {control.disposition === 'ALLOW' ? <p className="outcome-scope">Eligible for local application under the represented controls. No external execution.</p> : null}
     </section>
-    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>{control.provenance}. Applying asks the broker; it never bypasses controls.</p></div>{view.canReview && applicationAttempt === null ? <button ref={reviewButtonRef} type="button" onClick={() => setReviewOpen(true)}>Review exact proposal</button> : null}</section>
+    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>{control.provenance}. Applying asks the broker; it never bypasses controls.</p></div>{view.canReview && applicationAttempt === null ? <button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal</button> : null}</section>
     <div className="proof-reset"><p>Each selection starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" disabled={applicationAttempt !== null} onClick={() => focusScenario(view.scenario)}>Reset this scenario</button></div>
     <section className="proof-intent" aria-label="Proposed recovery"><div><p className="eyebrow">Explicit planner proposal / version {view.plan.version}</p><h2>{view.plan.originalQuantityTomorrow} original + {view.plan.substituteQuantityTomorrow} substitute</h2><p>One recovery proposal. No plan generation or autonomous execution.</p></div><details><summary>Plan identity &amp; cost</summary><p>{view.plan.caseId} / {view.plan.id}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (scenario cost units).</p></details></section>
     {receipt ? <ActionReceipt receipt={receipt} /> : null}
     <details className="supporting-proof"><summary>Verify current decision</summary><div className="supporting-proof-content">
       <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
-      <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><Result view={view} />{view.attempts.length > 0 ? <details className="proof-card"><summary>Review and application attempts ({view.attempts.length})</summary><ol>{view.attempts.map((attempt) => <li key={attempt.review.operationId}>{attempt.review.reviewTarget.actorRole} · {attempt.review.action} · {attempt.result.accepted ? attempt.result.step.result : attempt.result.failure.reason}</li>)}</ol></details> : <p>No review or application attempt has occurred.</p>}</section>
-      <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /></section>
+      <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><ReviewApplicationProof view={view} /></section>
+      <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /></section>
     </div></details>
     <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic scenario.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></details>
-  </main></div><footer>Exception Broker · Decision acquisition ≠ authority to execute</footer></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={() => setReviewOpen(false)} /> : null}</div>;
+  </main></div><footer>Exception Broker · Decision acquisition ≠ authority to execute</footer></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={closeReview} /> : null}</div>;
 };

@@ -205,11 +205,27 @@ export const createDecisionTransitionView = ({ beforeSession, afterSession, acti
     { label: 'Broker Disposition', before: before.disposition, after: after.disposition, meaning: before.disposition === after.disposition ? 'UNCHANGED' : 'CHANGED' },
   ] as const;
   const targetChanged = beforeAuthority !== afterAuthority && before.authority === after.authority;
+  const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+  const effectCount = effects === undefined ? 0 : effects.decisions.length + effects.operations.length + effects.events.length;
+  const effectSentence = effectCount === 0
+    ? 'No local application effects were created.'
+    : `Local records created: ${effects!.decisions.length} decision, ${effects!.operations.length} operation, and ${effects!.events.length} event.`;
+  const decisionSentence = `Decision stayed ${actedDecision}.`;
+  const dispositionSentence = before.disposition === after.disposition
+    ? `Broker disposition remains ${after.disposition}.`
+    : `Broker disposition resolved to ${after.disposition}.`;
+  const operationalSentence = beforeOperationalTruth === 'Not evaluated for application' && afterOperationalTruth === 'Modeled supply snapshot is insufficient'
+    ? 'Application evaluation established that represented supply was insufficient.'
+    : beforeOperationalTruth === 'Not evaluated for application' && afterOperationalTruth === 'Modeled supply snapshot is sufficient'
+      ? 'Application evaluation established that represented supply was sufficient.'
+      : undefined;
+  const targetSentence = targetChanged
+    ? `The next exact review target changed from ${capitalize(beforeAuthority.split(' · ').at(-1)!)} to ${capitalize(afterAuthority.split(' · ').at(-1)!)}.`
+    : undefined;
+  const submittedRole = capitalize(latest?.review.reviewTarget.actorRole ?? 'proposal');
   const summary = action === 'DISCARD'
-    ? `The operator discarded the exact ${latest?.review.reviewTarget.actorRole ?? 'proposal'} review. No Application Attempt occurred.`
-    : targetChanged
-      ? `The exact review was submitted; the next required review target changed. Broker disposition remains ${after.disposition}.`
-      : `The exact review was submitted. Broker disposition is now ${after.disposition}.`;
+    ? `The operator discarded the exact ${submittedRole} review. No Application Attempt occurred. No application evaluation occurred. ${effectSentence}`
+    : [decisionSentence, operationalSentence, targetSentence ?? `The exact ${submittedRole} review was submitted.`, dispositionSentence, effectSentence].filter(Boolean).join(' ');
   return { action, summary, comparison, effects } as const;
 };
 export type DecisionTransitionView = ReturnType<typeof createDecisionTransitionView>;

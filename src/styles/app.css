@@ -365,6 +365,12 @@ footer { padding: 18px 16px 25px; color: #7d8582; font-size: .69rem; text-align:
 .supporting-proof-content > :first-child { margin-top: 0; }
 .supporting-proof-content > section + section { margin-top: 24px; padding-top: 24px; border-top: 1px solid #2c3038; }
 .supporting-proof-content > section > h2 { margin-bottom: 12px; color: #e5e7eb; font-size: 1rem; }
+.review-application-proof > section + section { margin-top: 20px; padding-top: 18px; border-top: 1px solid #30353d; }
+.review-application-proof ol { display: grid; gap: 14px; padding-left: 22px; }
+.review-application-proof li { padding-left: 5px; }
+.review-application-proof li dl { margin-bottom: 0; }
+.review-application-proof dt, .review-application-proof dd { overflow-wrap: anywhere; }
+.technical-result { margin-top: 18px; }
 .action-receipt { margin: 18px 0; padding: 20px; border: 1px solid #363b44; border-radius: 12px; background: #171a1f; }
 .action-receipt h2 { color: #f0f1f3; font-size: 1.15rem; }
 .action-receipt > p:not(.eyebrow) { color: #b7bbc3; }

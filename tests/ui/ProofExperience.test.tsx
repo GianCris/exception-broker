@@ -25,7 +25,7 @@ describe('Evidence-to-decision primary experience', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: /^H02 \// })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('Verify current decision')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Your explicit review is required' })).not.toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Technical result' })).not.toBeVisible();
     expect(screen.getByText('350 original + 100 substitute units')).toBeInTheDocument();
     expect(screen.queryByText('PLAN_PHYSICALLY_INFEASIBLE')).not.toBeInTheDocument();
     expect(screen.queryByText('PHYSICALLY_INFEASIBLE')).not.toBeInTheDocument();
@@ -46,12 +46,12 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('APPROVED')).toBeVisible();
     expect(screen.getByRole('button', { name: /^H02 \/.*BLOCK/ })).toHaveAttribute('aria-pressed', 'true');
     revealSupporting();
-    expect(screen.getByRole('heading', { name: 'Physical supply cannot support this approval' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Technical result' })).toBeInTheDocument();
     expect(screen.getAllByText('PLAN_PHYSICALLY_INFEASIBLE').length).toBeGreaterThan(0);
     expect(screen.getByText('SUBSTITUTE_SUPPLY_EXCEEDED: 150 required / 100 available')).toBeInTheDocument();
     expect(screen.getByText('PLAN_VALID')).toBeInTheDocument();
     expect(screen.getAllByText(/same state reference/).length).toBeGreaterThan(0);
-    const effects = screen.getByRole('heading', { name: 'Effects of this attempt only' }).parentElement!;
+    const effects = screen.getByRole('heading', { name: 'Local effects of this attempt' }).parentElement!;
     expect(within(effects).getAllByText('0')).toHaveLength(3);
     expect(screen.queryByRole('button', { name: 'Review exact proposal' })).not.toBeInTheDocument();
     expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument();
@@ -72,32 +72,27 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(explanation).getAllByText(/No external execution/).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /^H01 \/.*ALLOW/ })).toHaveAttribute('aria-pressed', 'true');
     revealSupporting();
-    expect(screen.getByRole('heading', { name: 'Recovery authorized locally' })).toBeInTheDocument();
     expect(screen.getAllByText('ALLOW', { exact: true }).length).toBeGreaterThan(0);
     expect(screen.getByText(/Before this attempt: 2 decision records, 2 operations, 2 events/)).toBeInTheDocument();
     expect(screen.getByText(/No shipment, ERP\/WMS write, or external execution/)).toBeInTheDocument();
-    const outcome = screen.getByRole('region', { name: 'Recovery authorized locally' });
-    const basis = within(outcome).getByRole('region', { name: 'Why this result is supportable' });
-    expect(within(basis).getByText('Formal snapshot: PLAN_VALID.')).toBeInTheDocument();
-    expect(within(basis).getByText(/SUBSTITUTE: 150 required \/ 150 available/)).toBeInTheDocument();
-    expect(within(basis).getByText(/version 1, current in its lineage at the attempted snapshot/)).toBeInTheDocument();
-    expect(within(basis).getByText(/Local result: APPROVED · LINEAGE_RESOLVED/)).toBeInTheDocument();
-    expect(within(basis).getByText(/not a sequential gate-execution trace/)).toBeInTheDocument();
-    expect(basis.closest('details')).toHaveClass('supporting-proof');
-    expect(basis.textContent).not.toMatch(/all gates passed/i);
-    expect(within(outcome).getByText('New decision breakdown: 1 APPROVED / 0 REJECTED.')).toBeInTheDocument();
+    const technical = screen.getByRole('region', { name: 'Technical basis & local effects' });
+    expect(within(technical).getByText('PLAN_VALID')).toBeInTheDocument();
+    expect(within(technical).getByText(/SUBSTITUTE: 150 required \/ 150 available/)).toBeInTheDocument();
+    expect(within(technical).getByText(/Current in its lineage at the attempted snapshot/)).toBeInTheDocument();
+    expect(within(technical).getByText('LINEAGE_RESOLVED', { exact: true })).toBeInTheDocument();
+    expect(within(technical).getByText('New decision breakdown: 1 APPROVED / 0 REJECTED.')).toBeInTheDocument();
   });
 
   it('scenario switching and reset cannot carry a reviewed proposal or effects', () => {
     render(<App />); apply(); select('H01');
-    expect(screen.queryByRole('heading', { name: 'Effects of this attempt only' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Local effects of this attempt' })).not.toBeInTheDocument();
     expect(screen.queryByText('PLAN_PHYSICALLY_INFEASIBLE')).not.toBeInTheDocument();
-    expect(screen.getByText(/CASE-PROOF-H01 \/ PLAN-PROOF-H01/)).toBeInTheDocument();
+    expect(screen.getAllByText(/CASE-PROOF-H01 \/ PLAN-PROOF-H01/).length).toBeGreaterThan(0);
     apply();
     fireEvent.click(screen.getByRole('button', { name: 'Reset this scenario' }));
     openReview();
     expect(screen.getByRole('heading', { name: 'Review the client decision' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Effects of this attempt only' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Local effects of this attempt' })).not.toBeInTheDocument();
     select('H02');
     expect(screen.getByText('350 original + 100 substitute units')).toBeInTheDocument();
   });
@@ -126,7 +121,6 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(screen.getByRole('region', { name: 'Why this disposition' })).getByText('DISCARDED')).toBeVisible();
     expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
-    expect(screen.getByRole('heading', { name: 'Proposal discarded by reviewer' })).toBeInTheDocument();
     expect(screen.getAllByText('DISCARDED_BY_REVIEWER').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Apply reviewed decision' })).not.toBeInTheDocument();
   });
@@ -164,7 +158,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(explanation).getByText('TECHNICAL STOP')).toBeVisible();
     expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
-    expect(screen.getByRole('heading', { name: 'Preparation stopped — inspect the technical result' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Technical result' })).toBeInTheDocument();
     expect(screen.getByText('UNKNOWN_PREPARATION_FAILURE')).toBeInTheDocument();
     expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
@@ -202,7 +196,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(explanation).getByText(/represented decision rejected the proposal/)).toBeVisible();
     expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
-    expect(screen.getByRole('heading', { name: 'Decision recorded as REJECTED — recovery not authorized' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Technical result' })).toBeInTheDocument();
     expect(screen.getByText('PLAN_REJECTED', { exact: true })).toBeInTheDocument();
     expect(screen.getByText('New decision breakdown: 0 APPROVED / 1 REJECTED.')).toBeInTheDocument();
     expect(screen.queryByText('New approvals')).not.toBeInTheDocument();
@@ -243,11 +237,11 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getAllByText(/Deterministic local proof · configured evidence/).some((element) => element.closest('.control-next'))).toBe(true);
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
     expect(screen.getByRole('heading', { name: 'Trusted snapshot facts' })).not.toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Your explicit review is required' })).not.toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Technical result' })).not.toBeVisible();
     revealSupporting();
     expect(disclosure).toHaveAttribute('open');
     expect(screen.getByRole('heading', { name: 'Trusted snapshot facts' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Your explicit review is required' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Current pending exact review' })).toBeInTheDocument();
     expect(screen.getByText('Operational evidence')).toBeInTheDocument();
     expect(screen.getByText('Exact review & application')).toBeInTheDocument();
     expect(screen.getByText('Technical basis & local effects')).toBeInTheDocument();
@@ -404,7 +398,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
     resolveAttempt();
     const receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
-    expect(within(receipt).getByText(/Broker disposition is now BLOCK/)).toBeVisible();
+    expect(within(receipt).getByText(/Decision stayed APPROVED.*represented supply was insufficient.*resolved to BLOCK.*No local application effects/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
     expect(within(receipt).getByText('State comparison')).toBeInTheDocument();
     expect(within(receipt).getByText('Local effects')).toBeInTheDocument();
@@ -418,12 +412,14 @@ describe('Evidence-to-decision primary experience', () => {
   it('tracks exact H01 review targets even while headline authority or WAIT remains unchanged', () => {
     render(<App />); select('H01'); apply();
     let receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
+    expect(within(receipt).getByText(/Decision stayed APPROVED.*target changed from Client to Production.*resolved to WAIT/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
     expect(within(receipt).getByText('Exact review required · client')).toBeInTheDocument();
     expect(within(receipt).getByText('Exact review required · production')).toBeInTheDocument();
     apply();
     receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
     expect(screen.getAllByRole('heading', { name: 'What Changed?' })).toHaveLength(1);
+    expect(within(receipt).getByText(/Decision stayed APPROVED.*target changed from Production to Supplier.*disposition remains WAIT/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
     expect(within(receipt).getByText('Exact review required · production')).toBeInTheDocument();
     expect(within(receipt).getByText('Exact review required · supplier')).toBeInTheDocument();
@@ -431,6 +427,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(receipt).getAllByText('UNCHANGED').length).toBeGreaterThan(0);
     apply();
     receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
+    expect(within(receipt).getByText(/Decision stayed APPROVED.*resolved to ALLOW/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
     expect(within(receipt).getByText('Review submitted · supplier')).toBeInTheDocument();
     expect(within(receipt).getByText('ALLOW', { exact: true })).toBeInTheDocument();
@@ -444,7 +441,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('Not evaluated for application')).toBeVisible();
     const receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
-    expect(within(receipt).getByText(/No Application Attempt occurred/)).toBeVisible();
+    expect(within(receipt).getByText(/No Application Attempt occurred.*No application evaluation occurred.*No local application effects/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
     expect(within(receipt).getAllByText('Not evaluated for application')).toHaveLength(2);
     expect(within(receipt).getByText('Review discarded · client')).toBeInTheDocument();
@@ -459,7 +456,7 @@ describe('Evidence-to-decision primary experience', () => {
     render(<ProofExperience prepare={prepareRejected} review={reviewProof} />);
     startApply(); resolveAttempt();
     const receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
-    expect(within(receipt).getByText(/Broker disposition remains REJECTED/)).toBeVisible();
+    expect(within(receipt).getByText(/Broker disposition resolved to REJECTED/)).toBeVisible();
     expect(within(receipt).queryByText(/now BLOCK|now WAIT/)).not.toBeInTheDocument();
   });
 
@@ -520,5 +517,72 @@ describe('Evidence-to-decision primary experience', () => {
     const styles = readFileSync('src/styles/app.css', 'utf8');
     expect(styles).toMatch(/@media \(max-width: 1050px\)[\s\S]*\.application-attempt \{ grid-template-columns: 1fr; \}/);
     expect(styles).toMatch(/@media \(max-width: 760px\)[\s\S]*\.proof-table-scroll \{ max-width: 100%; overflow-x: auto; \}/);
+  });
+
+  it('assigns evidence, exact review, and technical effects to their truthful verification groups', () => {
+    render(<App />); apply(); revealSupporting();
+    const operational = screen.getByRole('region', { name: 'Operational evidence' });
+    const exact = screen.getByRole('region', { name: 'Exact review & application' });
+    const technical = screen.getByRole('region', { name: 'Technical basis & local effects' });
+    expect(within(operational).getByRole('table', { name: 'Assembly: ACCEPTED' })).toBeInTheDocument();
+    expect(within(exact).getByText('Completed review/application attempts')).toBeInTheDocument();
+    expect(within(exact).getByText('Bound review target retained')).toBeInTheDocument();
+    expect(within(exact).queryByText('Technical result')).not.toBeInTheDocument();
+    expect(within(exact).queryByText('Local effects of this attempt')).not.toBeInTheDocument();
+    expect(within(technical).getByText('PLAN_VALID')).toBeInTheDocument();
+    expect(within(technical).getByText('PHYSICALLY_INFEASIBLE')).toBeInTheDocument();
+    expect(within(technical).getByText('Local effects of this attempt')).toBeInTheDocument();
+    expect(within(technical).getAllByText('0')).toHaveLength(3);
+  });
+
+  it('keeps each completed H01 attempt distinct from the next pending exact review', () => {
+    render(<App />); select('H01'); apply(); revealSupporting();
+    let exact = screen.getByRole('region', { name: 'Exact review & application' });
+    let pending = within(exact).getByRole('region', { name: 'Current pending exact review' });
+    let completed = within(exact).getByRole('region', { name: 'Completed review/application attempts' });
+    expect(within(pending).getByText(/ACTOR-PROOF-H01-production \/ production/)).toBeInTheDocument();
+    expect(within(pending).getByText('REQUEST-PLAN-PROOF-H01-production')).toBeInTheDocument();
+    expect(within(completed).getByText(/Attempt 1 · client/)).toBeInTheDocument();
+    expect(within(completed).getByText(/ACTOR-PROOF-H01-client \/ client/)).toBeInTheDocument();
+    expect(within(completed).getByText('REQUEST-PLAN-PROOF-H01-client')).toBeInTheDocument();
+    apply();
+    exact = screen.getByRole('region', { name: 'Exact review & application' });
+    pending = within(exact).getByRole('region', { name: 'Current pending exact review' });
+    completed = within(exact).getByRole('region', { name: 'Completed review/application attempts' });
+    expect(within(pending).getByText(/ACTOR-PROOF-H01-supplier \/ supplier/)).toBeInTheDocument();
+    expect(within(pending).getByText('REQUEST-PLAN-PROOF-H01-supplier')).toBeInTheDocument();
+    expect(within(completed).getByText(/Attempt 2 · production/)).toBeInTheDocument();
+    expect(within(completed).getByText(/ACTOR-PROOF-H01-production \/ production/)).toBeInTheDocument();
+    expect(within(completed).getByText('REQUEST-PLAN-PROOF-H01-production')).toBeInTheDocument();
+  });
+
+  it('keeps event and lineage evidence with technical effects after final H01 application', () => {
+    render(<App />); select('H01'); apply(); apply(); apply(); revealSupporting();
+    const technical = screen.getByRole('region', { name: 'Technical basis & local effects' });
+    expect(within(technical).getByText('Local effects of this attempt')).toBeInTheDocument();
+    fireEvent.click(within(technical).getByText('Event and lineage evidence'));
+    expect(within(technical).getByText(/EVENT-PLAN-PROOF-H01-supplier/)).toBeInTheDocument();
+    expect(within(technical).getByText(/Lineage-scoped resolution: CASE-PROOF-H01/)).toBeInTheDocument();
+  });
+
+  it('returns post-action focus to the stable control model without revealing pending APPLY outcome', () => {
+    render(<App />);
+    openReview(); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' }));
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(model).toHaveFocus();
+    expect(model.parentElement?.parentElement).not.toHaveAttribute('inert');
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).not.toHaveFocus();
+    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
+    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('returns post-DISCARD focus to the stable control model and restores the background', () => {
+    render(<App />);
+    openReview(); fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(model).toHaveFocus();
+    expect(model.parentElement?.parentElement).not.toHaveAttribute('inert');
+    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'What Changed?' })).not.toHaveFocus();
   });
 });
