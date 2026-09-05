@@ -65,6 +65,19 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
   });
 
+  it('frames deterministic work as case-first product context without invented commercial data', () => {
+    render(<App />);
+    const selected = screen.getByRole('button', { name: /^H02 \/ Short physical supply/ });
+    expect(within(selected).getByText('Short physical supply').tagName).toBe('STRONG');
+    expect(within(selected).getByText('Demo case H02')).toBeVisible();
+    const context = screen.getByRole('region', { name: 'Demo case context' });
+    expect(within(context).getByRole('heading', { name: 'Short physical supply' })).toBeVisible();
+    expect(within(context).getByText(/Supply exception.*Demo case H02/)).toBeVisible();
+    expect(within(context).getByText('Deterministic workspace')).toBeVisible();
+    expect(screen.getByText('Three independent deterministic demo cases.')).toBeVisible();
+    expect(context).not.toHaveTextContent(/customer|order number|shipment|SLA/i);
+  });
+
   it('starts on H02 with factual evidence and a genuine review pause, not a spoiled result', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: /^H02 \// })).toHaveAttribute('aria-pressed', 'true');
@@ -133,7 +146,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByText('PLAN_PHYSICALLY_INFEASIBLE')).not.toBeInTheDocument();
     expect(screen.getAllByText(/CASE-PROOF-H01 \/ PLAN-PROOF-H01/).length).toBeGreaterThan(0);
     apply();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset this scenario' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset demo case' }));
     openReview();
     expect(screen.getByRole('heading', { name: 'Review the client decision' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Local effects of this attempt' })).not.toBeInTheDocument();
@@ -174,7 +187,7 @@ describe('Evidence-to-decision primary experience', () => {
     revealSupporting();
     fireEvent.click(screen.getByText('Observed live validation', { selector: 'summary' }));
     const historical = screen.getByRole('complementary', { name: 'Observed live validation' });
-    expect(within(historical).getByText(/Not provenance for the selected deterministic scenario/)).toBeInTheDocument();
+    expect(within(historical).getByText(/Not provenance for the selected deterministic demo case/)).toBeInTheDocument();
     expect(within(historical).getByText(/NOT DEMONSTRATED/)).toBeInTheDocument();
     expect(within(historical).getByText(/No original recording is bundled/)).toBeInTheDocument();
     expect(within(historical).getByText(/OPERATOR-LIVE-V1/)).toBeInTheDocument();
@@ -278,7 +291,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(model).getByText('Not evaluated for application')).toBeVisible();
     expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
     expect(within(model).getByText(/normalized decision is ready/)).toBeVisible();
-    expect(screen.getByText(/Deterministic local proof · configured evidence/)).toHaveClass('proof-mode');
+    expect(screen.getByLabelText(/deterministic local proof with configured evidence.*No external execution/i)).toHaveClass('proof-mode');
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
     expect(screen.getByRole('heading', { name: 'Trusted snapshot facts' })).not.toBeVisible();
     expect(screen.getByRole('heading', { name: 'Technical result' })).not.toBeVisible();
@@ -307,7 +320,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
     expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^H02 \/.*NOT RESOLVED/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reset this scenario' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset demo case' })).toBeDisabled();
     act(() => vi.advanceTimersByTime(699));
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     act(() => vi.advanceTimersByTime(1));
@@ -509,7 +522,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('heading', { name: 'What Changed?' })).toBeInTheDocument();
     openReview(); fireEvent.click(screen.getByRole('button', { name: 'Close exact review' }));
     expect(screen.getByRole('heading', { name: 'What Changed?' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset this scenario' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset demo case' }));
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
     apply(); select('H02');
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
@@ -529,7 +542,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(current).queryByText('Observed live validation')).not.toBeInTheDocument();
     fireEvent.click(historical.querySelector('summary')!);
     expect(within(historical).getByText(/Not replayed by this browser/)).toBeInTheDocument();
-    expect(within(historical).getByText(/Not provenance for the selected deterministic scenario/)).toBeInTheDocument();
+    expect(within(historical).getByText(/Not provenance for the selected deterministic demo case/)).toBeInTheDocument();
     expect(within(historical).queryByRole('button')).not.toBeInTheDocument();
   });
 
