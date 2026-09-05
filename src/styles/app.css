@@ -50,7 +50,8 @@
 .proof-block .proof-outcome { color: #a43d38; }
 .proof-allow .proof-outcome { color: #217047; }
 .proof-code { font-family: ui-monospace, monospace; font-size: .78rem !important; overflow-wrap: anywhere; }
-.proof-effects { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.proof-effects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.proof-effects > div { min-width: 0; }
 .proof-effects dd { font-size: 1.65rem; font-weight: 750; }
 .proof-allow-basis { padding: 12px 14px; margin: 14px 0; background: #f6f7f9; border-left: 2px solid #b4b9c4; }
 .proof-allow-basis h3 { font-size: .9rem; }
@@ -379,9 +380,9 @@ footer { padding: 18px 16px 25px; color: #7d8582; font-size: .69rem; text-align:
 .receipt-depth { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(220px, .7fr); gap: 20px; padding: 18px; border-top: 1px solid #30353d; }
 .receipt-depth h3 { color: #e5e7eb; font-size: .9rem; }
 .receipt-depth dl { margin: 0; }
-.receipt-depth dl > div { display: grid; grid-template-columns: 135px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid #292e35; }
-.receipt-depth dd { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; align-items: center; gap: 9px; margin: 0; font-size: .72rem; }
-.receipt-depth dd em { color: #9298a3; font-size: .58rem; font-style: normal; font-weight: 800; letter-spacing: .06em; }
+.state-comparison dl > div { display: grid; grid-template-columns: 135px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid #292e35; }
+.state-comparison dd { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; align-items: center; gap: 9px; margin: 0; font-size: .72rem; }
+.state-comparison dd em { color: #9298a3; font-size: .58rem; font-style: normal; font-weight: 800; letter-spacing: .06em; }
 .observed-live { background: #101216; }
 .observed-live > summary { display: flex; justify-content: space-between; gap: 16px; }
 .observed-live > summary span { color: #7f858f; font-size: .68rem; font-weight: 500; }
@@ -439,8 +440,8 @@ footer { padding: 18px 16px 25px; color: #7d8582; font-size: .69rem; text-align:
   .control-next button { width: 100%; }
   .application-attempt dl { grid-template-columns: 1fr; }
   .application-attempt dl div { padding: 8px 0; border-left: 0; border-top: 1px solid #343941; }
-  .receipt-depth dl > div, .receipt-depth dd { grid-template-columns: 1fr; }
-  .receipt-depth dd b { transform: rotate(90deg); transform-origin: left; }
+  .state-comparison dl > div, .state-comparison dd { grid-template-columns: 1fr; }
+  .state-comparison dd b { transform: rotate(90deg); transform-origin: left; }
   .observed-live > summary { flex-direction: column; }
   .proof-table-scroll { max-width: 100%; overflow-x: auto; }
   .review-sheet { padding: 26px 20px; }

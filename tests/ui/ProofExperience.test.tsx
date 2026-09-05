@@ -578,6 +578,10 @@ describe('Evidence-to-decision primary experience', () => {
 
   it('contains long technical identifiers within local proof surfaces instead of the page grid', () => {
     const styles = readFileSync('src/styles/app.css', 'utf8');
+    expect(styles).toMatch(/\.proof-effects \{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/);
+    expect(styles).toMatch(/\.proof-effects > div \{ min-width:\s*0;/);
+    expect(styles).not.toMatch(/\.receipt-depth dl > div|\.receipt-depth dd \{ display:\s*grid/);
+    expect(styles).toMatch(/\.state-comparison dl > div[^}]*grid-template-columns:\s*135px minmax\(0, 1fr\)/s);
     expect(styles).toMatch(/\.control-workspace[^}]*min-width:\s*0;[^}]*max-width:\s*100%/s);
     expect(styles).toMatch(/\.receipt-depth dd[^}]*overflow-wrap:\s*anywhere/s);
     expect(styles).toMatch(/\.proof-table-scroll \{ max-width:\s*100%;[^}]*overscroll-behavior-inline:\s*contain;/);

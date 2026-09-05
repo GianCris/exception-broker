@@ -96,7 +96,7 @@ const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView;
 const ActionReceipt = ({ receipt }: Readonly<{ receipt: DecisionTransitionView }>) => <section className="action-receipt" aria-labelledby="changed-title">
   <p className="eyebrow">Latest completed action</p><h2 id="changed-title">What Changed?</h2><p>{receipt.summary}</p>
   <details><summary>Inspect comparison</summary><div className="receipt-depth">
-    <section aria-labelledby="comparison-title"><h3 id="comparison-title">State comparison</h3><dl>{receipt.comparison.map((item) => <div key={item.label}><dt>{item.label}</dt><dd><span>{item.before}</span><b aria-hidden="true">→</b><span>{item.after}</span><em>{item.meaning}</em></dd></div>)}</dl></section>
+    <section className="state-comparison" aria-labelledby="comparison-title"><h3 id="comparison-title">State comparison</h3><dl>{receipt.comparison.map((item) => <div key={item.label}><dt>{item.label}</dt><dd><span>{item.before}</span><b aria-hidden="true">→</b><span>{item.after}</span><em>{item.meaning}</em></dd></div>)}</dl></section>
     <section aria-labelledby="local-effects-title"><h3 id="local-effects-title">Local effects</h3>{receipt.effects ? <><dl className="proof-effects"><div><dt>New decisions</dt><dd>{receipt.effects.decisions.length}</dd></div><div><dt>New operations</dt><dd>{receipt.effects.operations.length}</dd></div><div><dt>New events</dt><dd>{receipt.effects.events.length}</dd></div></dl><p>{receipt.effects.stateEvidence}</p></> : <p>No application effects were produced.</p>}</section>
   </div></details>
 </section>;
