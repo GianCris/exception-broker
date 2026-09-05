@@ -184,6 +184,20 @@ describe('Acquisition V1 experience', () => {
     expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it.each(['failed', 'canceled'] as const)('renders %s with SAFE_STOP metadata only as a provider/system outcome', async (status) => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(record({ status, terminalAt: '2027-06-10T22:02:00Z', normalizationStatus: 'SAFE_STOP', handoffState: 'SAFE_STOP', safeStopReason: 'Not usable' }))} onNavigateControl={() => undefined} />);
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(screen.queryByText(/The acquisition completed, but no usable/)).not.toBeInTheDocument();
+    expect(screen.queryByText('NOT READY FOR REVIEW')).not.toBeInTheDocument();
+  });
+
+  it('does not render stale READY_FOR_REVIEW metadata as a primary state after provider failure', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(record({ status: 'failed', terminalAt: '2027-06-10T22:02:00Z', normalizationStatus: 'USABLE', handoffState: 'READY_FOR_REVIEW' }))} onNavigateControl={() => undefined} />);
+    expect(await screen.findByRole('alert')).toBeVisible(); expect(screen.queryByText('READY FOR REVIEW')).not.toBeInTheDocument();
+  });
+
   it.each(['APPROVED', 'REJECTED'] as const)('renders usable %s as acquired and ready, not as Broker disposition or handoff action', async (decision) => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     render(<AcquisitionExperience api={api(completed(decision))} onNavigateControl={() => undefined} />);
@@ -191,13 +205,44 @@ describe('Acquisition V1 experience', () => {
     expect(within(eligibility).getByText(decision)).toBeVisible(); expect(within(eligibility).getByText('READY FOR REVIEW')).toBeVisible();
     expect(within(eligibility).getByText(/Acquired decision ≠ execution authority/)).toBeVisible();
     expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: /Continue to Control/i })).not.toBeInTheDocument();
+    expect(within(eligibility).getByText(/Eligible for exact review/)).toBeVisible();
+  });
+
+  it('offers one explicit refresh after the automatic bound and prevents duplicate pending requests', async () => {
+    vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
+    fake.refresh.mockResolvedValue({ found: true, record: record() });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await act(async () => { await Promise.resolve(); });
+    for (let count = 0; count < 30; count += 1) await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    expect(fake.refresh).toHaveBeenCalledTimes(30); expect(fake.create).not.toHaveBeenCalled();
+    const beforeId = localStorage.getItem(acquisitionStorageKey);
+    let release!: (value: { found: true; record: AcquisitionPublicRecord }) => void;
+    fake.refresh.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    const refresh = screen.getByRole('button', { name: 'Refresh status' });
+    fireEvent.click(refresh); fireEvent.click(refresh);
+    expect(fake.refresh).toHaveBeenCalledTimes(31); expect(screen.getByRole('button', { name: 'Refreshing status…' })).toBeDisabled();
+    release({ found: true, record: record({ updatedAt: '2027-06-10T22:03:00Z' }) });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('button', { name: 'Refresh status' })).toBeVisible(); expect(localStorage.getItem(acquisitionStorageKey)).toBe(beforeId); expect(fake.create).not.toHaveBeenCalled();
+  });
+
+  it('removes explicit refresh after its single server request returns terminal truth', async () => {
+    vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
+    fake.refresh.mockResolvedValue({ found: true, record: record() });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await act(async () => { await Promise.resolve(); });
+    for (let count = 0; count < 30; count += 1) await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    fake.refresh.mockResolvedValueOnce({ found: true, record: completed('PENDING') });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByRole('button', { name: 'Refresh status' })).not.toBeInTheDocument(); expect(screen.getByText('NOT READY FOR REVIEW')).toBeVisible(); expect(fake.create).not.toHaveBeenCalled();
   });
 
   it('keeps confidence secondary to authority and shows both provenance axes', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     render(<AcquisitionExperience api={api(completed('PENDING'))} onNavigateControl={() => undefined} />);
     fireEvent.click(await screen.findByText('Inspect sanitized provider evidence'));
-    expect(screen.getByText('0.93 · high')).toBeVisible(); expect(screen.getByText('LIVE_CALLE')).toBeVisible(); expect(screen.getByText('CONTROLLED_SANDBOX_CONTEXT')).toBeVisible();
+    expect(screen.getByText('0.93 · high')).toBeVisible(); expect(screen.getByText('LIVE_CALLE')).toBeVisible(); expect(screen.getAllByText('Controlled sandbox template').length).toBeGreaterThan(0);
     expect(screen.queryByText(/confidence.*authority/i)).not.toBeInTheDocument();
   });
 

@@ -580,7 +580,7 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .acquisition-hero { max-width: 770px; margin-bottom: 25px; }
 .acquisition-hero h1 { margin: 4px 0 8px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 4.5vw, 3.7rem); font-weight: 500; line-height: 1; letter-spacing: -.045em; }
 .acquisition-hero > p:last-child { max-width: 690px; color: var(--text-secondary); }
-.access-panel, .acquisition-create, .acquisition-session, .acquisition-status, .decision-formation, .eligibility, .provider-error, .acquisition-evidence, .acquisition-provenance { border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface-control); }
+.access-panel, .acquisition-create, .acquisition-session, .acquisition-status, .decision-formation, .eligibility, .provider-error, .acquisition-evidence, .acquisition-provenance, .bounded-refresh { border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface-control); }
 .access-panel { max-width: 720px; padding: 24px; }
 .access-panel form, .acquisition-create form { display: grid; gap: 14px; margin-top: 18px; }
 .access-panel label, .acquisition-create label { display: grid; gap: 6px; color: var(--text-secondary); font-size: .76rem; font-weight: 700; }
@@ -637,6 +637,10 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .acquisition-provenance p { margin: 0; color: var(--text-muted); font-size: .7rem; }
 .acquisition-reset { margin-top: 12px; text-align: right; }
 .acquisition-reset button, .acquisition-session button, .access-panel .proof-secondary { padding: 8px 11px; color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 5px; background: transparent; cursor: pointer; }
+.bounded-refresh { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 12px; padding: 14px 18px; background: var(--surface-depth); }
+.bounded-refresh p { margin: 2px 0; color: var(--text-muted); font-size: .72rem; }
+.bounded-refresh button { flex: 0 0 auto; padding: 8px 12px; color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-control); cursor: pointer; }
+.bounded-refresh button:disabled { cursor: wait; opacity: .65; }
 
 @media (max-width: 1050px) {
   .product-layout { grid-template-columns: 270px minmax(0, 1fr); }
@@ -669,6 +673,7 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
   .outcome-language, .control-next { padding: 18px; }
   .acquisition-workspace { width: min(100% - 22px, 1120px); }
   .acquisition-session, .evidence-heading { align-items: flex-start; flex-direction: column; }
+  .bounded-refresh { align-items: flex-start; flex-direction: column; }
   .acquisition-create, .access-panel, .acquisition-evidence { padding: 18px; }
   .acquisition-status dl, .decision-formation ol, .eligibility, .acquisition-provenance { grid-template-columns: 1fr; }
   .acquisition-status dl div { border-top: 1px solid var(--border-subtle); border-left: 0; }
