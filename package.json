@@ -7,6 +7,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "acquisition:server": "tsc -p tsconfig.acquisition.json && node .acquisition-dist/scripts/acquisition-server.js",
     "operator:sandbox": "tsc -p tsconfig.operator.json && node .operator-dist/scripts/operator-sandbox.js",
     "operator:sandbox:live": "tsc -p tsconfig.operator.json && node .operator-dist/scripts/operator-sandbox-live.js",
     "dev": "vite --configLoader runner",
