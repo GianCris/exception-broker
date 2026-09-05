@@ -27,7 +27,7 @@ describe('Operator acquisition session through existing controls', () => {
     expect(session.state.plans[0]?.status).toBe(decision);
     expect(session.state.approvals.at(-1)).toMatchObject({ actorId: scenario.request.actorId, planId: scenario.request.planId, decision });
     expect(session.state.events.at(-1)?.requestId).toBe(scenario.request.requestId);
-    expect(presentAttempt(reviewed.result, scenario.request.planId!).label).toBe(decision === 'APPROVED' ? 'ALLOW' : 'WAIT');
+    expect(presentAttempt(reviewed.result, scenario.request.planId!).label).toBe(decision === 'APPROVED' ? 'ALLOW' : 'REJECTED');
     if (decision === 'APPROVED') expect(reviewed.result).toMatchObject({ disposition: { type: 'LINEAGE_RESOLVED', scope: { caseId: scenario.request.caseId, planId: scenario.request.planId } } });
     else expect(reviewed.result).toMatchObject({ disposition: { type: 'AWAITING_EXTERNAL_ACTION' }, step: { applicationResolutionStatus: 'PLAN_REJECTED' } });
     expect(session.review(command(scenario))).toEqual({ status: 'NOT_AVAILABLE', reason: 'REVIEW_NOT_AVAILABLE' });

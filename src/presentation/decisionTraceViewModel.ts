@@ -27,9 +27,9 @@ export const presentAttempt = (result: OrchestrationResult, planId: string) => {
   if (!result.accepted) {
     if (result.failure.reason === 'PLAN_PHYSICALLY_INFEASIBLE') return { label: 'BLOCK', title: 'Physical supply cannot support this approval', reason: result.failure.reason } as const;
     if (['PLAN_SUPERSEDED', 'STALE_PROPOSAL', 'PLAN_NOT_APPLICABLE_AFTER_AUTHORIZATION_REVIEW'].includes(result.failure.reason)) return { label: 'BLOCK', title: 'This proposed action is not applicable', reason: result.failure.reason } as const;
-    if (result.failure.reason === 'DISCARDED_BY_REVIEWER') return { label: 'WAIT', title: 'Proposal discarded by reviewer', reason: result.failure.reason } as const;
+    if (result.failure.reason === 'DISCARDED_BY_REVIEWER') return { label: 'DISCARDED', title: 'Proposal discarded by reviewer', reason: result.failure.reason } as const;
     if (['NEEDS_CLARIFICATION', 'PHYSICAL_FEASIBILITY_UNPROVEN'].includes(result.failure.reason)) return { label: 'WAIT', title: 'Additional decision or evidence required', reason: result.failure.reason } as const;
-    return { label: 'WAIT', title: 'Attempt not accepted — inspect the technical result', reason: result.failure.reason } as const;
+    return { label: 'TECHNICAL STOP', title: 'Attempt stopped by an unclassified technical result', reason: result.failure.reason } as const;
   }
   const disposition = result.disposition;
   if (disposition.type === 'LINEAGE_RESOLVED' && disposition.scope.planId === planId
@@ -39,10 +39,10 @@ export const presentAttempt = (result: OrchestrationResult, planId: string) => {
   }
   if (result.step.actionType === 'APPLY_REVIEWED_DECISION') {
     const resolution = result.step.applicationResolutionStatus;
-    if (resolution === 'PLAN_REJECTED') return { label: 'WAIT', title: 'Decision recorded as REJECTED — recovery not authorized', reason: resolution } as const;
+    if (resolution === 'PLAN_REJECTED') return { label: 'REJECTED', title: 'Decision recorded as REJECTED — recovery not authorized', reason: resolution } as const;
     if (resolution === 'CASE_AUTHORIZATION_APPLIED') return { label: 'WAIT', title: 'Authorization change recorded — further explicit action required', reason: resolution } as const;
     if (resolution === 'PENDING_APPROVALS') return { label: 'WAIT', title: 'Decision recorded — further approvals required', reason: resolution } as const;
-    return { label: 'WAIT', title: 'Further explicit action required', reason: resolution } as const;
+    if (resolution === 'PLAN_APPROVED') return { label: 'TECHNICAL STOP', title: 'Resolved application result is internally inconsistent', reason: resolution } as const;
   }
   return { label: 'WAIT', title: 'Further explicit action required', reason: result.step.result } as const;
 };
@@ -53,8 +53,8 @@ export const createDecisionTraceView = (session: ProofSession) => {
   const targetPlan = session.state?.plans.find((plan) => plan.id === inputs.plan.id);
   const outcome = latest !== undefined ? presentAttempt(latest.result, inputs.plan.id)
     : assembly.status !== 'ACCEPTED' ? { label: 'WAIT', title: 'Trusted operational state cannot be established', reason: assembly.status } as const
-    : session.registration?.accepted === false ? { label: 'WAIT', title: 'Preparation stopped — inspect the technical result', reason: session.registration.failure.reason } as const
-    : session.bridge?.ready === false ? { label: 'WAIT', title: 'Proposal unavailable for review', reason: session.bridge.reason } as const
+    : session.registration?.accepted === false ? { label: 'TECHNICAL STOP', title: 'Preparation stopped — inspect the technical result', reason: session.registration.failure.reason } as const
+    : session.bridge?.ready === false ? { label: 'TECHNICAL STOP', title: 'Proposal unavailable for review', reason: session.bridge.reason } as const
     : { label: 'WAIT', title: 'Your explicit review is required', reason: 'No decision application attempted' } as const;
   const facts = inputs.evidence.map((evidence) => {
     const trusted = assembly.status === 'ACCEPTED' && assembly.provenance[evidence.factKind].some((reference) => reference.evidenceId === evidence.evidenceId && reference.sourceId === evidence.sourceId);
@@ -98,19 +98,65 @@ export const createDecisionControlView = (session: ProofSession) => {
     : latest?.review.action === 'DISCARD' ? 'REVIEW DISCARDED'
     : latest !== undefined ? 'REVIEW SUBMITTED'
     : 'NOT AVAILABLE';
+  const physicalTruth = view.assessments?.physical.outcome;
   const operationalTruth = !view.trustedCaseProduced ? 'UNPROVEN — trusted snapshot not assembled'
     : latest === undefined ? 'Not evaluated for application'
-    : view.assessments?.physical.outcome ?? 'Not established for this attempt';
-  const disposition = latest !== undefined || !view.trustedCaseProduced ? view.outcome.label : 'NOT RESOLVED';
-  const why = !view.trustedCaseProduced ? view.outcome.title
+    : physicalTruth === 'PHYSICALLY_FEASIBLE' ? 'Modeled supply snapshot is sufficient'
+    : physicalTruth === 'PHYSICALLY_INFEASIBLE' ? 'Modeled supply snapshot is insufficient'
+    : physicalTruth === 'PHYSICAL_FEASIBILITY_UNPROVEN' ? 'Modeled supply snapshot is unresolved'
+    : 'Not established for this attempt';
+  const hasPresentedOutcome = latest !== undefined || !view.trustedCaseProduced
+    || session.registration?.accepted === false || session.bridge?.ready === false;
+  const disposition = hasPresentedOutcome ? view.outcome.label : 'NOT RESOLVED';
+  const physicalViolation = view.assessments?.physical.outcome === 'PHYSICALLY_INFEASIBLE'
+    ? view.assessments.physical.violations.find(({ quantityType }) => quantityType === 'SUBSTITUTE')
+    : undefined;
+  const unsupportedQuantity = physicalViolation?.requiredQuantity !== undefined && physicalViolation.availableQuantity !== undefined
+    ? physicalViolation.requiredQuantity - physicalViolation.availableQuantity : undefined;
+  const physicalBlock = disposition === 'BLOCK' && physicalViolation !== undefined;
+  const evidenceConflict = !view.trustedCaseProduced && view.assemblyStatus === 'CONFLICTING_EVIDENCE';
+  const physicalEvidenceConflict = evidenceConflict && view.assemblyIssues.some(({ factKind }) => factKind === 'PHYSICAL_SUPPLY');
+  const why = physicalBlock
+    ? `The proposal requires ${physicalViolation.requiredQuantity} substitute units, but trusted supply contains only ${physicalViolation.availableQuantity}; ${unsupportedQuantity} units are unsupported.`
+    : physicalEvidenceConflict ? 'Conflicting physical-supply claims prevent a trusted operational state from being established.'
+    : evidenceConflict ? 'Conflicting authoritative claims prevent a trusted operational state from being established.'
+    : disposition === 'ALLOW' ? 'The exact reviewed proposal is current, formally valid, physically feasible, and has the required approvals in this local snapshot.'
+    : disposition === 'REJECTED' ? 'The represented decision rejected the proposal; the Broker did not block an approved decision.'
+    : disposition === 'DISCARDED' ? 'The reviewer chose not to submit this exact proposal for application.'
+    : disposition === 'TECHNICAL STOP' ? 'The result has no recognized operational disposition; inspect the technical details.'
+    : !view.trustedCaseProduced ? view.outcome.title
     : latest !== undefined ? view.outcome.title
     : 'A normalized decision is ready, but exact review has not been submitted.';
   const nextAction = view.canReview ? 'Review exact proposal'
+    : physicalBlock ? 'Resolve the supply gap externally or revise the proposal'
+    : physicalEvidenceConflict ? 'Resolve the conflicting supply evidence'
+    : evidenceConflict ? 'Resolve the conflicting evidence'
+    : disposition === 'ALLOW' ? 'Inspect the local application effects'
+    : disposition === 'REJECTED' ? 'Return to the queue or review another decision'
+    : disposition === 'DISCARDED' ? 'Return to the queue or review another decision'
+    : disposition === 'TECHNICAL STOP' ? 'Inspect the technical result'
     : !view.trustedCaseProduced ? 'Resolve evidence outside this local proof'
     : latest === undefined ? 'No review is currently available'
     : 'Inspect the application result';
+  const factors = physicalBlock ? [
+    ...(view.assessments?.substituteAuthorized === undefined ? [] : [{ label: 'Client authority', value: `Up to ${view.assessments.substituteAuthorized} substitute units` }]),
+    { label: 'Proposal', value: `${physicalViolation.requiredQuantity} substitute units required` },
+    { label: 'Operational truth', value: `${physicalViolation.availableQuantity} substitute units available` },
+    { label: 'Difference', value: `${unsupportedQuantity} substitute units unsupported` },
+  ] : evidenceConflict ? [{ label: 'Unresolved fact', value: physicalEvidenceConflict ? 'Authoritative physical-supply claims conflict' : 'Authoritative evidence claims conflict' }]
+    : disposition === 'ALLOW' ? [
+      { label: 'Exact review', value: `${latest?.review.reviewTarget.actorRole} decision bound to this proposal` },
+      { label: 'Formal snapshot', value: view.assessments?.formal.valid ? 'Formally valid' : 'Not established' },
+      { label: 'Physical snapshot', value: view.assessments?.physical.outcome === 'PHYSICALLY_FEASIBLE' ? 'Required modeled supply is available' : 'Not established' },
+      { label: 'Exact version', value: view.assessments?.currentness.valid ? `Version ${view.plan.version} current in lineage` : 'Not established' },
+      { label: 'Required approvals', value: view.planStatus === 'APPROVED' ? 'Complete for this exact plan' : 'Not established' },
+    ] : [];
+  const effectSummary = view.effects === undefined ? undefined
+    : view.effects.decisions.length + view.effects.operations.length + view.effects.events.length === 0
+      ? disposition === 'BLOCK' ? 'Application stopped. No application effects created.' : 'No new local decision, operation, or event records were created.'
+      : `${view.effects.decisions.length} decision, ${view.effects.operations.length} operation, and ${view.effects.events.length} event record created locally. No external execution.`;
   return { view, decision: view.proposal?.decision ?? 'NO REVIEWABLE DECISION', authority,
-    operationalTruth, disposition, why, nextAction,
+    operationalTruth, disposition, why, nextAction, factors, effectSummary,
     provenance: view.trustedCaseProduced ? 'Deterministic local proof · configured evidence' : 'Deterministic local proof · unaccepted claims' };
 };
 
