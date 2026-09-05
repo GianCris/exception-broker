@@ -6,6 +6,15 @@ import {
 } from './schemas.js';
 import type { CallMappingResult } from './types.js';
 
+const callDecisionContextSchema = callRequestSchema.pick({
+  requestId: true,
+  createdAt: true,
+  caseId: true,
+  planId: true,
+  actorId: true,
+  actorRole: true,
+});
+
 const issuesFor = (issues: readonly Readonly<{ path: readonly PropertyKey[]; message: string }>[]) =>
   issues.map(({ path, message }) => `${path.join('.') || 'payload'}: ${message}`);
 
@@ -22,14 +31,14 @@ const failure = (
   ...(issues === undefined ? {} : { issues }),
 });
 
-export const mapCalleResponse = (
+export const mapCalleResponseForContext = (
   requestInput: unknown,
   responseInput: unknown,
   receivedAtInput: unknown,
 ): CallMappingResult => {
-  const requestResult = callRequestSchema.safeParse(requestInput);
+  const requestResult = callDecisionContextSchema.safeParse(requestInput);
   if (!requestResult.success) {
-    return failure('Invalid call request', false, undefined, issuesFor(requestResult.error.issues));
+    return failure('Invalid call request context', false, undefined, issuesFor(requestResult.error.issues));
   }
 
   const receivedAtResult = receivedAtSchema.safeParse(receivedAtInput);
@@ -104,4 +113,25 @@ export const mapCalleResponse = (
       receivedAt: receivedAtResult.data,
     },
   };
+};
+
+export const mapCalleResponse = (
+  requestInput: unknown,
+  responseInput: unknown,
+  receivedAtInput: unknown,
+): CallMappingResult => {
+  const requestResult = callRequestSchema.safeParse(requestInput);
+  if (!requestResult.success) {
+    return failure('Invalid call request', false, undefined, issuesFor(requestResult.error.issues));
+  }
+
+  const request = requestResult.data;
+  return mapCalleResponseForContext({
+    requestId: request.requestId,
+    createdAt: request.createdAt,
+    caseId: request.caseId,
+    ...(request.planId === undefined ? {} : { planId: request.planId }),
+    actorId: request.actorId,
+    actorRole: request.actorRole,
+  }, responseInput, receivedAtInput);
 };
