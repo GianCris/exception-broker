@@ -199,8 +199,8 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByText(/not a live CALL-E response/)).toBeInTheDocument();
   });
 
-  it('keeps browser entry and new demo/presentation composition free of network and clock mechanisms', () => {
-    const sources = ['src/App.tsx', 'src/ui/ProofExperience.tsx', 'src/demo/proofDemo.ts', 'src/presentation/decisionTraceViewModel.ts']
+  it('keeps deterministic Control composition free of network and clock mechanisms', () => {
+    const sources = ['src/ui/ProofExperience.tsx', 'src/demo/proofDemo.ts', 'src/presentation/decisionTraceViewModel.ts']
       .map((path) => readFileSync(path, 'utf8')).join('\n');
     expect(sources).not.toMatch(/fetch\s*\(|axios|process\.env|CALLE_API_KEY|new CallEProvider|Date\.now|new Date\(|Math\.random|randomUUID/);
     expect(sources).not.toMatch(/from ['"][^'"]*(?:callEProvider|mockProvider|\/adapter)\.js/);
@@ -224,13 +224,15 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByRole('button', { name: 'Review exact proposal' })).not.toBeInTheDocument();
   });
 
-  it('the complete local App import graph excludes live acquisition entry points', () => {
+  it('the browser App graph includes only the same-origin acquisition client and excludes provider/server execution', () => {
     const visited = new Set<string>();
+    const browserNetworkFiles: string[] = [];
     const inspect = (path: string) => {
       if (visited.has(path)) return;
       visited.add(path);
       const source = readFileSync(path, 'utf8');
-      expect(source).not.toMatch(/@call-e\/calle|process\.env|fetch\s*\(|XMLHttpRequest|WebSocket/);
+      expect(source).not.toMatch(/@call-e\/calle|process\.env|CALLE_API_KEY|XMLHttpRequest|WebSocket/);
+      if (source.includes('globalThis.fetch')) browserNetworkFiles.push(path);
       for (const match of source.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
         const base = resolve(dirname(path), match[1]!).replace(/\.js$/, '');
         const file = [`${base}.ts`, `${base}.tsx`].find(existsSync);
@@ -239,6 +241,7 @@ describe('Evidence-to-decision primary experience', () => {
     };
     inspect(resolve('src/App.tsx'));
     expect([...visited].some((path) => /callEProvider\.ts|mockProvider\.ts|[/\\]adapter\.ts$/.test(path))).toBe(false);
+    expect(browserNetworkFiles).toEqual([resolve('src/acquisition/browserClient.ts')]);
     expect([...visited].some((path) => path.endsWith('adaptiveOrchestrator.ts'))).toBe(true);
     expect([...visited].some((path) => path.endsWith('decisionApplication.ts'))).toBe(true);
   });

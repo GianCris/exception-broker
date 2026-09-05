@@ -8,7 +8,7 @@ type ThemeMode = 'system' | 'light' | 'dark';
 const themeStorageKey = 'exception-broker-theme';
 const isThemeMode = (value: string | null): value is ThemeMode => value === 'system' || value === 'light' || value === 'dark';
 
-const ThemeControl = () => {
+export const ThemeControl = () => {
   const [mode, setMode] = useState<ThemeMode>(() => {
     try { const stored = window.localStorage.getItem(themeStorageKey); return isThemeMode(stored) ? stored : 'system'; } catch { return 'system'; }
   });
@@ -148,9 +148,10 @@ const Assessments = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   </section>;
 };
 
-export const ProofExperience = ({ prepare, review }: Readonly<{
+export const ProofExperience = ({ prepare, review, onNavigateAcquisition }: Readonly<{
   prepare: (scenario: ProofScenario) => ProofSession;
   review: (session: ProofSession, action: 'APPLY' | 'DISCARD') => ProofSession;
+  onNavigateAcquisition?: () => void;
 }>) => {
   const [session, setSession] = useState(() => prepare('H02'));
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -215,7 +216,7 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
-  return <div className="app-shell proof-shell"><div ref={backgroundRef}><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav aria-label="Product"><span aria-current="page">Decision control</span></nav><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></header>
+  return <div className="app-shell proof-shell"><div ref={backgroundRef}><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav className="product-nav" aria-label="Product"><button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page">Control</button></nav><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></header>
     <div className="product-layout"><aside className="control-queue" aria-labelledby="queue-title"><p className="eyebrow">Decision control queue</p><h1 id="queue-title">Needs attention</h1><p>Three independent deterministic demo cases.</p>
       <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} disabled={applicationAttempt !== null} aria-label={`${scenario.id} / ${scenario.title} · ${item.disposition}`} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
         <span className="queue-heading"><span><strong>{scenario.title}</strong><small>Demo case {scenario.id}</small></span><b className={`disposition disposition-${item.disposition.toLowerCase().replace(' ', '-')}`}>{item.disposition}</b></span>
