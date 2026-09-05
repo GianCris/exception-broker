@@ -219,6 +219,49 @@ describe('Acquisition V1 server boundary', () => {
     expect(get).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes with exactly one get and zero additional creates', async () => {
+    const { service, create, get } = setup(call('queued'));
+    get.mockResolvedValueOnce(call('in_progress'));
+    await service.create(input());
+    const result = await service.refresh('ACQ-001', token);
+    expect(result).toMatchObject({ found: true, record: { status: 'in_progress', normalizationStatus: 'PENDING' } });
+    expect(get).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it('repeated refresh never recreates and terminal state requires no additional get', async () => {
+    const { service, create, get } = setup(call('queued'));
+    get.mockResolvedValueOnce(call('completed'));
+    await service.create(input());
+    const terminal = await service.refresh('ACQ-001', token);
+    const repeated = await service.refresh('ACQ-001', token);
+    expect(terminal).toEqual(repeated);
+    expect(get).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['usable decision', decision(), 'USABLE', 'READY_FOR_REVIEW'],
+    ['null structured result', null, 'SAFE_STOP', 'SAFE_STOP'],
+    ['clarification', decision('NEEDS_CLARIFICATION'), 'SAFE_STOP', 'SAFE_STOP'],
+  ])('preserves terminal refresh semantics for %s', async (_name, structuredResult, normalizationStatus, handoffState) => {
+    const { service, get } = setup(call('queued'));
+    get.mockResolvedValueOnce(call('completed', structuredResult));
+    await service.create(input());
+    expect(await service.refresh('ACQ-001', token)).toMatchObject({
+      found: true,
+      record: { status: 'completed', normalizationStatus, handoffState },
+    });
+  });
+
+  it('protects refresh with the acquisition token and performs no provider operation on denial', async () => {
+    const { service, create, get } = setup(call('queued'));
+    await service.create(input());
+    expect(await service.refresh('ACQ-001', 'wrong-token')).toMatchObject({ found: false, code: 'NOT_FOUND' });
+    expect(get).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledOnce();
+  });
+
   it.each(['failed', 'canceled'] as const)('persists terminal %s as a safe stop', async (status) => {
     const { service } = setup(call(status));
     const result = await service.create(input());
@@ -308,6 +351,20 @@ describe('Acquisition V1 server boundary', () => {
     expect(JSON.stringify(body)).not.toContain('clientTokenHash');
     expect(await handler(new Request('http://localhost/api/acquisitions/ACQ-001', { headers: { 'x-acquisition-demo-token': token } }))).toMatchObject({ status: 200 });
     expect(await handler(new Request('http://localhost/api/acquisitions/ACQ-001'))).toMatchObject({ status: 404 });
+  });
+
+  it('routes token-protected one-step refresh through the HTTP boundary', async () => {
+    const { service, create, get } = setup(call('queued'));
+    get.mockResolvedValueOnce(call('completed'));
+    await service.create(input());
+    const handler = createAcquisitionHttpHandler(service);
+    const response = await handler(new Request('http://localhost/api/acquisitions/ACQ-001/refresh', {
+      method: 'POST', headers: { 'x-acquisition-demo-token': token },
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ found: true, record: { status: 'completed', normalizationStatus: 'USABLE' } });
+    expect(get).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
   });
 
   it('uses deny-by-default environment policy and never persists raw demo tokens', async () => {

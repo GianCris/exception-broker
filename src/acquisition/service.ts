@@ -243,6 +243,21 @@ export class AcquisitionService {
     return { found: false, code: 'POLL_TIMEOUT', reason: 'Bounded CALL-E polling timed out' };
   }
 
+  async refresh(acquisitionId: string, clientToken: string): Promise<PollAcquisitionResult> {
+    const record = await this.#store.get(acquisitionId);
+    if (record === undefined || record.clientTokenHash !== hashClientToken(clientToken)) {
+      return { found: false, code: 'NOT_FOUND', reason: 'Acquisition was not found' };
+    }
+    if (record.callId === null || isTerminalStatus(record.status)) return { found: true, record };
+
+    try {
+      const call = await this.#gateway.get(record.callId);
+      return { found: true, record: await this.#recordCall(record, call) };
+    } catch (_error: unknown) {
+      return { found: false, code: 'PROVIDER_FAILURE', reason: safeProviderFailure };
+    }
+  }
+
   async #recordProviderCreateFailure(previous: AcquisitionRecord): Promise<AcquisitionRecord> {
     const updatedAt = this.#clock();
     const failed: AcquisitionRecord = {
