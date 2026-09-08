@@ -118,7 +118,7 @@ describe('Acquisition V1 experience', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: 'Decisions need guardrails to reach reality.' })).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Acquisition' }));
-    expect(screen.getByRole('heading', { name: 'Acquire the decision. Preserve the boundary.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Unlock Live Acquisition' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Control' }));
     expect(screen.getByRole('heading', { name: 'Decision is not authority.' })).toBeVisible();
   });
@@ -132,10 +132,57 @@ describe('Acquisition V1 experience', () => {
     expect(screen.getByText(/token is not business identity/)).toBeVisible();
   });
 
+  it('presents READY as a controlled four-stage path with Control locked', () => {
+    render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    unlock();
+    const rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
+    expect(within(rail).getByText('READY')).toBeVisible();
+    expect(within(rail).getAllByText('WAITING')).toHaveLength(2);
+    expect(within(rail).getByText('LOCKED')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Acquire a decision' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Continue to Control →' })).toBeDisabled();
+  });
+
+  it('keeps active acquisition evidence truthful with no fabricated turns', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const active = record({ providerEvidence: { ...record().providerEvidence!, status: 'in_progress', recipients: [{ id: 'RECIPIENT', status: 'in_progress', summary: null, attempts: [{ id: 'ATTEMPT', status: 'in_progress', startedAt: '2027-06-10T22:00:02Z', completedAt: null, summary: null, transcriptTurns: [], providerCallId: 'PROVIDER-CALL', failureCode: null, failureMessage: null }] }] } });
+    const { unmount } = render(<AcquisitionExperience api={api(active)} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Conversation evidence not available yet.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Continue to Control' })).not.toBeInTheDocument();
+    unmount();
+    const withTurns = { ...active, providerEvidence: { ...active.providerEvidence!, recipients: [{ ...active.providerEvidence!.recipients[0]!, attempts: [{ ...active.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: [{ offsetSeconds: 4, speaker: 'bot' as const, text: 'Returned CALL-E turn.' }, { offsetSeconds: null, speaker: 'unknown' as const, text: 'Returned unknown turn.' }] }] }] } };
+    render(<AcquisitionExperience api={api(withTurns)} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Returned CALL-E turn.')).toBeVisible();
+    expect(screen.getByText('Unknown speaker')).toBeVisible();
+  });
+
+  it('keeps provider depth collapsed until deliberately inspected', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
+    const disclosure = (await screen.findByText('Inspect sanitized provider evidence')).closest('details');
+    expect(disclosure).not.toHaveAttribute('open');
+    expect(screen.getAllByText('One supported decision was requested.').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('Inspect sanitized provider evidence'));
+    expect(disclosure).toHaveAttribute('open');
+    expect(screen.getByText('REQUEST-TEST-1')).toBeVisible();
+  });
+
+  it('previews returned conversation evidence and reveals every real turn on request', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const complete = completed('APPROVED');
+    const turns = Array.from({ length: 6 }, (_, index) => ({ offsetSeconds: index + 1, speaker: index % 2 === 0 ? 'bot' as const : 'user' as const, text: `Returned turn ${index + 1}` }));
+    const withTranscript = { ...complete, providerEvidence: { ...complete.providerEvidence!, recipients: [{ ...complete.providerEvidence!.recipients[0]!, attempts: [{ ...complete.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: turns }] }] } };
+    render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
+    expect((await screen.findAllByText('Returned turn 4'))[0]).toBeVisible();
+    expect(screen.getByText('Returned turn 5')).not.toBeVisible();
+    fireEvent.click(screen.getByText('View full transcript →'));
+    expect(screen.getByText('Returned turn 6')).toBeVisible();
+  });
+
   it('locking clears session access but preserves the non-sensitive recovery pointer', async () => {
     localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
     render(<AcquisitionExperience api={api(completed('PENDING'))} onNavigateControl={() => undefined} />);
-    await screen.findByText('Acquisition completed'); fireEvent.click(screen.getByRole('button', { name: 'Lock live access' }));
+    await screen.findByText('Call completed'); fireEvent.click(screen.getByRole('button', { name: 'Configure live access' }));
     expect(sessionStorage.getItem(acquisitionAccessKey)).toBeNull(); expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-TEST-1');
     expect(screen.getByText(/Recovery locked/)).toBeVisible();
   });
@@ -165,7 +212,7 @@ describe('Acquisition V1 experience', () => {
     localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); const fake = api(completed('PENDING'));
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     await waitFor(() => expect(fake.get).toHaveBeenCalledWith('ACQ-TEST-1', 'ACCESS'));
-    expect(await screen.findByText('Acquisition completed')).toBeVisible();
+    expect(await screen.findByText('Call completed')).toBeVisible();
   });
 
   it('keeps the opaque pointer after failed restoration and clears it only explicitly', async () => {
@@ -188,7 +235,7 @@ describe('Acquisition V1 experience', () => {
   it('renders only returned transcript turns and otherwise promises no fake streaming', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     const { unmount } = render(<AcquisitionExperience api={api(record())} onNavigateControl={() => undefined} />);
-    expect(await screen.findByText('Conversation evidence will appear when available.')).toBeVisible(); unmount();
+    expect(await screen.findByText('Conversation evidence not available yet.')).toBeVisible(); unmount();
     render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
     expect(await screen.findByText('Choose one decision.')).toBeVisible(); expect(screen.getByText('APPROVED', { selector: '.transcript-timeline p' })).toBeVisible();
     expect(screen.queryByText(/waveform|audio streaming/i)).not.toBeInTheDocument();
