@@ -21,6 +21,7 @@ const refreshIntervalMs = 2_000;
 type ExperienceProps = Readonly<{
   api: AcquisitionBrowserApi;
   onNavigateControl: () => void;
+  onNavigateHome?: () => void;
   createIdentity?: () => string;
   clock?: () => string;
   onOpenControl?: (record: LiveControlPublicRecord) => void;
@@ -51,6 +52,7 @@ const errorMessage = (error: unknown) => {
 export const AcquisitionExperience = ({
   api,
   onNavigateControl,
+  onNavigateHome,
   createIdentity = () => crypto.randomUUID(),
   clock = () => new Date().toISOString(),
   onOpenControl,
@@ -140,7 +142,7 @@ export const AcquisitionExperience = ({
   const ready = record?.status === 'completed' && record.normalizationStatus === 'USABLE' && record.handoffState === 'READY_FOR_REVIEW';
   const transcript = provider?.recipients.flatMap((recipient) => recipient.attempts.flatMap((item) => item.transcriptTurns)) ?? [];
 
-  return <div className="app-shell proof-shell acquisition-shell"><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav className="product-nav" aria-label="Product"><button type="button" aria-current="page">Acquisition</button><button type="button" onClick={onNavigateControl}>Control</button></nav><span className="proof-mode"><b>Controlled live</b><span>Acquisition is not authority · no external execution</span></span><ThemeControl /></header>
+  return <div className="app-shell proof-shell acquisition-shell"><header className="product-topbar"><button type="button" className="brand-row product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><BrokerMark /><span>Exception Broker</span></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" aria-current="page">Acquisition</button><button type="button" onClick={onNavigateControl}>Control</button></nav><span className="proof-mode"><b>Controlled live</b><span>Acquisition is not authority · no external execution</span></span><ThemeControl /></header>
     <main className="acquisition-workspace">
       <header className="acquisition-hero"><p className="eyebrow">CALL-E decision acquisition</p><h1>Acquire the decision. Preserve the boundary.</h1><p>A controlled live interaction can produce decision evidence. Exception Broker still determines whether the result is usable for review.</p></header>
       {accessToken === null ? <section className="access-panel" aria-labelledby="unlock-title"><p className="eyebrow">Temporary V1 access gate</p><h2 id="unlock-title">Unlock Live Acquisition</h2><p>This token controls demo spending and access. It does not authenticate a business user.</p>{storedId ? <p><strong>Recovery locked.</strong> Acquisition {storedId} remains stored locally; unlock before requesting server truth.</p> : null}<form onSubmit={unlock}><label>Temporary live-access token<input name="liveAccess" type="password" autoComplete="off" /></label><button type="submit">Unlock session</button></form></section> : <>

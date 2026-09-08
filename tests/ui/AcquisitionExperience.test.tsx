@@ -114,10 +114,10 @@ describe('Acquisition V1 experience', () => {
   beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.useRealTimers(); });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-  it('adds real Acquisition and Control navigation without changing the default Control proof', () => {
+  it('opens real Acquisition and Control from the Home entry', () => {
     render(<App />);
-    expect(screen.getByRole('heading', { name: 'Decision is not authority.' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Acquisition' }));
+    expect(screen.getByRole('heading', { name: 'Decisions need guardrails to reach reality.' })).toBeVisible();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Acquisition' }));
     expect(screen.getByRole('heading', { name: 'Acquire the decision. Preserve the boundary.' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Control' }));
     expect(screen.getByRole('heading', { name: 'Decision is not authority.' })).toBeVisible();

@@ -476,6 +476,7 @@ body, .proof-shell { color: var(--text-primary); background: var(--canvas); }
 .proof-shell { transition: color 160ms ease, background-color 160ms ease; }
 .product-topbar { min-height: 58px; padding: 0 22px; border-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-base) 96%, transparent); }
 .product-topbar .brand-row { color: var(--text-primary); letter-spacing: .02em; }
+.product-topbar .product-home-link { padding: 0; border: 0; background: transparent; cursor: pointer; text-align: left; }
 .product-topbar nav span, .product-topbar .proof-mode { color: var(--text-secondary); }
 .product-topbar .proof-mode { display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; }
 .product-topbar .proof-mode b { padding: 3px 6px; color: var(--brand); border: 1px solid var(--border-subtle); border-radius: 4px; font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; }

@@ -12,8 +12,9 @@ export const controlSessionStorageKey = 'exception-broker-control-session-id';
 const read = (storage: Storage, key: string) => { try { return storage.getItem(key); } catch { return null; } };
 const write = (storage: Storage, key: string, value: string) => { try { storage.setItem(key, value); } catch { /* Server truth remains authoritative. */ } };
 
-export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onNavigateDeterministic }: Readonly<{
+export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onNavigateDeterministic, onNavigateHome }: Readonly<{
   api: AcquisitionBrowserApi; initial?: LiveControlPublicRecord; onNavigateAcquisition: () => void; onNavigateDeterministic: () => void;
+  onNavigateHome?: () => void;
 }>) => {
   const [record, setRecord] = useState<LiveControlPublicRecord | null>(initial ?? null);
   const [access] = useState(() => read(sessionStorage, acquisitionAccessKey));
@@ -42,7 +43,7 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
     review: `${record.actorRole} review APPLIED`,
     proposal: `Exact review bound · plan version ${record.planVersion}`,
   } : undefined;
-  return <div className="app-shell proof-shell live-control-shell"><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav className="product-nav" aria-label="Product"><button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page" onClick={onNavigateDeterministic}>Control</button></nav><span className="proof-mode"><b>Live control</b><span>CALL-E decision · controlled local context · no external execution</span></span><ThemeControl /></header>
+  return <div className="app-shell proof-shell live-control-shell"><header className="product-topbar"><button type="button" className="brand-row product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><BrokerMark /><span>Exception Broker</span></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page" onClick={onNavigateDeterministic}>Control</button></nav><span className="proof-mode"><b>Live control</b><span>CALL-E decision · controlled local context · no external execution</span></span><ThemeControl /></header>
     <main className="acquisition-workspace live-control-workspace"><header className="acquisition-hero"><p className="eyebrow">Live control session</p><h1>Decision acquired. Authority still required.</h1><p>The server resolved a versioned controlled context and bound this exact review target to one persisted CALL-E acquisition.</p></header>
       {!access ? <section className="access-panel"><h2>Live Control recovery locked</h2><p>The non-sensitive session pointer is preserved. Unlock Live Acquisition before restoring server truth.</p><button type="button" onClick={onNavigateAcquisition}>Unlock Live Acquisition</button></section> : null}
       {access && !record ? <section className="access-panel"><h2>{message || 'Restoring Live Control session…'}</h2><p>No browser-authored operational state is used.</p></section> : null}

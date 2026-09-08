@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { App } from '../../src/App.js';
 import { ProofExperience } from '../../src/ui/ProofExperience.js';
 import { prepareProof, reviewProof } from '../../src/demo/proofDemo.js';
 import { createReadyDecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
@@ -19,6 +18,9 @@ const apply = () => { startApply(); resolveAttempt(); };
 const select = (id: string) => fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${id} /`) }));
 const revealSupporting = () => fireEvent.click(screen.getByText('Verify current decision'));
 const attempt = () => screen.getByRole('region', { name: 'Application Attempt' });
+
+// Keep the established Control regression suite at its own surface entry.
+const App = () => <ProofExperience prepare={prepareProof} review={reviewProof} />;
 
 describe('Evidence-to-decision primary experience', () => {
   it('defaults to accessible System theme and supports explicit persisted finishes', () => {
