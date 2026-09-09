@@ -237,6 +237,51 @@ describe('Acquisition V1 experience', () => {
     await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve(); }); expect(fake.refresh).toHaveBeenCalledTimes(1);
   });
 
+  it('cancels scheduled monitoring when the Acquisition surface unmounts', async () => {
+    vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
+    const { unmount } = render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await act(async () => { await fake.get.mock.results[0]!.value; await Promise.resolve(); await Promise.resolve(); });
+    unmount();
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(fake.refresh).not.toHaveBeenCalled();
+  });
+
+  it('does not let an older in-flight refresh overwrite a newly created acquisition', async () => {
+    vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
+    let releaseOld!: (value: { found: true; record: AcquisitionPublicRecord }) => void;
+    fake.refresh.mockReturnValueOnce(new Promise((resolve) => { releaseOld = resolve; }));
+    const replacement = record({ acquisitionId: 'ACQ-TEST-2', idempotencyKey: 'IDEMPOTENCY-TEST-2', callId: 'CALL-TEST-2' });
+    fake.create.mockResolvedValueOnce({ accepted: true, record: replacement, existing: false });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'TWO'} clock={() => '2027-06-10T22:05:00Z'} />);
+    await act(async () => { await fake.get.mock.results[0]!.value; await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear acquisition recovery pointer' }));
+    expect(screen.getByRole('button', { name: 'Start CALL-E acquisition' })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
+    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    await act(async () => { await Promise.resolve(); });
+    releaseOld({ found: true, record: completed('APPROVED') });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText(/Acquisition record ACQ-TEST-2/)).toBeVisible();
+    expect(screen.queryByText('Call completed')).not.toBeInTheDocument();
+    expect(fake.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Provider Evidence waiting until actual evidence items exist', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const completeWithoutEvidence = completed('APPROVED');
+    const withoutEvidence = { ...completeWithoutEvidence, providerEvidence: { ...completeWithoutEvidence.providerEvidence!, evidence: [] } };
+    const { unmount } = render(<AcquisitionExperience api={api(withoutEvidence)} onNavigateControl={() => undefined} />);
+    await screen.findByText('Call completed');
+    let rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
+    expect(within(rail).getByText('NOT AVAILABLE')).toBeVisible();
+    unmount();
+    render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
+    await screen.findByText('Call completed');
+    rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
+    expect(within(rail).getByText('AVAILABLE')).toBeVisible();
+  });
+
   it('renders only returned transcript turns and otherwise promises no fake streaming', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     const { unmount } = render(<AcquisitionExperience api={api(record())} onNavigateControl={() => undefined} />);
@@ -252,6 +297,23 @@ describe('Acquisition V1 experience', () => {
     const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
     expect(within(eligibility).getByText('NOT READY FOR REVIEW')).toBeVisible(); expect(within(eligibility).getByText(/No authority/, { selector: 'small' })).toBeVisible();
     expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('explains APPROVED plus taskCompleted false as a human-readable SAFE_STOP while retaining technical provenance', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const acquired = completed('APPROVED');
+    const contradiction = { ...acquired, normalizedResult: null, normalizationStatus: 'SAFE_STOP' as const, handoffState: 'SAFE_STOP' as const, safeStopReason: 'taskCompleted contradicts the structured decision', providerEvidence: { ...acquired.providerEvidence!, taskCompleted: false } };
+    const fake = api(contradiction);
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
+    expect(within(eligibility).getByText('CALL-E decision: APPROVED')).toBeVisible();
+    expect(within(eligibility).getByText(/provider did not mark the acquisition task complete/)).toBeVisible();
+    expect(within(eligibility).getByText(/Required decision conditions were not sufficiently established/)).toBeVisible();
+    expect(within(eligibility).getByText('NOT READY FOR REVIEW')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Continue to Control' })).not.toBeInTheDocument();
+    expect(fake.handoff).not.toHaveBeenCalled(); expect(fake.review).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Inspect sanitized provider evidence'));
+    expect(screen.getByText('taskCompleted contradicts the structured decision')).toBeVisible();
   });
 
   it.each(['failed', 'canceled'] as const)('renders %s with SAFE_STOP metadata only as a provider/system outcome', async (status) => {
@@ -288,22 +350,28 @@ describe('Acquisition V1 experience', () => {
     expect(onOpenControl).toHaveBeenCalledWith(serverRecord);
   });
 
-  it('offers one explicit refresh after the automatic bound and prevents duplicate pending requests', async () => {
+  it('monitors adaptively beyond one minute, then offers one explicit current-status check without creating another acquisition', async () => {
     vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
     fake.refresh.mockResolvedValue({ found: true, record: record() });
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     await act(async () => { await Promise.resolve(); });
-    for (let count = 0; count < 30; count += 1) await act(async () => { await vi.runOnlyPendingTimersAsync(); });
-    expect(fake.refresh).toHaveBeenCalledTimes(30); expect(fake.create).not.toHaveBeenCalled();
+    const monitoringStartedAt = Date.now();
+    for (let count = 0; count < 31; count += 1) await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    expect(fake.refresh).toHaveBeenCalledTimes(31); expect(screen.queryByRole('button', { name: 'Check latest status' })).not.toBeInTheDocument();
+    for (let count = 31; count < 66; count += 1) await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    expect(fake.refresh).toHaveBeenCalledTimes(66); expect(fake.create).not.toHaveBeenCalled();
+    expect(Date.now() - monitoringStartedAt).toBe(300_000);
+    expect(screen.getByText('CALL-E is still finalizing the interaction.')).toBeVisible();
+    expect(screen.getByText(/acquisition record is preserved/)).toBeVisible();
     const beforeId = localStorage.getItem(acquisitionStorageKey);
     let release!: (value: { found: true; record: AcquisitionPublicRecord }) => void;
     fake.refresh.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
-    const refresh = screen.getByRole('button', { name: 'Refresh status' });
+    const refresh = screen.getByRole('button', { name: 'Check latest status' });
     fireEvent.click(refresh); fireEvent.click(refresh);
-    expect(fake.refresh).toHaveBeenCalledTimes(31); expect(screen.getByRole('button', { name: 'Refreshing status…' })).toBeDisabled();
+    expect(fake.refresh).toHaveBeenCalledTimes(67); expect(screen.getByRole('button', { name: 'Checking latest status…' })).toBeDisabled();
     release({ found: true, record: record({ updatedAt: '2027-06-10T22:03:00Z' }) });
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByRole('button', { name: 'Refresh status' })).toBeVisible(); expect(localStorage.getItem(acquisitionStorageKey)).toBe(beforeId); expect(fake.create).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Check latest status' })).toBeVisible(); expect(localStorage.getItem(acquisitionStorageKey)).toBe(beforeId); expect(fake.create).not.toHaveBeenCalled();
   });
 
   it('removes explicit refresh after its single server request returns terminal truth', async () => {
@@ -311,11 +379,23 @@ describe('Acquisition V1 experience', () => {
     fake.refresh.mockResolvedValue({ found: true, record: record() });
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     await act(async () => { await Promise.resolve(); });
-    for (let count = 0; count < 30; count += 1) await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    for (let count = 0; count < 66; count += 1) await act(async () => { await vi.runOnlyPendingTimersAsync(); });
     fake.refresh.mockResolvedValueOnce({ found: true, record: completed('PENDING') });
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check latest status' }));
     await act(async () => { await Promise.resolve(); });
-    expect(screen.queryByRole('button', { name: 'Refresh status' })).not.toBeInTheDocument(); expect(screen.getByText('NOT READY FOR REVIEW')).toBeVisible(); expect(fake.create).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Check latest status' })).not.toBeInTheDocument(); expect(screen.getByText('NOT READY FOR REVIEW')).toBeVisible(); expect(fake.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps automatic refresh errors distinct and leaves one manual current-status check available', async () => {
+    vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
+    fake.refresh.mockRejectedValueOnce(new Error('not exposed'));
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    expect(screen.getByText('Acquisition service is unavailable.')).toBeVisible();
+    expect(screen.getByText('Automatic status check paused')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Check latest status' })).toBeVisible();
+    expect(screen.queryByText('SAFE STOP', { exact: true })).not.toBeInTheDocument();
   });
 
   it('keeps confidence secondary to authority and shows both provenance axes', async () => {
