@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ACQUISITION_V1_CONTEXT,
+  ACQUISITION_V1_OBJECTIVE,
   createAcquisitionBrowserApi,
   createBrowserAcquisitionRequest,
   type AcquisitionBrowserApi,
@@ -140,7 +142,10 @@ describe('Acquisition V1 experience', () => {
     expect(within(rail).getAllByText('WAITING')).toHaveLength(2);
     expect(within(rail).getByText('LOCKED')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Acquire a decision' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Continue to Control →' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Start CALL-E acquisition' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Continue to Control' })).not.toBeInTheDocument();
+    expect(screen.getByText(ACQUISITION_V1_OBJECTIVE)).not.toBeVisible();
+    expect(screen.getByText(ACQUISITION_V1_CONTEXT)).not.toBeVisible();
   });
 
   it('keeps active acquisition evidence truthful with no fabricated turns', async () => {
@@ -175,7 +180,7 @@ describe('Acquisition V1 experience', () => {
     render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
     expect((await screen.findAllByText('Returned turn 4'))[0]).toBeVisible();
     expect(screen.getByText('Returned turn 5')).not.toBeVisible();
-    fireEvent.click(screen.getByText('View full transcript →'));
+    fireEvent.click(screen.getByText(/View full transcript/));
     expect(screen.getByText('Returned turn 6')).toBeVisible();
   });
 
@@ -195,7 +200,7 @@ describe('Acquisition V1 experience', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
     expect(fake.create).not.toHaveBeenCalled(); expect(screen.getByText(/Confirm explicit recipient authorization/)).toBeVisible();
     fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
-    fireEvent.submit(screen.getByRole('button', { name: 'Starting…' }).closest('form')!);
+    fireEvent.submit(document.getElementById('acquisition-create')!);
     expect(fake.create).toHaveBeenCalledTimes(1);
     resolveCreate({ accepted: true, record: record(), existing: false }); await waitFor(() => expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-TEST-1'));
     expect([...Array(localStorage.length)].map((_, index) => localStorage.key(index))).toEqual([acquisitionStorageKey]);
@@ -245,7 +250,7 @@ describe('Acquisition V1 experience', () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     render(<AcquisitionExperience api={api(completed('PENDING'))} onNavigateControl={() => undefined} />);
     const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
-    expect(within(eligibility).getByText('NOT READY FOR REVIEW')).toBeVisible(); expect(within(eligibility).getByText(/No authority created/)).toBeVisible();
+    expect(within(eligibility).getByText('NOT READY FOR REVIEW')).toBeVisible(); expect(within(eligibility).getByText(/No authority/, { selector: 'small' })).toBeVisible();
     expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -332,5 +337,6 @@ describe('Acquisition V1 experience', () => {
     const source = ['src/acquisition/browserClient.ts', 'src/ui/AcquisitionExperience.tsx', 'src/presentation/acquisitionViewModel.ts'].map((path) => readFileSync(path, 'utf8')).join('\n');
     expect(source).not.toMatch(/@call-e\/calle|CALLE_API_KEY|VITE_|CallEProvider|operatorScenario|control\/service|control\/store|prepareProof\(|reviewProof\(|executeOrchestrationAction|OrchestrationState|ProofSession/);
     expect(source).not.toMatch(/localStorage\.setItem\([^\n]*access|localStorage\.setItem\([^\n]*token/i);
+    expect(source).not.toMatch(/__mockup|mockup registry|prototype state selector|fixture business/i);
   });
 });
