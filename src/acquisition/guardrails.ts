@@ -5,6 +5,7 @@ import type { AcquisitionCreateInput, AcquisitionRecord, CreateAcquisitionResult
 export type AcquisitionGuardPolicy = Readonly<{
   liveCallingEnabled: boolean;
   allowedClientTokens: ReadonlySet<string>;
+  isClientAllowed?: (clientToken: string) => boolean;
   recipientAllowlist?: ReadonlySet<string>;
   perClientDailyLimit: number;
   globalDailyLimit: number;
@@ -26,7 +27,7 @@ export const evaluateAcquisitionGuard = (
   now: string,
 ): GuardRejection | undefined => {
   if (!policy.liveCallingEnabled) return rejection('LIVE_CALLING_DISABLED', 'Live acquisition is disabled by server policy');
-  if (!policy.allowedClientTokens.has(input.clientToken)) return rejection('CLIENT_NOT_ALLOWED', 'Client is not authorized for live acquisition');
+  if (!policy.allowedClientTokens.has(input.clientToken) && policy.isClientAllowed?.(input.clientToken) !== true) return rejection('CLIENT_NOT_ALLOWED', 'Client is not authorized for live acquisition');
   if (policy.recipientAllowlist !== undefined && !policy.recipientAllowlist.has(input.phoneNumber)) {
     return rejection('RECIPIENT_NOT_ALLOWED', 'Recipient is not allowed by server policy');
   }
@@ -64,6 +65,6 @@ export const acquisitionGuardPolicyFromEnvironment = (environment: NodeJS.Proces
     ? {}
     : { recipientAllowlist: csvSet(environment.ACQUISITION_RECIPIENT_ALLOWLIST) }),
   perClientDailyLimit: integer(environment.ACQUISITION_PER_CLIENT_DAILY_LIMIT, 1),
-  globalDailyLimit: integer(environment.ACQUISITION_GLOBAL_DAILY_LIMIT, 1),
+  globalDailyLimit: integer(environment.ACQUISITION_GLOBAL_DAILY_LIMIT, 25),
   cooldownMs: integer(environment.ACQUISITION_COOLDOWN_MS, 60_000),
 });

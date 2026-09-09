@@ -209,6 +209,18 @@ describe('Acquisition V1 server boundary', () => {
     expect(cooling.create).toHaveBeenCalledOnce();
   });
 
+  it('separates one-per-session allowance from the server-wide hosted budget', async () => {
+    const sessions = new Set(['HOSTED-SESSION-A', 'HOSTED-SESSION-B']);
+    const { service, create } = setup(call(), { allowedClientTokens: sessions, perClientDailyLimit: 1, globalDailyLimit: 2, cooldownMs: 0 });
+    const first = input({ acquisitionId: 'ACQ-HOSTED-A', clientToken: 'HOSTED-SESSION-A', request: { ...input().request, requestId: 'REQUEST-HOSTED-A' } });
+    const sameSession = input({ acquisitionId: 'ACQ-HOSTED-A-SECOND', clientToken: 'HOSTED-SESSION-A', request: { ...input().request, requestId: 'REQUEST-HOSTED-A-SECOND' } });
+    const distinctSession = input({ acquisitionId: 'ACQ-HOSTED-B', clientToken: 'HOSTED-SESSION-B', request: { ...input().request, requestId: 'REQUEST-HOSTED-B' } });
+    expect(await service.create(first)).toMatchObject({ accepted: true });
+    expect(await service.create(sameSession)).toMatchObject({ accepted: false, code: 'CALL_LIMIT_REACHED' });
+    expect(await service.create(distinctSession)).toMatchObject({ accepted: true });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
   it('polls queued to in_progress to completed without recreating the call', async () => {
     const { service, create, get } = setup(call('queued'));
     get.mockResolvedValueOnce(call('in_progress')).mockResolvedValueOnce(call('completed'));
@@ -406,8 +418,10 @@ describe('Acquisition V1 server boundary', () => {
     const providerInput: CreateCallInput = { task: 'Synthetic task.', recipients: [{ phones: [phone] }] };
     await gateway.create(providerInput, 'inert-idempotency-key');
     await gateway.get('call_test_001');
-    expect(apiKeySource).toHaveBeenCalledOnce();
-    expect(clientFactory).toHaveBeenCalledWith('inert-api-key');
+    expect(apiKeySource).toHaveBeenCalledTimes(2);
+    expect(clientFactory).toHaveBeenCalledTimes(2);
+    expect(clientFactory).toHaveBeenNthCalledWith(1, 'inert-api-key');
+    expect(clientFactory).toHaveBeenNthCalledWith(2, 'inert-api-key');
     expect(providerCreate).toHaveBeenCalledWith(providerInput, { idempotencyKey: 'inert-idempotency-key' });
     expect(providerGet).toHaveBeenCalledWith('call_test_001');
     expect(JSON.stringify(providerInput)).not.toContain('inert-api-key');

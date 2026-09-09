@@ -181,7 +181,7 @@ export class AcquisitionService {
       if (existing.status === 'creating' && existing.callId === null) {
         const callRequest: CallRequest = { ...input.request, phoneNumber: input.phoneNumber };
         try {
-          const call = await this.#gateway.create(buildCallEInput(callRequest), existing.idempotencyKey);
+          const call = await this.#gateway.create(buildCallEInput(callRequest), existing.idempotencyKey, input.clientToken);
           return { accepted: true, record: await this.#recordCall(existing, call), existing: true };
         } catch (_error: unknown) {
           return { accepted: true, record: await this.#recordProviderCreateFailure(existing), existing: true };
@@ -219,7 +219,7 @@ export class AcquisitionService {
 
     const callRequest: CallRequest = { ...input.request, phoneNumber: input.phoneNumber };
     try {
-      const call = await this.#gateway.create(buildCallEInput(callRequest), idempotencyKey);
+      const call = await this.#gateway.create(buildCallEInput(callRequest), idempotencyKey, input.clientToken);
       const record = await this.#recordCall(initial, call);
       return { accepted: true, record, existing: false };
     } catch (_error: unknown) {
@@ -239,7 +239,7 @@ export class AcquisitionService {
     const maximumAttempts = Math.ceil(this.#pollTimeoutMs / this.#pollIntervalMs);
     for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
       try {
-        const call = await this.#gateway.get(callId);
+        const call = await this.#gateway.get(callId, clientToken);
         record = await this.#recordCall(record, call);
       } catch (_error: unknown) {
         return { found: false, code: 'PROVIDER_FAILURE', reason: safeProviderFailure };
@@ -258,7 +258,7 @@ export class AcquisitionService {
     if (record.callId === null || isTerminalStatus(record.status)) return { found: true, record };
 
     try {
-      const call = await this.#gateway.get(record.callId);
+      const call = await this.#gateway.get(record.callId, clientToken);
       return { found: true, record: await this.#recordCall(record, call) };
     } catch (_error: unknown) {
       return { found: false, code: 'PROVIDER_FAILURE', reason: safeProviderFailure };

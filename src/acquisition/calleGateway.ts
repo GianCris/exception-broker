@@ -1,8 +1,8 @@
 import { CalleClient, type Call, type CreateCallInput } from '@call-e/calle';
 
 export interface AcquisitionCallGateway {
-  create(input: CreateCallInput, idempotencyKey: string): Promise<Call>;
-  get(callId: string): Promise<Call>;
+  create(input: CreateCallInput, idempotencyKey: string, connectionId?: string): Promise<Call>;
+  get(callId: string, connectionId?: string): Promise<Call>;
 }
 
 export type AcquisitionCalleClient = Readonly<{
@@ -12,13 +12,12 @@ export type AcquisitionCalleClient = Readonly<{
   }>;
 }>;
 
-export type AcquisitionApiKeySource = () => string | undefined;
+export type AcquisitionApiKeySource = (connectionId?: string) => string | undefined;
 export type AcquisitionClientFactory = (key: string) => AcquisitionCalleClient;
 
 export class CalleAcquisitionGateway implements AcquisitionCallGateway {
   readonly #apiKeySource: AcquisitionApiKeySource;
   readonly #clientFactory: AcquisitionClientFactory;
-  #client: AcquisitionCalleClient | undefined;
 
   constructor(
     apiKeySource: AcquisitionApiKeySource,
@@ -28,19 +27,17 @@ export class CalleAcquisitionGateway implements AcquisitionCallGateway {
     this.#clientFactory = clientFactory;
   }
 
-  #getClient(): AcquisitionCalleClient {
-    if (this.#client !== undefined) return this.#client;
-    const apiKey = this.#apiKeySource();
+  #getClient(connectionId?: string): AcquisitionCalleClient {
+    const apiKey = this.#apiKeySource(connectionId);
     if (apiKey === undefined || apiKey.trim() === '') throw new Error('CALL-E API key is unavailable');
-    this.#client = this.#clientFactory(apiKey);
-    return this.#client;
+    return this.#clientFactory(apiKey);
   }
 
-  create(input: CreateCallInput, idempotencyKey: string): Promise<Call> {
-    return this.#getClient().calls.create(input, { idempotencyKey });
+  create(input: CreateCallInput, idempotencyKey: string, connectionId?: string): Promise<Call> {
+    return this.#getClient(connectionId).calls.create(input, { idempotencyKey });
   }
 
-  get(callId: string): Promise<Call> {
-    return this.#getClient().calls.get(callId);
+  get(callId: string, connectionId?: string): Promise<Call> {
+    return this.#getClient(connectionId).calls.get(callId);
   }
 }

@@ -1,6 +1,7 @@
 import type { AcquisitionService } from './service.js';
 import { toPublicAcquisitionRecord } from './contracts.js';
 import type { LiveControlService } from '../control/service.js';
+import type { AcquisitionAccessService } from './access.js';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -9,15 +10,41 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 export type AcquisitionHttpHandler = (request: Request) => Promise<Response>;
 
-export const createAcquisitionHttpHandler = (service: AcquisitionService, controls?: LiveControlService): AcquisitionHttpHandler => async (request) => {
+export const createAcquisitionHttpHandler = (service: AcquisitionService, controls?: LiveControlService, access?: AcquisitionAccessService): AcquisitionHttpHandler => async (request) => {
   const url = new URL(request.url);
-  const clientToken = request.headers.get('x-acquisition-demo-token') ?? '';
+  const clientToken = request.headers.get('x-acquisition-connection') ?? request.headers.get('x-acquisition-demo-token') ?? '';
   const match = /^\/api\/acquisitions\/([^/]+)$/.exec(url.pathname);
   const pollMatch = /^\/api\/acquisitions\/([^/]+)\/poll$/.exec(url.pathname);
   const refreshMatch = /^\/api\/acquisitions\/([^/]+)\/refresh$/.exec(url.pathname);
   const controlMatch = /^\/api\/acquisitions\/([^/]+)\/control$/.exec(url.pathname);
   const controlReadMatch = /^\/api\/control-sessions\/([^/]+)$/.exec(url.pathname);
   const reviewMatch = /^\/api\/control-sessions\/([^/]+)\/review$/.exec(url.pathname);
+
+  if (access !== undefined && request.method === 'POST' && url.pathname === '/api/acquisition-access/hosted') {
+    const connection = access.connectHosted(clientToken || undefined);
+    return connection === undefined
+      ? json({ connected: false, code: 'HOSTED_ACCESS_UNAVAILABLE' }, 503)
+      : json(connection, 201);
+  }
+  if (access !== undefined && request.method === 'POST' && url.pathname === '/api/acquisition-access/byok') {
+    let body: unknown;
+    try { body = await request.json(); } catch { return json({ connected: false, code: 'INVALID_INPUT' }, 400); }
+    const apiKey = typeof body === 'object' && body !== null && !Array.isArray(body) && Object.keys(body).length === 1 && 'apiKey' in body && typeof body.apiKey === 'string'
+      ? body.apiKey
+      : '';
+    const connection = access.connectByok(apiKey);
+    return connection === undefined
+      ? json({ connected: false, code: 'INVALID_INPUT' }, 400)
+      : json(connection, 201);
+  }
+  if (access !== undefined && request.method === 'GET' && url.pathname === '/api/acquisition-access') {
+    const connection = access.get(clientToken);
+    return connection === undefined ? json({ connected: false, code: 'CONNECTION_NOT_FOUND' }, 404) : json(connection);
+  }
+  if (access !== undefined && request.method === 'DELETE' && url.pathname === '/api/acquisition-access') {
+    access.disconnect(clientToken);
+    return json({ connected: false });
+  }
 
   if (controls !== undefined && request.method === 'POST' && controlMatch !== null) {
     const result = await controls.create(decodeURIComponent(controlMatch[1] ?? ''), clientToken);

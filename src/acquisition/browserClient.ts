@@ -1,6 +1,7 @@
 import type { AcquisitionPublicRecord } from './contracts.js';
 import { OPERATOR_SANDBOX_DEFINITION, OPERATOR_SANDBOX_FACTS, OPERATOR_SANDBOX_OBJECTIVE, operatorSandboxContext } from '../sandbox/operatorDefinition.js';
 import type { LiveControlPublicRecord } from '../control/contracts.js';
+import type { AcquisitionConnectionPublic } from './access.js';
 
 export type BrowserAcquisitionCreateInput = Readonly<{
   acquisitionId: string;
@@ -32,6 +33,10 @@ export type BrowserReadResult = Readonly<{
 }>;
 
 export interface AcquisitionBrowserApi {
+  connectHosted(existingConnectionId?: string): Promise<AcquisitionConnectionPublic>;
+  connectByok(apiKey: string): Promise<AcquisitionConnectionPublic>;
+  getConnection(connectionId: string): Promise<AcquisitionConnectionPublic>;
+  disconnect(connectionId: string): Promise<void>;
   create(input: BrowserAcquisitionCreateInput): Promise<BrowserCreateResult>;
   get(acquisitionId: string, accessToken: string): Promise<AcquisitionPublicRecord>;
   refresh(acquisitionId: string, accessToken: string): Promise<BrowserReadResult>;
@@ -67,6 +72,23 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
 export const createAcquisitionBrowserApi = (
   fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
 ): AcquisitionBrowserApi => ({
+  async connectHosted(existingConnectionId) {
+    return parseResponse<AcquisitionConnectionPublic>(await fetcher('/api/acquisition-access/hosted', {
+      method: 'POST',
+      ...(existingConnectionId === undefined ? {} : { headers: { 'x-acquisition-connection': existingConnectionId } }),
+    }));
+  },
+  async connectByok(apiKey) {
+    return parseResponse<AcquisitionConnectionPublic>(await fetcher('/api/acquisition-access/byok', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKey }),
+    }));
+  },
+  async getConnection(connectionId) {
+    return parseResponse<AcquisitionConnectionPublic>(await fetcher('/api/acquisition-access', { headers: { 'x-acquisition-connection': connectionId } }));
+  },
+  async disconnect(connectionId) {
+    await parseResponse(await fetcher('/api/acquisition-access', { method: 'DELETE', headers: { 'x-acquisition-connection': connectionId } }));
+  },
   async create(input) {
     return parseResponse<BrowserCreateResult>(await fetcher('/api/acquisitions', {
       method: 'POST',
@@ -76,23 +98,23 @@ export const createAcquisitionBrowserApi = (
   },
   async get(acquisitionId, accessToken) {
     return parseResponse<AcquisitionPublicRecord>(await fetcher(`/api/acquisitions/${encodeURIComponent(acquisitionId)}`, {
-      headers: { 'x-acquisition-demo-token': accessToken },
+      headers: { 'x-acquisition-connection': accessToken },
     }));
   },
   async refresh(acquisitionId, accessToken) {
     return parseResponse<BrowserReadResult>(await fetcher(`/api/acquisitions/${encodeURIComponent(acquisitionId)}/refresh`, {
       method: 'POST',
-      headers: { 'x-acquisition-demo-token': accessToken },
+      headers: { 'x-acquisition-connection': accessToken },
     }));
   },
   async handoff(acquisitionId, accessToken) {
-    return parseResponse(await fetcher(`/api/acquisitions/${encodeURIComponent(acquisitionId)}/control`, { method: 'POST', headers: { 'x-acquisition-demo-token': accessToken } }));
+    return parseResponse(await fetcher(`/api/acquisitions/${encodeURIComponent(acquisitionId)}/control`, { method: 'POST', headers: { 'x-acquisition-connection': accessToken } }));
   },
   async getControl(controlSessionId, accessToken) {
-    return parseResponse(await fetcher(`/api/control-sessions/${encodeURIComponent(controlSessionId)}`, { headers: { 'x-acquisition-demo-token': accessToken } }));
+    return parseResponse(await fetcher(`/api/control-sessions/${encodeURIComponent(controlSessionId)}`, { headers: { 'x-acquisition-connection': accessToken } }));
   },
   async review(controlSessionId, accessToken, action) {
-    return parseResponse(await fetcher(`/api/control-sessions/${encodeURIComponent(controlSessionId)}/review`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-acquisition-demo-token': accessToken }, body: JSON.stringify({ action }) }));
+    return parseResponse(await fetcher(`/api/control-sessions/${encodeURIComponent(controlSessionId)}/review`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-acquisition-connection': accessToken }, body: JSON.stringify({ action }) }));
   },
 });
 

@@ -13,11 +13,13 @@ import {
 } from '../../src/acquisition/browserClient.js';
 import type { AcquisitionPublicRecord } from '../../src/acquisition/contracts.js';
 import type { LiveControlPublicRecord } from '../../src/control/contracts.js';
-import { phoneDecisionSchema } from '../../src/integrations/calle/schemas.js';
+import { callRequestSchema, phoneDecisionSchema } from '../../src/integrations/calle/schemas.js';
+import { buildCallEInput } from '../../src/integrations/calle/callEProvider.js';
 import { createAcquisitionPresentation } from '../../src/presentation/acquisitionViewModel.js';
 import {
   AcquisitionExperience,
   acquisitionAccessKey,
+  acquisitionHostedSessionKey,
   acquisitionStorageKey,
 } from '../../src/ui/AcquisitionExperience.js';
 import { App } from '../../src/App.js';
@@ -38,16 +40,32 @@ const completed = (decision: 'APPROVED' | 'REJECTED' | 'PENDING' = 'PENDING'): A
   safeStopReason: decision === 'PENDING' ? 'Decision PENDING requires a safe stop before review' : null,
 });
 const api = (initial = record()): AcquisitionBrowserApi & { create: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn>; handoff: ReturnType<typeof vi.fn>; getControl: ReturnType<typeof vi.fn>; review: ReturnType<typeof vi.fn> } => ({
+  connectHosted: vi.fn().mockResolvedValue({ connectionId: 'INERT-SESSION-TOKEN', kind: 'HOSTED_DEMO', connected: true }),
+  connectByok: vi.fn().mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true }),
+  getConnection: vi.fn().mockResolvedValue({ connectionId: 'ACCESS', kind: 'HOSTED_DEMO', connected: true }),
+  disconnect: vi.fn().mockResolvedValue(undefined),
   create: vi.fn().mockResolvedValue({ accepted: true, record: initial, existing: false }),
   get: vi.fn().mockResolvedValue(initial), refresh: vi.fn().mockResolvedValue({ found: true, record: initial }),
   handoff: vi.fn(), getControl: vi.fn(), review: vi.fn(),
 });
-const unlock = () => {
-  fireEvent.change(screen.getByLabelText('Temporary live-access token'), { target: { value: 'INERT-SESSION-TOKEN' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Unlock session' }));
+const unlock = async () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Use hosted demo' }));
+  await screen.findByRole('heading', { name: 'Acquire a decision' });
 };
 
 describe('Acquisition V1 browser client', () => {
+  it('connects hosted access without browser credentials and sends BYOK only once to the server endpoint', async () => {
+    const connection = { connectionId: 'OPAQUE-CONNECTION', kind: 'BYOK', connected: true };
+    const fetcher = vi.fn().mockImplementation(async () => new Response(JSON.stringify(connection), { status: 201, headers: { 'content-type': 'application/json' } }));
+    const client = createAcquisitionBrowserApi(fetcher);
+    await client.connectHosted();
+    await client.connectByok('INERT-BYOK-KEY');
+    expect(fetcher.mock.calls[0]).toEqual(['/api/acquisition-access/hosted', { method: 'POST' }]);
+    expect(fetcher.mock.calls[1]?.[0]).toBe('/api/acquisition-access/byok');
+    expect(JSON.parse(fetcher.mock.calls[1]?.[1].body)).toEqual({ apiKey: 'INERT-BYOK-KEY' });
+    expect(JSON.stringify(connection)).not.toContain('INERT-BYOK-KEY');
+  });
+
   it('uses the existing create body contract without putting access in URL or headers', async () => {
     const response = { accepted: true, record: record(), existing: false };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 201, headers: { 'content-type': 'application/json' } }));
@@ -64,7 +82,7 @@ describe('Acquisition V1 browser client', () => {
   it('recovers with GET and the existing access header without token query leakage', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(record()), { status: 200, headers: { 'content-type': 'application/json' } }));
     await createAcquisitionBrowserApi(fetcher).get('ACQ-TEST-1', 'ACCESS');
-    expect(fetcher).toHaveBeenCalledWith('/api/acquisitions/ACQ-TEST-1', { headers: { 'x-acquisition-demo-token': 'ACCESS' } });
+    expect(fetcher).toHaveBeenCalledWith('/api/acquisitions/ACQ-TEST-1', { headers: { 'x-acquisition-connection': 'ACCESS' } });
     expect(fetcher.mock.calls[0]![0]).not.toContain('ACCESS');
   });
 
@@ -72,7 +90,7 @@ describe('Acquisition V1 browser client', () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ found: true, record: record() }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const client = createAcquisitionBrowserApi(fetcher);
     await client.refresh('ACQ / 1', 'ACCESS');
-    expect(fetcher).toHaveBeenCalledWith('/api/acquisitions/ACQ%20%2F%201/refresh', { method: 'POST', headers: { 'x-acquisition-demo-token': 'ACCESS' } });
+    expect(fetcher).toHaveBeenCalledWith('/api/acquisitions/ACQ%20%2F%201/refresh', { method: 'POST', headers: { 'x-acquisition-connection': 'ACCESS' } });
     expect(JSON.stringify(fetcher.mock.calls)).not.toContain('CALLE_API_KEY');
   });
 
@@ -88,6 +106,18 @@ describe('Acquisition V1 browser client', () => {
     const input = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', accessToken: 'ACCESS', phoneNumber: '+15551234567' });
     expect(input.request).toMatchObject({ caseId: 'CASE-OPERATOR-SANDBOX', planId: 'PLAN-OPERATOR-SANDBOX', actorId: 'ACTOR-OPERATOR-CLIENT', actorRole: 'client' });
     expect(input).not.toHaveProperty('operationalTruth');
+  });
+
+  it('builds a neutral terms-before-decision CALL-E protocol from the real scenario values', () => {
+    const browser = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', accessToken: 'ACCESS', phoneNumber: '+15551234567' });
+    const task = buildCallEInput(callRequestSchema.parse({ ...browser.request, phoneNumber: browser.phoneNumber })).task;
+    expect(task).toContain('present the exact proposal: 350 original units, 150 substitute units, 0 additional Client cost, 500 total units');
+    expect(task).toContain('no more than 180 substitute units');
+    expect(task).toContain('no more than 100 additional Client cost');
+    expect(task).toContain('Only after presenting the proposal and conditions');
+    expect(task).toContain('If the recipient gives a decision before hearing those terms');
+    expect(task).toContain('no outcome is preferred');
+    expect(task).not.toMatch(/prefer APPROVED|expected answer is APPROVED/i);
   });
 
   it('keeps per-call identity, recipient and time outside the canonical definition', () => {
@@ -120,23 +150,48 @@ describe('Acquisition V1 experience', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: 'Decisions need guardrails to reach reality.' })).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Acquisition' }));
-    expect(screen.getByRole('heading', { name: 'Unlock Live Acquisition' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Choose how to connect CALL-E' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Control' }));
     expect(screen.getByRole('heading', { name: 'Decision is not authority.' })).toBeVisible();
   });
 
-  it('keeps access in sessionStorage, never localStorage, and clears the visible secret input', () => {
+  it('offers hosted and own-account connection paths without exposing demo-token UX', () => {
     render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
-    unlock();
-    expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('INERT-SESSION-TOKEN');
-    expect(JSON.stringify(localStorage)).not.toContain('INERT-SESSION-TOKEN');
-    expect(screen.queryByDisplayValue('INERT-SESSION-TOKEN')).not.toBeInTheDocument();
-    expect(screen.getByText(/token is not business identity/)).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Choose how to connect CALL-E' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Use hosted demo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Connect your CALL-E account' })).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/temporary live-access token/i);
   });
 
-  it('presents READY as a controlled four-stage path with Control locked', () => {
+  it('keeps a BYOK key out of browser storage and disconnects only the opaque connection', async () => {
+    const fake = api();
+    vi.mocked(fake.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    fireEvent.change(screen.getByLabelText('CALL-E API key'), { target: { value: 'INERT-BYOK-KEY' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect CALL-E' }));
+    await screen.findByText('Your CALL-E account is connected for this session');
+    expect(fake.connectByok).toHaveBeenCalledWith('INERT-BYOK-KEY');
+    expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('INERT-BYOK-CONNECTION');
+    expect(JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } })).not.toContain('INERT-BYOK-KEY');
+    expect(screen.queryByDisplayValue('INERT-BYOK-KEY')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect CALL-E' }));
+    expect(fake.disconnect).toHaveBeenCalledWith('INERT-BYOK-CONNECTION');
+    await waitFor(() => expect(sessionStorage.getItem(acquisitionAccessKey)).toBeNull());
+  });
+
+  it('keeps only opaque hosted access in sessionStorage and never exposes the raw demo-token concept', async () => {
     render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
-    unlock();
+    await unlock();
+    expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('INERT-SESSION-TOKEN');
+    expect(sessionStorage.getItem(acquisitionHostedSessionKey)).toBe('INERT-SESSION-TOKEN');
+    expect(JSON.stringify(localStorage)).not.toContain('INERT-SESSION-TOKEN');
+    expect(document.body.textContent).not.toMatch(/temporary live-access token/i);
+    expect(screen.getByText(/Connection access is not business identity/)).toBeVisible();
+  });
+
+  it('presents READY as a controlled four-stage path with Control locked', async () => {
+    render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    await unlock();
     const rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
     expect(within(rail).getByText('READY')).toBeVisible();
     expect(within(rail).getAllByText('WAITING')).toHaveLength(2);
@@ -187,7 +242,7 @@ describe('Acquisition V1 experience', () => {
   it('locking clears session access but preserves the non-sensitive recovery pointer', async () => {
     localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
     render(<AcquisitionExperience api={api(completed('PENDING'))} onNavigateControl={() => undefined} />);
-    await screen.findByText('Call completed'); fireEvent.click(screen.getByRole('button', { name: 'Configure live access' }));
+    await screen.findByText('Call completed'); fireEvent.click(screen.getByRole('button', { name: 'Disconnect CALL-E' }));
     expect(sessionStorage.getItem(acquisitionAccessKey)).toBeNull(); expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-TEST-1');
     expect(screen.getByText(/Recovery locked/)).toBeVisible();
   });
@@ -196,7 +251,7 @@ describe('Acquisition V1 experience', () => {
     const fake = api(); let resolveCreate!: (value: { accepted: true; record: AcquisitionPublicRecord; existing: false }) => void;
     fake.create.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve; }));
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'FIXED'} clock={() => '2027-06-10T22:00:00Z'} />);
-    unlock(); fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
+    await unlock(); fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
     expect(fake.create).not.toHaveBeenCalled(); expect(screen.getByText(/Confirm explicit recipient authorization/)).toBeVisible();
     fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
@@ -223,7 +278,7 @@ describe('Acquisition V1 experience', () => {
   it('keeps the opaque pointer after failed restoration and clears it only explicitly', async () => {
     localStorage.setItem(acquisitionStorageKey, 'ACQ-OPAQUE'); sessionStorage.setItem(acquisitionAccessKey, 'WRONG'); const fake = api(); fake.get.mockRejectedValue(new Error('opaque'));
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
-    expect(await screen.findByText(/could not be restored with the current live-access session/)).toBeVisible();
+    expect((await screen.findAllByText(/could not be restored with the current live-access session/i))[0]).toBeVisible();
     expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-OPAQUE');
     fireEvent.click(screen.getByRole('button', { name: 'Clear recovery pointer' })); expect(localStorage.getItem(acquisitionStorageKey)).toBeNull();
   });

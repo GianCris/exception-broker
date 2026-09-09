@@ -27,17 +27,21 @@ export const renderOperatorFacts = (facts: OperatorSandboxFacts) =>
 
 /** Synthetic Client policy for acquisition only; downstream execution controls remain independent. */
 export const renderClientDecisionPolicy = (facts: OperatorSandboxFacts) => [
-  `Required Client conditions: deliver ${facts.requestedQuantity} total units by ${facts.targetDeliveryDate};`,
-  `use no more than ${facts.substituteAuthorizationLimit} substitute units;`,
-  `and charge the Client no more than ${facts.clientCostLimit} additional cost.`,
-  `Proposal facts: ${facts.originalQuantity} original units, ${facts.substituteQuantity} substitute units, and ${facts.clientAdditionalCost} Client additional cost.`,
+  'Follow this sequence before accepting a final decision.',
+  'First, identify that the purpose is a controlled decision on the stated recovery proposal.',
+  `Then present the exact proposal: ${facts.originalQuantity} original units, ${facts.substituteQuantity} substitute units, ${facts.clientAdditionalCost} additional Client cost, ${facts.requestedQuantity} total units, delivered by ${facts.targetDeliveryDate}.`,
+  `Then present the hard Client conditions: no more than ${facts.substituteAuthorizationLimit} substitute units, no more than ${facts.clientCostLimit} additional Client cost, and ${facts.requestedQuantity} total units delivered by ${facts.targetDeliveryDate}.`,
   `Supplier absorbed cost ${facts.supplierAbsorbedCost} is proposal context, not a Client hard condition.`,
+  'Only after presenting the proposal and conditions, ask for exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION.',
+  'If the recipient gives a decision before hearing those terms, do not accept it as final; present the terms and ask again.',
   'Return APPROVED only when every required Client condition is satisfied.',
   'Return REJECTED when any stated hard Client condition is violated.',
   'Return NEEDS_CLARIFICATION only when information necessary to evaluate those conditions is missing or ambiguous.',
-  'Evaluate neutrally; no outcome is preferred. Give a brief reason and exactly one decision.',
+  'Evaluate neutrally; no outcome is preferred and you must not persuade the recipient.',
+  'Obtain a brief reason or evidence basis. Do not infer or request an authorization change.',
+  'Finish only after one explicit supported decision is captured, or when the conversation genuinely requires clarification.',
 ].join(' ');
 
-export const OPERATOR_SANDBOX_OBJECTIVE = 'Obtain one synthetic Client decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION. No authorization change is requested.';
+export const OPERATOR_SANDBOX_OBJECTIVE = 'Conduct a neutral synthetic Client decision acquisition for the controlled recovery proposal. Present the proposal and hard conditions before obtaining exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION. No authorization change is requested.';
 export const operatorSandboxContext = (facts: OperatorSandboxFacts = OPERATOR_SANDBOX_FACTS) =>
   `Synthetic sandbox test only; no real customer authority or external effect. ${renderClientDecisionPolicy(facts)}`;
