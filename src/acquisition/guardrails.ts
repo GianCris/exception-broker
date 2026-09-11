@@ -20,11 +20,20 @@ const utcDay = (timestamp: string) => timestamp.slice(0, 10);
 export const hashClientToken = (token: string): string =>
   createHash('sha256').update(token, 'utf8').digest('hex');
 
+/**
+ * A Hosted attempt is spent unless the server can PROVE no provider request was dispatched.
+ * Ambiguous acceptance still counts: it may have reached CALL-E.
+ */
+const consumedProviderBudget = (record: AcquisitionRecord): boolean =>
+  record.technicalFailure?.acceptance !== 'DEFINITELY_NOT_SENT';
+
 export const evaluateAcquisitionGuard = (
   input: AcquisitionCreateInput,
   records: readonly AcquisitionRecord[],
   policy: AcquisitionGuardPolicy,
   now: string,
+  /** One server-verified recovery of a terminal technical provider failure. Never client-granted. */
+  technicalRecovery = false,
 ): GuardRejection | undefined => {
   if (!policy.liveCallingEnabled) return rejection('LIVE_CALLING_DISABLED', 'Live acquisition is disabled by server policy');
   if (!policy.allowedClientTokens.has(input.clientToken) && policy.isClientAllowed?.(input.clientToken) !== true) return rejection('CLIENT_NOT_ALLOWED', 'Client is not authorized for live acquisition');
@@ -39,8 +48,10 @@ export const evaluateAcquisitionGuard = (
   if (input.accessMode === 'BYOK') return undefined;
   const today = utcDay(now);
   // Missing accessMode is conservative legacy Hosted usage, never inferred BYOK.
-  const todayRecords = records.filter((record) => record.accessMode !== 'BYOK' && utcDay(record.createdAt) === today);
+  const todayRecords = records.filter((record) => record.accessMode !== 'BYOK' && utcDay(record.createdAt) === today && consumedProviderBudget(record));
+  // The server-wide budget always applies, including to a verified technical recovery.
   if (todayRecords.length >= policy.globalDailyLimit) return rejection('CALL_LIMIT_REACHED', 'Global live acquisition limit reached');
+  if (technicalRecovery) return undefined;
 
   const clientRecords = todayRecords.filter((record) => record.clientTokenHash === clientHash);
   if (clientRecords.length >= policy.perClientDailyLimit) return rejection('CALL_LIMIT_REACHED', 'Client live acquisition limit reached');

@@ -7,6 +7,8 @@ export type BrowserAcquisitionCreateInput = Readonly<{
   acquisitionId: string;
   authorizationConfirmed: true;
   phoneNumber?: string;
+  /** A claim the server re-verifies. It never grants quota or authority by itself. */
+  recoveryOfAcquisitionId?: string;
   request: Readonly<{
     requestId: string;
     caseId: string;
@@ -125,6 +127,33 @@ export const createAcquisitionBrowserApi = (
 
 export const ACQUISITION_V1_OBJECTIVE = OPERATOR_SANDBOX_OBJECTIVE;
 export const ACQUISITION_V1_CONTEXT = operatorSandboxContext();
+
+/**
+ * Rebuilds the canonical create input for an acquisition whose provider acceptance is unknown,
+ * so reconciliation re-submits the same content under the same acquisition id. The server still
+ * recomputes and verifies the fingerprint and keeps its own persisted idempotency key: this only
+ * supplies request content the server never stored. Hosted recipients are server-owned, so only
+ * Hosted records are reconstructible from a public record alone.
+ */
+export const reconcileBrowserAcquisitionRequest = (record: AcquisitionPublicRecord): BrowserAcquisitionCreateInput | null => {
+  const { requestId, createdAt, caseId, planId, actorId, actorRole } = record.decisionContext;
+  if (record.accessMode !== 'HOSTED_DEMO' || actorRole !== 'client' || planId === undefined) return null;
+  return {
+    acquisitionId: record.acquisitionId,
+    authorizationConfirmed: true,
+    request: {
+      requestId,
+      caseId,
+      planId,
+      actorId,
+      actorRole,
+      objective: ACQUISITION_V1_OBJECTIVE,
+      context: ACQUISITION_V1_CONTEXT,
+      expectedDecisionSchema: OPERATOR_SANDBOX_DEFINITION.expectedDecisionSchema,
+      createdAt,
+    },
+  };
+};
 
 export const createBrowserAcquisitionRequest = (input: Readonly<{
   identity: string;

@@ -545,8 +545,12 @@ describe('Acquisition V1 experience', () => {
   it('keeps provider/system failure separate from SAFE_STOP and Broker outcomes', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     render(<AcquisitionExperience api={api(record({ status: 'failed', terminalAt: '2027-06-10T22:02:00Z' }))} onNavigateControl={() => undefined} />);
-    const alert = await screen.findByRole('alert'); expect(within(alert).getByText(/not a business SAFE_STOP or Broker disposition/)).toBeVisible();
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText(/technical provider outcome, not a business SAFE STOP/)).toBeVisible();
+    expect(within(alert).getByText(/No decision was formed\. No Control handoff or external execution occurred\./)).toBeVisible();
     expect(screen.queryByText('NOT READY FOR REVIEW')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'SAFE STOP' })).not.toBeInTheDocument();
+    expect(within(alert).getByRole('button', { name: 'Control locked' })).toBeDisabled();
   });
 
   it('contains no provider SDK, server control implementation, operator scenario, or VITE credential in browser acquisition modules', () => {
@@ -1121,5 +1125,114 @@ describe('Acquisition V1 Pass 2A — active instrument + documentary conversatio
   it('neutralizes travelling-signal and title-shift motion under reduced motion via the existing universal override', () => {
     const css = readFileSync('src/styles/acquisition.css', 'utf8');
     expect(css).toContain('.acquisition-shell *,.acquisition-shell *::before,.acquisition-shell *::after { animation-duration:.01ms!important');
+  });
+});
+
+describe('Acquisition V1 technical failure and recovery', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.useRealTimers(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  const ambiguous = (): AcquisitionPublicRecord => record({
+    accessMode: 'HOSTED_DEMO',
+    technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', reconciliationAvailable: true, attempts: 2, code: 'Error', message: 'socket hang up', observedAt: '2027-06-10T22:00:05Z' },
+  });
+  const providerFailed = (overrides: Partial<AcquisitionPublicRecord> = {}): AcquisitionPublicRecord => record({
+    status: 'failed', terminalAt: '2027-06-10T22:02:00Z', accessMode: 'HOSTED_DEMO', normalizationStatus: 'SAFE_STOP', handoffState: 'SAFE_STOP',
+    technicalFailure: { stage: 'PROVIDER_TERMINAL', acceptance: 'PROVIDER_IDENTIFIED', reconciliationAvailable: false, attempts: 1, code: 'call_failed', message: 'Call failed safely.', observedAt: '2027-06-10T22:02:00Z' },
+    ...overrides,
+  });
+
+  it('presents ambiguous acceptance as recoverable rather than as a provider outcome', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { container } = render(<AcquisitionExperience api={api(ambiguous())} onNavigateControl={() => undefined} />);
+    expect(await screen.findByRole('heading', { name: 'Acquisition needs reconciliation' })).toBeVisible();
+    expect(screen.getByText('No decision was formed. No Control handoff or external execution occurred.')).toBeVisible();
+    // Never dressed as a provider result, a business SAFE STOP or a preparing call.
+    expect(screen.queryByRole('heading', { name: "CALL-E couldn't complete this acquisition" })).not.toBeInTheDocument();
+    expect(screen.queryByText('SAFE STOP')).not.toBeInTheDocument();
+    expect(container.querySelector('.acq-signal-instrument')).toBeNull();
+    expect(screen.getByText(/did not receive a call identity from CALL-E/)).toBeVisible();
+    expect(screen.getByRole('button', { name: /Retry safely/ })).toBeVisible();
+  });
+
+  it('reconciles under the same acquisition id and idempotent server key, never as a new acquisition', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const fake = api(ambiguous());
+    fake.create.mockResolvedValue({ accepted: true, record: record({ status: 'queued', callId: 'CALL-TEST-1' }), existing: true });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'FRESH-IDENTITY'} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Retry safely/ }));
+    await waitFor(() => expect(fake.create).toHaveBeenCalledTimes(1));
+    const [submitted] = fake.create.mock.calls[0] as [{ acquisitionId: string; recoveryOfAcquisitionId?: string; request: { createdAt: string; requestId: string } }];
+    expect(submitted.acquisitionId).toBe('ACQ-TEST-1');
+    expect(submitted.acquisitionId).not.toContain('FRESH-IDENTITY');
+    // A reconciliation is never a recovery redial and never regenerates request identity.
+    expect(submitted.recoveryOfAcquisitionId).toBeUndefined();
+    expect(submitted.request.requestId).toBe('REQUEST-TEST-1');
+    expect(submitted.request.createdAt).toBe('2027-06-10T22:00:00Z');
+  });
+
+  it('keeps technical details collapsed and free of secrets, with a truthful legacy fallback', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { unmount } = render(<AcquisitionExperience api={api(providerFailed())} onNavigateControl={() => undefined} />);
+    const summary = await screen.findByText('Technical details');
+    expect(summary.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(summary);
+    expect(screen.getByText('CALL-E accepted the call and returned its identity')).toBeVisible();
+    expect(screen.getByText('call_failed')).toBeVisible();
+    expect(screen.getByText('Call failed safely.')).toBeVisible();
+    unmount();
+
+    // A record written before diagnostics existed must not be given an invented cause.
+    render(<AcquisitionExperience api={api(record({ status: 'failed', terminalAt: '2027-06-10T22:02:00Z' }))} onNavigateControl={() => undefined} />);
+    fireEvent.click(await screen.findByText('Technical details'));
+    expect(screen.getByText('Technical cause unavailable for this earlier record.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Retry hosted test/ })).not.toBeInTheDocument();
+  });
+
+  it('offers one explicit Hosted redial for a provider-confirmed failure and never dials automatically', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const fake = api(providerFailed());
+    fake.create.mockResolvedValue({ accepted: true, record: record({ acquisitionId: 'ACQ-BROWSER-V1-RECOVERY', status: 'queued' }), existing: false });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'RECOVERY'} clock={() => '2027-06-10T22:05:00Z'} />);
+    expect(await screen.findByRole('heading', { name: "CALL-E couldn't complete this acquisition" })).toBeVisible();
+    // Nothing is dialled until the user explicitly asks for it.
+    expect(fake.create).not.toHaveBeenCalled();
+    const redial = screen.getByRole('button', { name: /Retry hosted test/ });
+    expect(screen.getByText('Places one new live call to the synthetic destination')).toBeVisible();
+    fireEvent.click(redial);
+    await waitFor(() => expect(fake.create).toHaveBeenCalledTimes(1));
+    const [submitted] = fake.create.mock.calls[0] as [{ acquisitionId: string; recoveryOfAcquisitionId?: string }];
+    // A real second call needs a new acquisition identity, and therefore a new idempotency key.
+    expect(submitted.acquisitionId).toBe('ACQ-BROWSER-V1-RECOVERY');
+    expect(submitted.recoveryOfAcquisitionId).toBe('ACQ-TEST-1');
+  });
+
+  it('withdraws the redial once the allowance is already spent, and never offers it for BYOK', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { unmount } = render(<AcquisitionExperience api={api(providerFailed({ recoveredByAcquisitionId: 'ACQ-ALREADY-RECOVERED' }))} onNavigateControl={() => undefined} />);
+    await screen.findByRole('heading', { name: "CALL-E couldn't complete this acquisition" });
+    expect(screen.queryByRole('button', { name: /Retry hosted test/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Control locked' })).toBeDisabled();
+    unmount();
+
+    const byok = api(providerFailed({ accessMode: 'BYOK' }));
+    vi.mocked(byok.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
+    render(<AcquisitionExperience api={byok} onNavigateControl={() => undefined} />);
+    await screen.findByRole('heading', { name: "CALL-E couldn't complete this acquisition" });
+    expect(screen.queryByRole('button', { name: /Retry hosted test/ })).not.toBeInTheDocument();
+    expect(byok.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Pass 2A shell and the guided-demo escape hatch available through a technical failure', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const onNavigateControl = vi.fn();
+    const { container } = render(<AcquisitionExperience api={api(providerFailed())} onNavigateControl={onNavigateControl} />);
+    await screen.findByRole('heading', { name: "CALL-E couldn't complete this acquisition" });
+    expect(container.querySelector('.acq-topbar')).not.toBeNull();
+    expect(container.querySelector('.acq-rail')).not.toBeNull();
+    expect(container.querySelector('.acq-rail-scene')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Connect your CALL-E account' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Try guided demo' }));
+    expect(onNavigateControl).toHaveBeenCalledTimes(1);
   });
 });
