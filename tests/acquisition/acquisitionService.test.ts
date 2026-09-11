@@ -509,6 +509,76 @@ describe('Acquisition V1 server boundary', () => {
     expect(second).toMatchObject({ accepted: true, record: { acquisitionId: 'ACQ-002', status: 'queued' } });
   });
 
+  it('keeps acceptance UNKNOWN when an ambiguous dispatch is followed by a proven-local refusal in the same invocation', async () => {
+    const { service, create, store } = setup(call('queued'), { perClientDailyLimit: 1 });
+    create.mockRejectedValueOnce(new Error('socket hang up')).mockRejectedValueOnce(new ProviderNotDispatchedError());
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    // The later proven-local refusal must not erase the uncertainty the first dispatch created.
+    expect(created).toMatchObject({ accepted: true, record: {
+      status: 'creating', callId: null, terminalAt: null, normalizedResult: null, normalizationStatus: 'PENDING', handoffState: 'NOT_READY',
+      technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', reconciliationAvailable: true, attempts: 2 },
+    } });
+    const stored = await store.get('ACQ-001');
+    expect(stored?.technicalFailure?.acceptance).toBe('UNKNOWN');
+    // The connection stays locked against an independent second call for this acquisition —
+    // which conservatively guarantees it also still counts against the Hosted budget.
+    expect(await service.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: false, code: 'ACTIVE_ACQUISITION_EXISTS' });
+  });
+
+  it('never downgrades a persisted UNKNOWN to DEFINITELY_NOT_SENT on a later manual reconciliation', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+    await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true });
+
+    // The explicit final reconciliation dispatch is proven local, but the acquisition's history
+    // already contains ambiguity, so acceptance must remain UNKNOWN, not become DEFINITELY_NOT_SENT.
+    create.mockRejectedValueOnce(new ProviderNotDispatchedError());
+    const third = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(third).toMatchObject({ accepted: true, record: {
+      status: 'creating', callId: null, technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false },
+    } });
+    expect(await service.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.create(input({ acquisitionId: 'ACQ-OTHER' }))).toMatchObject({ accepted: false, code: 'ACTIVE_ACQUISITION_EXISTS' });
+
+    // The lifetime ceiling is now spent: no further dispatch, no new acquisition, ever.
+    for (let repeat = 0; repeat < 10; repeat += 1) {
+      const again = await service.create(input());
+      expect(again).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false } } });
+    }
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('classifies DEFINITELY_NOT_SENT only when no dispatch in the acquisition history was ever ambiguous', async () => {
+    const { service, create } = setup(call('queued'), { perClientDailyLimit: 1 });
+    create.mockRejectedValueOnce(new ProviderNotDispatchedError());
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    expect(created).toMatchObject({ accepted: true, record: { status: 'failed', callId: null, technicalFailure: { acceptance: 'DEFINITELY_NOT_SENT', reconciliationAvailable: false, attempts: 1 } } });
+    // No provider operation could have happened, so the Hosted budget is not consumed.
+    expect(await service.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: true, record: { acquisitionId: 'ACQ-002', status: 'queued' } });
+  });
+
+  it('resolves a monotonically-UNKNOWN acquisition once the allowed reconciliation returns the real provider call', async () => {
+    const { service, create, store } = setup();
+    // A mixed history: ambiguous, then proven-local, so acceptance was pinned to UNKNOWN.
+    create.mockRejectedValueOnce(new Error('socket hang up')).mockRejectedValueOnce(new ProviderNotDispatchedError());
+    await service.create(input());
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true });
+
+    create.mockResolvedValue(call('queued'));
+    const reconciled = await service.create(input());
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', status: 'queued', callId: 'call_test_001' } });
+    if (reconciled.accepted) expect(reconciled.record.technicalFailure).toBeUndefined();
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set(['exception-broker-acquisition-v1:ACQ-001']));
+    expect(await store.list()).toHaveLength(1);
+  });
+
   it('keeps repeated ambiguity non-terminal, bounded and recoverable under the same idempotency key', async () => {
     const { service, create, store } = setup();
     create.mockRejectedValue(new Error('socket hang up'));

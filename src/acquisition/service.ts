@@ -323,6 +323,10 @@ export class AcquisitionService {
     const providerInput = buildCallEInput(callRequest, ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION']);
     let dispatched = 0;
     let failure: unknown;
+    // Acceptance knowledge is monotonic: once any dispatch for this acquisition — this
+    // invocation or an earlier one — left the process ambiguously, a later proven-local refusal
+    // must never downgrade that back to DEFINITELY_NOT_SENT.
+    let ambiguityObserved = record.technicalFailure?.acceptance === 'UNKNOWN';
 
     for (let attempt = 0; attempt < allowed; attempt += 1) {
       dispatched += 1;
@@ -331,6 +335,7 @@ export class AcquisitionService {
         return { accepted: true, record: await this.#recordCall(record, call, input.clientToken) };
       } catch (error: unknown) {
         failure = error;
+        if (!(error instanceof ProviderNotDispatchedError)) ambiguityObserved = true;
         // Nothing left this process, so reconciliation cannot discover anything new.
         if (error instanceof ProviderNotDispatchedError) break;
         if (attempt + 1 < allowed) await this.#delay(this.#reconcileDelayMs);
@@ -339,7 +344,7 @@ export class AcquisitionService {
 
     const observedAt = this.#clock();
     const diagnostics = failureDiagnostics(failure);
-    const notDispatched = failure instanceof ProviderNotDispatchedError;
+    const notDispatched = !ambiguityObserved && failure instanceof ProviderNotDispatchedError;
     const attempts = spent + dispatched;
     const technicalFailure: AcquisitionTechnicalFailure = {
       stage: 'CREATE',
