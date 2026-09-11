@@ -11,7 +11,7 @@ import {
   createBrowserAcquisitionRequest,
   type AcquisitionBrowserApi,
 } from '../../src/acquisition/browserClient.js';
-import type { AcquisitionPublicRecord } from '../../src/acquisition/contracts.js';
+import type { AcquisitionPublicRecord, SanitizedTranscriptTurn } from '../../src/acquisition/contracts.js';
 import type { LiveControlPublicRecord } from '../../src/control/contracts.js';
 import { callRequestSchema, phoneDecisionSchema } from '../../src/integrations/calle/schemas.js';
 import { buildCallEInput } from '../../src/integrations/calle/callEProvider.js';
@@ -898,10 +898,10 @@ describe('Acquisition V1 Connection Gate', () => {
     expect(screen.queryByText(/Hosted live demo/i)).not.toBeInTheDocument();
   });
 
-  it('keeps CALL-E provider yellow off the rest of the interface — scoped to the gate only', () => {
+  it('keeps CALL-E provider yellow scoped to real provider-identity marks — the gate and the CALL-E transcript/instrument mark', () => {
     const css = readFileSync('src/styles/acquisition.css', 'utf8');
     const calleUsages = css.match(/[^\n{]*var\(--acq-calle\)[^\n{;]*\{[^}]*\}/g) ?? [];
-    for (const rule of calleUsages) expect(rule).toMatch(/\.acq-gate/);
+    for (const rule of calleUsages) expect(rule).toMatch(/\.acq-gate|\.acq-speaker\.is-bot/);
   });
 
   it('does not change any Acquisition state after connection — READY_FOR_REVIEW stays reachable and untouched', async () => {
@@ -981,5 +981,145 @@ describe('Acquisition V1 Connection Gate', () => {
     const css = readFileSync('src/styles/acquisition.css', 'utf8');
     const semanticSelectors = /\.(acq-resolution|acq-inline-status|acq-state|acq-rail-step)[^{]*\{[^}]*\}/g;
     for (const rule of css.match(semanticSelectors) ?? []) expect(rule).not.toMatch(/--acq-calle/);
+  });
+});
+
+describe('Acquisition V1 Pass 2A — active instrument + documentary conversation', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.useRealTimers(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  const withAttempt = (recordStatus: AcquisitionPublicRecord['status'], attemptStatus: 'queued' | 'in_progress' | 'completed', transcriptTurns: SanitizedTranscriptTurn[] = []) => record({
+    status: recordStatus,
+    providerEvidence: { ...record().providerEvidence!, status: attemptStatus === 'completed' ? 'in_progress' : attemptStatus, recipients: [{ id: 'RECIPIENT', status: attemptStatus === 'queued' ? 'pending' : attemptStatus, summary: null, attempts: [{ id: 'ATTEMPT', status: attemptStatus, startedAt: '2027-06-10T22:00:02Z', completedAt: attemptStatus === 'completed' ? '2027-06-10T22:01:00Z' : null, summary: null, transcriptTurns, providerCallId: 'PROVIDER-CALL', failureCode: null, failureMessage: null }] }] },
+  });
+
+  it('keeps the same topbar and rail DOM node from READY through CREATING into QUEUED — no scene replacement', async () => {
+    const fake = api();
+    let resolveCreate!: (value: { accepted: true; record: AcquisitionPublicRecord; existing: false }) => void;
+    fake.create.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve; }));
+    const { container } = render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'FIXED'} clock={() => '2027-06-10T22:00:00Z'} />);
+    await unlockByok(fake);
+    const topbarBefore = container.querySelector('.acq-topbar');
+    const railBefore = container.querySelector('.acq-rail');
+    fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.submit(document.getElementById('acquisition-create')!);
+    expect(screen.getByText('Starting…')).toBeVisible();
+    expect(container.querySelector('.acq-topbar')).toBe(topbarBefore);
+    expect(container.querySelector('.acq-rail')).toBe(railBefore);
+    resolveCreate({ accepted: true, record: withAttempt('queued', 'queued'), existing: false });
+    await screen.findByText('Acquisition queued');
+    expect(container.querySelector('.acq-topbar')).toBe(topbarBefore);
+    expect(container.querySelector('.acq-rail')).toBe(railBefore);
+  });
+
+  it('renders the quiet, almost-dormant signal instrument for QUEUED with no turns yet', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { container } = render(<AcquisitionExperience api={api(withAttempt('queued', 'queued'))} onNavigateControl={() => undefined} />);
+    await screen.findByText('Waiting for CALL-E');
+    const bridge = container.querySelector('.acq-signal-instrument .acq-bridge');
+    expect(bridge).not.toBeNull();
+    expect(bridge).toHaveClass('is-idle');
+  });
+
+  it('renders the more active travelling-pulse signal instrument for IN_PROGRESS with no turns yet', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { container } = render(<AcquisitionExperience api={api(withAttempt('in_progress', 'in_progress'))} onNavigateControl={() => undefined} />);
+    await screen.findByText('CALL-E interaction is active.');
+    const bridge = container.querySelector('.acq-signal-instrument .acq-bridge');
+    expect(bridge).not.toBeNull();
+    expect(bridge).toHaveClass('is-connecting');
+  });
+
+  it('renders the converging, settled signal instrument once FINALIZING with no turns yet — no celebratory burst', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { container } = render(<AcquisitionExperience api={api(withAttempt('in_progress', 'completed'))} onNavigateControl={() => undefined} />);
+    await screen.findByText('Finalizing provider result');
+    const bridge = container.querySelector('.acq-signal-instrument .acq-bridge');
+    expect(bridge).not.toBeNull();
+    expect(bridge).toHaveClass('is-arrived');
+  });
+
+  it('keeps the documentary transcript visible through FINALIZING once turns exist, with only a restrained status badge', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const turns: SanitizedTranscriptTurn[] = [{ offsetSeconds: 2, speaker: 'bot', text: 'Confirming the plan.' }, { offsetSeconds: 9, speaker: 'user', text: 'Understood.' }];
+    const { container } = render(<AcquisitionExperience api={api(withAttempt('in_progress', 'completed', turns))} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Confirming the plan.')).toBeVisible();
+    expect(screen.getByText('Understood.')).toBeVisible();
+    // Never regress an already-informative transcript back to the large instrument.
+    expect(container.querySelector('.acq-signal-instrument')).toBeNull();
+    expect(container.querySelector('.acq-provider-activity')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Acquisition in progress' })).toBeVisible();
+    expect(within(screen.getByRole('heading', { name: 'Conversation evidence' }).closest('header') as HTMLElement).getByText('FINALIZING')).toBeVisible();
+  });
+
+  it('never restores the active instrument once the acquisition reaches a terminal state', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { container } = render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
+    await screen.findByText('Call completed');
+    expect(container.querySelector('.acq-signal-instrument')).toBeNull();
+    expect(container.querySelector('.acq-provider-activity')).toBeNull();
+    expect(screen.queryByText('FINALIZING')).not.toBeInTheDocument();
+  });
+
+  it('shows the real CALL-E mark once per new CALL-E visual group, never once per raw turn — and gives the recipient no avatar', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const complete = completed('APPROVED');
+    // All four turns stay within the preview boundary, so grouping is not split by pagination.
+    const turns: SanitizedTranscriptTurn[] = [
+      { offsetSeconds: 0, speaker: 'bot', text: 'Turn A' }, { offsetSeconds: 1, speaker: 'bot', text: 'Turn B' },
+      { offsetSeconds: 2, speaker: 'user', text: 'Turn C' },
+      { offsetSeconds: 3, speaker: 'bot', text: 'Turn D' },
+    ];
+    const withTranscript = { ...complete, providerEvidence: { ...complete.providerEvidence!, recipients: [{ ...complete.providerEvidence!.recipients[0]!, attempts: [{ ...complete.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: turns }] }] } };
+    const { container } = render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
+    await screen.findByText('Turn A');
+    // Two CALL-E groups (A+B, D) — one real mark each, never one per raw turn.
+    expect(container.querySelectorAll('.acq-speaker.is-bot img')).toHaveLength(2);
+    expect(container.querySelectorAll('.acq-speaker.is-user img')).toHaveLength(0);
+  });
+
+  it('keeps a realistic 30+ turn transcript internally scrollable and duplicates nothing across expand', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const complete = completed('APPROVED');
+    const bigTurns: SanitizedTranscriptTurn[] = Array.from({ length: 36 }, (_, index) => ({
+      offsetSeconds: index * 3, speaker: index % 2 === 0 ? 'bot' as const : 'user' as const,
+      text: `Turn ${index + 1} — a longer realistic sentence describing the controlled sandbox recovery scenario in documentary detail.`,
+    }));
+    const withTranscript = { ...complete, providerEvidence: { ...complete.providerEvidence!, recipients: [{ ...complete.providerEvidence!.recipients[0]!, attempts: [{ ...complete.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: bigTurns }] }] } };
+    const { container } = render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
+    await screen.findByText(/^Turn 1 —/);
+    expect(container.querySelectorAll('.transcript-timeline p')).toHaveLength(36);
+    expect(container.querySelector('.acq-transcript-scroll')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /View remaining 32 turns/ }));
+    expect(container.querySelectorAll('.transcript-timeline p')).toHaveLength(36);
+    expect(screen.getAllByText(/^Turn 20 —/)).toHaveLength(1);
+    expect(screen.getAllByText(/^Turn 36 —/)).toHaveLength(1);
+  });
+
+  it('gives the title a restrained micro-transition class — opacity/translateY only, no scale or blur', () => {
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    expect(css).toMatch(/@keyframes acq-title-shift\s*\{\s*from\s*\{\s*opacity:0;\s*transform:translateY\(5px\);?\s*\}\s*to\s*\{\s*opacity:1;\s*transform:translateY\(0\);?\s*\}\s*\}/);
+    expect(css).not.toMatch(/acq-title-shift[^}]*scale/);
+    expect(css).not.toMatch(/acq-title-shift[^}]*blur/);
+  });
+
+  it('remounts the interaction title on every lifecycle label change so the micro-transition replays truthfully', async () => {
+    vi.useFakeTimers();
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const fake = api(withAttempt('queued', 'queued'));
+    fake.refresh.mockResolvedValue({ found: true, record: withAttempt('in_progress', 'in_progress') });
+    const { container } = render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await act(async () => { await Promise.resolve(); });
+    const queuedTitle = screen.getByRole('heading', { name: 'Acquisition queued' });
+    expect(queuedTitle).toHaveClass('acq-title-shift');
+    await act(async () => { vi.advanceTimersByTime(2_000); await Promise.resolve(); });
+    expect(screen.getByRole('heading', { name: 'Conversation in progress' })).toHaveClass('acq-title-shift');
+    expect(container.querySelectorAll('.acq-interaction-band h1')).toHaveLength(1);
+  });
+
+  it('neutralizes travelling-signal and title-shift motion under reduced motion via the existing universal override', () => {
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    expect(css).toContain('.acquisition-shell *,.acquisition-shell *::before,.acquisition-shell *::after { animation-duration:.01ms!important');
   });
 });
