@@ -22,7 +22,7 @@ export const acquisitionAccessKindKey = 'exception-broker-live-access-kind';
 export const acquisitionHostedSessionKey = 'exception-broker-hosted-session';
 const maxRefreshes = 66;
 const refreshDelayMs = (completedRefreshes: number) => completedRefreshes < 30 ? 2_000 : completedRefreshes < 54 ? 5_000 : 10_000;
-const productLogo = '/images/home/exception-broker-logo.png';
+const productLogo = '/images/home/exception-broker-logo-transparent.png';
 
 type ExperienceProps = Readonly<{ api: AcquisitionBrowserApi; onNavigateControl: () => void; onNavigateHome?: () => void; createIdentity?: () => string; clock?: () => string; onOpenControl?: (record: LiveControlPublicRecord) => void }>;
 type FlowStep = Readonly<{ label: string; state: string; tone: 'done' | 'active' | 'waiting' | 'locked' | 'stopped' }>;
