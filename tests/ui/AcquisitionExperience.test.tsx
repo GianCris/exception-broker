@@ -199,7 +199,7 @@ describe('Acquisition V1 experience', () => {
     expect(sessionStorage.getItem(acquisitionHostedSessionKey)).toBe('INERT-SESSION-TOKEN');
     expect(JSON.stringify(localStorage)).not.toContain('INERT-SESSION-TOKEN');
     expect(document.body.textContent).not.toMatch(/temporary live-access token/i);
-    expect(screen.getByText(/Connection access is not business identity/)).toBeVisible();
+    expect(screen.getByText('Connected for this browser session.')).toBeVisible();
   });
 
   it('presents READY as a controlled four-stage path with Control locked', async () => {
@@ -295,7 +295,7 @@ describe('Acquisition V1 experience', () => {
     render(<AcquisitionExperience api={api(completed('PENDING'))} onNavigateControl={() => undefined} />);
     await screen.findByText('Call completed'); fireEvent.click(screen.getByRole('button', { name: 'Disconnect CALL-E' }));
     expect(sessionStorage.getItem(acquisitionAccessKey)).toBeNull(); expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-TEST-1');
-    expect(screen.getByText(/Recovery locked/)).toBeVisible();
+    expect(screen.getByText(/Previous acquisition saved/)).toBeVisible();
   });
 
   it('requires valid recipient and explicit authorization and prevents duplicate create', async () => {
@@ -315,7 +315,7 @@ describe('Acquisition V1 experience', () => {
   it('preserves a recovery pointer while locked and does not request server truth before unlock', () => {
     localStorage.setItem(acquisitionStorageKey, 'ACQ-RECOVER'); const fake = api();
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
-    expect(screen.getByText(/Recovery locked/)).toBeVisible(); expect(fake.get).not.toHaveBeenCalled();
+    expect(screen.getByText(/Previous acquisition saved/)).toBeVisible(); expect(fake.get).not.toHaveBeenCalled();
     expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-RECOVER');
   });
 
@@ -331,7 +331,7 @@ describe('Acquisition V1 experience', () => {
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     expect((await screen.findAllByText(/no active acquisition belongs to this connection/i))[0]).toBeVisible();
     expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-OPAQUE');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear recovery pointer' })); expect(localStorage.getItem(acquisitionStorageKey)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear previous session' })); expect(localStorage.getItem(acquisitionStorageKey)).toBeNull();
   });
 
   it('replaces a stale local pointer only with the same connection owned active acquisition', async () => {
@@ -341,7 +341,7 @@ describe('Acquisition V1 experience', () => {
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     expect(await screen.findByText(/Acquisition record ACQ-ACTIVE/)).toBeVisible();
     expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-ACTIVE');
-    expect(screen.getByRole('button', { name: 'Recovery pointer locked while active' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Available once this acquisition finishes' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
   });
 
@@ -350,7 +350,7 @@ describe('Acquisition V1 experience', () => {
     const fake = api(); fake.get.mockRejectedValueOnce(new Error('stale pointer')); vi.mocked(fake.getActive).mockRejectedValueOnce(new Error('lookup unavailable'));
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     expect((await screen.findAllByText(/Recovery could not be verified/))[0]).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Recovery pointer locked pending verification' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Checking before we can clear it…' })).toBeDisabled();
     expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-STALE');
     expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('ACCESS');
   });
@@ -382,7 +382,7 @@ describe('Acquisition V1 experience', () => {
     await act(async () => { await vi.mocked(fake.getConnection).mock.results[0]!.value; await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
     await act(async () => { await fake.get.mock.results[0]!.value; await Promise.resolve(); });
     await act(async () => { await vi.runOnlyPendingTimersAsync(); });
-    expect(screen.getByRole('button', { name: 'Recovery pointer locked while active' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Available once this acquisition finishes' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
     releaseOld({ found: true, record: completed('APPROVED') });
     await act(async () => { await Promise.resolve(); });
@@ -705,5 +705,128 @@ describe('Acquisition V1 visual polish', () => {
     const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
     expect(within(eligibility).getByText('READY FOR REVIEW')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Continue to Control' })).toBeVisible();
+  });
+});
+
+describe('Acquisition V1 visual grammar', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.useRealTimers(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('keeps every rail step numbered — active steps never become a bullet', async () => {
+    render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    await unlock();
+    const rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
+    const steps = within(rail).getAllByRole('listitem');
+    expect(steps).toHaveLength(4);
+    expect(steps[0]).toHaveTextContent('1');
+    expect(steps[1]).toHaveTextContent('2');
+    expect(steps[2]).toHaveTextContent('3');
+    expect(steps[3]).toHaveTextContent('4');
+    expect(rail.textContent).not.toContain('●');
+  });
+
+  it('renders a completed rail step as a check while keeping the still-active step numbered', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
+    await screen.findByText('Call completed');
+    const rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
+    const steps = within(rail).getAllByRole('listitem');
+    expect(steps[0]!.querySelector('svg')).not.toBeNull();
+    expect(steps[0]!.textContent).not.toMatch(/[✓●]/);
+    expect(steps[3]).toHaveTextContent('4');
+  });
+
+  it('groups adjacent same-speaker turns visually without merging, rewriting or reordering the raw turns', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const complete = completed('APPROVED');
+    const turns = [
+      { offsetSeconds: 0, speaker: 'bot' as const, text: 'Hi,' },
+      { offsetSeconds: 2, speaker: 'bot' as const, text: 'is this Client?' },
+      { offsetSeconds: 5, speaker: 'user' as const, text: 'Yes.' },
+      { offsetSeconds: 7, speaker: 'bot' as const, text: "Great, let's continue." },
+    ];
+    const withTranscript = { ...complete, providerEvidence: { ...complete.providerEvidence!, recipients: [{ ...complete.providerEvidence!.recipients[0]!, attempts: [{ ...complete.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: turns }] }] } };
+    render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Hi,')).toBeVisible();
+    expect(screen.getByText('is this Client?')).toBeVisible();
+    expect(screen.getByText('Yes.')).toBeVisible();
+    expect(screen.getByText("Great, let's continue.")).toBeVisible();
+    const timeline = document.querySelector('.transcript-timeline') as HTMLElement;
+    const groups = within(timeline).getAllByRole('listitem');
+    expect(groups).toHaveLength(3);
+    expect(within(groups[0]!).getAllByText('CALL-E')).toHaveLength(1);
+    expect(within(groups[0]!).getByText('Hi,')).toBeVisible();
+    expect(within(groups[0]!).getByText('is this Client?')).toBeVisible();
+    expect(within(groups[1]!).getByText('Recipient')).toBeVisible();
+    expect(within(groups[1]!).getByText('Yes.')).toBeVisible();
+    expect(within(groups[2]!).getByText("Great, let's continue.")).toBeVisible();
+    expect(document.body.textContent).not.toContain('Hi, is this Client?');
+  });
+
+  it('ends a same-speaker visual group at the preview boundary and resumes it as a fresh group after expansion', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const complete = completed('APPROVED');
+    const turns = [
+      { offsetSeconds: 0, speaker: 'bot' as const, text: 'Turn 1' },
+      { offsetSeconds: 1, speaker: 'user' as const, text: 'Turn 2' },
+      { offsetSeconds: 2, speaker: 'bot' as const, text: 'Turn 3' },
+      { offsetSeconds: 3, speaker: 'bot' as const, text: 'Turn 4' },
+      { offsetSeconds: 4, speaker: 'bot' as const, text: 'Turn 5' },
+      { offsetSeconds: 5, speaker: 'user' as const, text: 'Turn 6' },
+    ];
+    const withTranscript = { ...complete, providerEvidence: { ...complete.providerEvidence!, recipients: [{ ...complete.providerEvidence!.recipients[0]!, attempts: [{ ...complete.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: turns }] }] } };
+    render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Turn 4')).toBeVisible();
+    expect(screen.getByText('Turn 3')).toBeVisible();
+    expect(screen.getByText('Turn 5')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /View remaining/ }));
+    expect(screen.getByText('Turn 5')).toBeVisible();
+    expect(screen.getByText('Turn 6')).toBeVisible();
+    // Turn 3 and Turn 4 (both bot, preview) stay grouped together; Turn 5 (bot, remaining) starts its own group instead of silently joining Turn 4's.
+    const previewLastGroup = screen.getByText('Turn 4').closest('li')!;
+    expect(within(previewLastGroup).getByText('Turn 3')).toBeVisible();
+    const remainingFirstGroup = screen.getByText('Turn 5').closest('li')!;
+    expect(remainingFirstGroup).not.toBe(previewLastGroup);
+    expect(within(remainingFirstGroup).queryByText('Turn 4')).not.toBeInTheDocument();
+    ['Turn 1', 'Turn 2', 'Turn 3', 'Turn 4', 'Turn 5', 'Turn 6'].forEach((text) => {
+      expect(screen.getAllByText(text)).toHaveLength(1);
+    });
+  });
+
+  it('tells the user Hosted demo outcomes are not scripted before they connect', () => {
+    render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    expect(screen.getByText(/outcomes aren't scripted/i)).toBeVisible();
+    expect(screen.queryByText(/guaranteed to be approved/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps recovery copy human — no architecture jargon leaks into visible strings', () => {
+    const source = readFileSync('src/ui/AcquisitionExperience.tsx', 'utf8');
+    expect(source).not.toMatch(/opaque/i);
+    expect(source).not.toMatch(/server truth/i);
+    expect(source).not.toMatch(/recovery pointer/i);
+    expect(source).not.toMatch(/not business identity/i);
+  });
+
+  it('reserves green for a future ALLOW disposition — Acquisition completion/decision styling stays out of --allow', () => {
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    expect(css).not.toMatch(/var\(--allow\)/);
+    expect(css.match(/\.acq-inline-status\.is-complete\s*\{[^}]*\}/)?.[0]).not.toMatch(/#83ddb8|rgb\(\s*1?\d\d\s+2\d\d\s+1\d\d\s*\)/i);
+    expect(css.match(/\.acq-formation li\.is-done \.acq-state[^{]*\{[^}]*\}/)?.[0]).not.toMatch(/#a8d9c2/i);
+  });
+
+  it('keeps SAFE STOP visually distinct from the shared future WAIT amber token', () => {
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    expect(css).toContain('--acq-brass');
+    expect(css.match(/\.acq-resolution\.is-safe-stop\s*\{[^}]*\}/)?.[0]).not.toMatch(/var\(--wait\)/);
+    expect(css.match(/\.acq-resolution\.is-safe-stop h2[^{]*\{[^}]*\}/)?.[0]).toMatch(/var\(--acq-brass\)/);
+  });
+
+  it('gives CLARIFICATION REQUIRED its own neutral/plum treatment, distinct from plain SAFE STOP brass', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(completed('NEEDS_CLARIFICATION'))} onNavigateControl={() => undefined} />);
+    const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
+    expect(eligibility).toHaveClass('is-clarification');
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    expect(css.match(/\.acq-resolution\.is-safe-stop\.is-clarification h2[^{]*\{[^}]*\}/)?.[0]).not.toMatch(/var\(--acq-brass\)/);
   });
 });
