@@ -277,7 +277,7 @@ describe('Acquisition V1 experience', () => {
     expect((await screen.findAllByText('Returned turn 4'))[0]).toBeVisible();
     expect(screen.getByText('Returned turn 1')).toBeVisible();
     expect(screen.getByText('Returned turn 5')).not.toBeVisible();
-    const toggle = screen.getByRole('button', { name: /View remaining 2 turns/ });
+    const toggle = screen.getByRole('button', { name: /View 2 more turns/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggle);
     expect(screen.getByText('Returned turn 1')).toBeVisible();
@@ -783,7 +783,7 @@ describe('Acquisition V1 visual grammar', () => {
     expect(await screen.findByText('Turn 4')).toBeVisible();
     expect(screen.getByText('Turn 3')).toBeVisible();
     expect(screen.getByText('Turn 5')).not.toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /View remaining/ }));
+    fireEvent.click(screen.getByRole('button', { name: /View \d+ more turns/ }));
     expect(screen.getByText('Turn 5')).toBeVisible();
     expect(screen.getByText('Turn 6')).toBeVisible();
     // Turn 3 and Turn 4 (both bot, preview) stay grouped together; Turn 5 (bot, remaining) starts its own group instead of silently joining Turn 4's.
@@ -822,7 +822,8 @@ describe('Acquisition V1 visual grammar', () => {
     const css = readFileSync('src/styles/acquisition.css', 'utf8');
     expect(css).toContain('--acq-brass');
     expect(css.match(/\.acq-resolution\.is-safe-stop\s*\{[^}]*\}/)?.[0]).not.toMatch(/var\(--wait\)/);
-    expect(css.match(/\.acq-resolution\.is-safe-stop h2[^{]*\{[^}]*\}/)?.[0]).toMatch(/var\(--acq-brass\)/);
+    const safeStopHeadingRules = css.match(/\.acq-resolution\.is-safe-stop h2[^{]*\{[^}]*\}/g) ?? [];
+    expect(safeStopHeadingRules.some((rule) => rule.includes('var(--acq-brass)'))).toBe(true);
   });
 
   it('gives CLARIFICATION REQUIRED its own neutral/plum treatment, distinct from plain SAFE STOP brass', async () => {
@@ -1095,7 +1096,7 @@ describe('Acquisition V1 Pass 2A — active instrument + documentary conversatio
     await screen.findByText(/^Turn 1 —/);
     expect(container.querySelectorAll('.transcript-timeline p')).toHaveLength(36);
     expect(container.querySelector('.acq-transcript-scroll')).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /View remaining 32 turns/ }));
+    fireEvent.click(screen.getByRole('button', { name: /View 32 more turns/ }));
     expect(container.querySelectorAll('.transcript-timeline p')).toHaveLength(36);
     expect(screen.getAllByText(/^Turn 20 —/)).toHaveLength(1);
     expect(screen.getAllByText(/^Turn 36 —/)).toHaveLength(1);
