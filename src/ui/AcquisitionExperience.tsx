@@ -12,6 +12,8 @@ import type { AcquisitionConnectionKind } from '../acquisition/access.js';
 import type { LiveControlPublicRecord } from '../control/contracts.js';
 import { createAcquisitionPresentation } from '../presentation/acquisitionViewModel.js';
 import { ThemeControl } from './ProofExperience.js';
+import calleIcon from '../assets/brands/call-e/icon-yellow-256.png';
+import calleLogo from '../assets/brands/call-e/logo-yellow-512.png';
 import '../styles/acquisition.css';
 
 export const acquisitionStorageKey = 'exception-broker-acquisition-id';
@@ -147,56 +149,129 @@ function AcquisitionRail({ steps, connectionKind, connected, used, connectionLoc
   return <aside className="acq-rail" aria-label="Acquisition flow"><div className="acq-rail-top"><p>Acquisition flow</p><ol>{steps.map((step, index) => <li className={`acq-rail-step is-${step.tone}`} key={step.label}><span aria-hidden="true">{step.tone === 'done' ? <IconCheck /> : index + 1}</span><div><strong>{step.label}</strong><small>{step.state}</small></div></li>)}</ol>{connected ? <div className="acq-rail-access"><b><i aria-hidden="true" /> CALL-E connection</b><span>connected</span><p>{status}</p><button type="button" disabled={connectionLocked} onClick={onConfigure}>Disconnect CALL-E</button>{connectionLocked ? <small>Connection locked while this acquisition is active.</small> : <small>Connected for this browser session.</small>}</div> : null}</div><div className="acq-rail-scene" aria-hidden="true"><div className="acq-rail-motif"><q>Higher ground is a choice.</q><span>— The Sentinel</span></div></div></aside>;
 }
 /**
- * The Connection Gate: disconnected-only presentation. Exception Broker <-> CALL-E as one
- * composition with two routes, rather than "two cards inside a card". Functional behavior
- * (connectHosted/connectByok, field names, disabled/busy handling) is unchanged from the
- * prior chooser — this component only changes how it looks.
+ * The Exception Broker <-> provider signal bridge. Decorative, but never decorative-perpetual:
+ * `idle` rests (one very slow luminance breath, no travelling signal), `connecting` only runs
+ * while a real connection request is in flight, and `arrived` plays one settling pulse.
+ * Written to be reusable for later Broker stages (evidence, decision, control gate).
  */
-function ConnectionGate({ busy, message, storedId, onConnectHosted, onConnectByok }: Readonly<{
+function SignalBridge({ state = 'idle' }: Readonly<{ state?: 'idle' | 'connecting' | 'arrived' }> = {}) {
+  // Braided strands: bunched at the Broker end, fanned through the middle, converging into the
+  // provider node. Amplitude and opacity vary per strand so the ribbon reads as depth, not noise.
+  const strands: readonly Readonly<{ d: string; width: number; opacity: number }>[] = [
+    { d: 'M4,96 C140,94 196,30 336,28 C470,26 546,78 636,90', width: 1.1, opacity: 0.45 },
+    { d: 'M4,96 C148,95 200,52 336,50 C466,48 548,84 636,92', width: 1.5, opacity: 0.6 },
+    { d: 'M4,96 C152,96 206,74 336,72 C462,70 550,88 636,93', width: 2.1, opacity: 0.8 },
+    { d: 'M4,96 C156,96 212,96 336,96 C458,96 552,95 636,95', width: 2.6, opacity: 1 },
+    { d: 'M4,96 C152,96 206,118 336,120 C462,122 550,104 636,97', width: 2.1, opacity: 0.8 },
+    { d: 'M4,96 C148,97 200,140 336,142 C466,144 548,108 636,99', width: 1.5, opacity: 0.6 },
+    { d: 'M4,96 C140,98 196,162 336,164 C470,166 546,114 636,101', width: 1.1, opacity: 0.45 },
+  ];
+  return <svg className={`acq-bridge is-${state}`} viewBox="0 0 640 192" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="acq-bridge-flow" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stopColor="var(--acq-plum)" stopOpacity="0" />
+        <stop offset="12%" stopColor="var(--acq-plum)" stopOpacity=".75" />
+        <stop offset="46%" stopColor="var(--acq-bridge-mid)" stopOpacity=".8" />
+        <stop offset="78%" stopColor="var(--acq-calle)" stopOpacity="1" />
+        <stop offset="97%" stopColor="var(--acq-calle)" stopOpacity=".85" />
+        <stop offset="100%" stopColor="var(--acq-calle)" stopOpacity="0" />
+      </linearGradient>
+      <radialGradient id="acq-bridge-halo">
+        <stop offset="0%" stopColor="var(--acq-calle)" stopOpacity=".5" />
+        <stop offset="55%" stopColor="var(--acq-calle)" stopOpacity=".12" />
+        <stop offset="100%" stopColor="var(--acq-calle)" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id="acq-bridge-origin">
+        <stop offset="0%" stopColor="var(--acq-plum)" stopOpacity=".34" />
+        <stop offset="100%" stopColor="var(--acq-plum)" stopOpacity="0" />
+      </radialGradient>
+      <filter id="acq-bridge-bloom" x="-10%" y="-60%" width="120%" height="220%">
+        <feGaussianBlur stdDeviation="4" />
+      </filter>
+    </defs>
+    <circle className="acq-bridge-origin" cx="26" cy="96" r="60" fill="url(#acq-bridge-origin)" />
+    <circle className="acq-bridge-halo" cx="614" cy="96" r="66" fill="url(#acq-bridge-halo)" />
+    <g className="acq-bridge-bloom" stroke="url(#acq-bridge-flow)" fill="none" strokeLinecap="round" filter="url(#acq-bridge-bloom)" opacity=".55">
+      {strands.map((strand) => <path key={`bloom-${strand.d}`} d={strand.d} strokeWidth={strand.width * 1.8} opacity={strand.opacity} />)}
+    </g>
+    <g className="acq-bridge-strands" stroke="url(#acq-bridge-flow)" fill="none" strokeLinecap="round">
+      {strands.map((strand) => <path key={strand.d} d={strand.d} strokeWidth={strand.width} opacity={strand.opacity} />)}
+    </g>
+    <g className="acq-bridge-points" fill="var(--acq-calle)">
+      <circle cx="336" cy="96" r="2.6" opacity=".75" />
+      <circle cx="452" cy="95" r="2" opacity=".6" />
+      <circle cx="556" cy="95" r="2.8" opacity=".9" />
+    </g>
+    <path className="acq-bridge-pulse" d={strands[3]!.d} fill="none" stroke="var(--acq-calle)" strokeWidth="3" strokeLinecap="round" pathLength={100} />
+  </svg>;
+}
+
+/**
+ * The Connection Gate: disconnected-only presentation. One composition — Exception Broker,
+ * a living signal bridge and the real CALL-E provider identity — followed by the two live
+ * routes and a tertiary path to the existing guided demo. Functional behavior
+ * (connectHosted/connectByok, field names, disabled/busy handling) is unchanged.
+ */
+function ConnectionGate({ busy, message, storedId, onConnectHosted, onConnectByok, onTryDemo }: Readonly<{
   busy: boolean;
   message: string;
   storedId: string | null;
   onConnectHosted: () => void;
   onConnectByok: (event: React.FormEvent<HTMLFormElement>) => void;
+  onTryDemo: () => void;
 }>) {
   return <section className="acq-gate" aria-labelledby="unlock-title">
-    <p className="acq-eyebrow">CALL-E connection</p>
-    <h1 id="unlock-title">Connect to CALL-E</h1>
-    <p className="acq-gate-lede">Choose how to run a live voice acquisition. Same intelligence, two ways to connect.</p>
+    <header className="acq-gate-head">
+      <div>
+        <p className="acq-eyebrow">Acquisition</p>
+        <h1 id="unlock-title">Connect to CALL-E</h1>
+        <p className="acq-gate-lede">Choose how to run a live voice acquisition. Same control path. Two ways to connect.</p>
+      </div>
+      <p className="acq-gate-marker" aria-hidden="true">Intelligence<br />in motion</p>
+    </header>
     {storedId ? <p className="acq-gate-recovery"><strong>Previous acquisition saved.</strong> Reconnect to check its latest status.</p> : null}
-    <div className="acq-gate-bridge" aria-hidden="true">
-      <span className="acq-gate-node acq-gate-node--eb"><img src={productLogo} alt="" width="40" height="28" /><b>Exception Broker</b><small>Secure decision making</small></span>
-      <span className={`acq-gate-signal${busy ? ' is-connecting' : ''}`}><i /><i /><i /></span>
-      <span className="acq-gate-node acq-gate-node--calle"><span className="acq-gate-calle-mark"><IconCall />CALL-E</span><small>Voice AI provider</small></span>
+    <div className="acq-gate-hero">
+      <div className="acq-gate-party acq-gate-party--broker">
+        <img src={productLogo} alt="" width="56" height="40" />
+        <span><b>Exception Broker</b><small>Secure decision making</small></span>
+      </div>
+      <SignalBridge state={busy ? 'connecting' : 'idle'} />
+      <div className="acq-gate-party acq-gate-party--calle">
+        <span className="acq-gate-calle-node"><img src={calleIcon} alt="CALL-E" width="44" height="47" /></span>
+        <span><b>CALL-E</b><small>Voice AI for real conversations</small></span>
+      </div>
     </div>
     <div className="acq-gate-routes">
-      <article className="acq-gate-route acq-gate-route--hosted">
-        <header><h2>Use hosted demo</h2><span className="acq-gate-badge">Recommended</span></header>
-        <p>Exception Broker's managed CALL-E connection for a limited live demo.</p>
-        <ul>
-          <li>No real customer is contacted</li>
-          <li>One live acquisition per session</li>
-          <li>Outcomes aren't scripted</li>
-          <li>May take approximately 2–10 minutes</li>
-        </ul>
-        <button type="button" disabled={busy} onClick={onConnectHosted}>{busy ? <Activity label="Connecting CALL-E…" /> : 'Use hosted demo'}</button>
-      </article>
       <article className="acq-gate-route acq-gate-route--byok">
-        <header><h2>Connect your CALL-E account</h2></header>
-        <p>Use your own CALL-E API key, provider account, and balance.</p>
+        <header><span className="acq-gate-route-mark" aria-hidden="true"><IconCall /></span><p className="acq-gate-descriptor">For live acquisitions</p><h2>Your CALL-E account</h2></header>
+        <p>Run the live controlled Acquisition with your own provider account and an authorized recipient.</p>
         <ul>
-          <li>Calls from your own account</li>
-          <li>Uses your provider quota</li>
-          <li>Your authorized destination</li>
+          <li>Your CALL-E account and balance</li>
+          <li>Your authorized recipient</li>
+          <li>Same Exception Broker control path</li>
         </ul>
         <form onSubmit={onConnectByok}>
-          <label>CALL-E API key<input name="calleApiKey" type="password" autoComplete="off" /></label>
-          <button type="submit" disabled={busy}>{busy ? <Activity label="Connecting CALL-E…" /> : 'Connect CALL-E'}</button>
+          <label>CALL-E API key<input name="calleApiKey" type="password" autoComplete="off" placeholder="sk-…" /></label>
+          <button type="submit" disabled={busy}>{busy ? <Activity label="Connecting CALL-E…" /> : <>Connect your account <Arrow /></>}</button>
         </form>
         <small>The key is attached only in ephemeral server memory for this connection.</small>
       </article>
+      <article className="acq-gate-route acq-gate-route--hosted">
+        <header><p className="acq-gate-descriptor">Limited live test</p><h2>Hosted sandbox</h2><img className="acq-gate-provider-mark" src={calleLogo} alt="CALL-E" width="92" height="37" /></header>
+        <p>Verify the live CALL-E integration using Exception Broker's limited managed connection.</p>
+        <ul>
+          <li>No CALL-E account required</li>
+          <li>Synthetic CALL-E testing destination</li>
+          <li>Outcomes are not scripted</li>
+        </ul>
+        <button type="button" disabled={busy} onClick={onConnectHosted}>{busy ? <Activity label="Connecting CALL-E…" /> : <>Use hosted sandbox <Arrow /></>}</button>
+        <small>Uses Exception Broker's limited hosted budget · one acquisition per browser session.</small>
+      </article>
     </div>
-    <p className="acq-gate-footnote">Exception Broker evaluates whatever CALL-E actually returns — including a safe stop. Connected for this browser session only.</p>
+    <footer className="acq-gate-foot">
+      <p>Exception Broker evaluates whatever CALL-E actually returns — including a safe stop.</p>
+      <p className="acq-gate-escape">No provider setup or live call needed? <button type="button" onClick={onTryDemo}>Try the guided demo <Arrow /></button></p>
+    </footer>
     <p className="acquisition-announcement" aria-live="polite" aria-atomic="true">{message}</p>
   </section>;
 }
@@ -248,9 +323,9 @@ export const AcquisitionExperience = ({ api, onNavigateControl, onNavigateHome, 
   useEffect(() => { setTranscriptExpanded(false); }, [record?.acquisitionId]);
 
   return <div className="acquisition-shell"><header className="acq-topbar"><button className="acq-logo-link" type="button" onClick={onNavigateHome} aria-label="Exception Broker home"><AcquisitionBrand /></button><nav className="acq-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" aria-current="page">Acquisition</button><button type="button" onClick={onNavigateControl}>Control</button></nav><div className="acq-topbar-actions"><button type="button" className="acq-demo" onClick={onNavigateControl}>Try demo <Arrow /></button><ThemeControl /></div></header><main className="acq-page">
-    <div className="acq-layout"><AcquisitionRail steps={flowSteps} connectionKind={connectionKind} connected={connected} used={record !== null || storedId !== null} connectionLocked={active} onConfigure={() => void lock()} /><div className="acq-main">
-      {accessToken === null || connectionKind === null ? <ConnectionGate busy={busy} message={message} storedId={storedId} onConnectHosted={() => void connectHosted()} onConnectByok={connectByok} /> : null}
-      {accessToken !== null && connectionKind !== null && !connectionReady ? <section className="acq-access acq-recovery" aria-label="Connection verification"><h1>Verifying CALL-E connection</h1>{busy ? <Activity label="Checking connection and active acquisition…" /> : <p>{message}</p>}<p>We're keeping your connection while we check its status.</p></section> : null}
+    <div className="acq-layout"><AcquisitionRail steps={flowSteps} connectionKind={connectionKind} connected={connected} used={record !== null || storedId !== null} connectionLocked={active} onConfigure={() => void lock()} /><div className={`acq-main${accessToken === null || connectionKind === null ? ' is-gate' : ''}`}>
+      {accessToken === null || connectionKind === null ? <ConnectionGate busy={busy} message={message} storedId={storedId} onConnectHosted={() => void connectHosted()} onConnectByok={connectByok} onTryDemo={onNavigateControl} /> : null}
+      {accessToken !== null && connectionKind !== null && !connectionReady ? <section className="acq-access acq-recovery acq-verify" aria-label="Connection verification"><div className="acq-verify-bridge"><SignalBridge state="arrived" /></div><h1>Verifying CALL-E connection</h1>{busy ? <Activity label="Checking connection and active acquisition…" /> : <p>{message}</p>}<p>We're keeping your connection while we check its status.</p></section> : null}
       {connectionReady && connectionKind !== null ? <>
       {record === null && storedId === null ? <><header className="acq-interaction-band"><div><p className="acq-eyebrow">CALL-E interaction <span className="acq-inline-status is-ready">● READY</span></p><h1>Acquire a decision</h1><p>Prepare a controlled interaction before any conversation begins.</p></div><dl><div><dt>Provider</dt><dd>CALL-E</dd></div><div><dt>Recipient</dt><dd>{connectionKind === 'HOSTED_DEMO' ? 'Hosted synthetic destination' : (phone || 'Not entered')}</dd></div><div><dt>Mode</dt><dd>Controlled call</dd></div><div><dt>Record</dt><dd>Not created</dd></div></dl></header><div className="acq-ready-grid"><section className="acq-panel acq-preparation" aria-labelledby="new-acquisition-title"><header><span className="acq-panel-icon" aria-hidden="true"><IconCall /></span><div><h2 id="new-acquisition-title">Controlled acquisition</h2><p>Confirm the brief before CALL-E starts.</p></div><small>PRE-CALL</small></header><form id="acquisition-create" onSubmit={create}>
         <div className="acq-prep-row"><b>Recipient</b><div>{connectionKind === 'HOSTED_DEMO' ? <><strong>Hosted synthetic destination</strong><small>Configured by Exception Broker. No real customer is contacted.</small></> : <><label className="acq-phone-label" htmlFor="acquisition-recipient-phone">Recipient phone<input id="acquisition-recipient-phone" name="recipientPhone" aria-label="Recipient phone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(normalizePhoneInput(event.target.value))} placeholder="+15551234567" /></label><small>Include the country code. Spaces, hyphens and parentheses are removed automatically.</small></>}</div></div><div className="acq-prep-row"><b>Objective</b><div><strong>Capture the Client decision for the controlled recovery plan.</strong><details><summary>View full definition</summary><p>{ACQUISITION_V1_OBJECTIVE}</p></details></div></div><div className="acq-prep-row"><b>Context</b><div><strong>Controlled sandbox recovery context</strong><details><summary>Inspect full context</summary><p>{ACQUISITION_V1_CONTEXT}</p></details></div></div><div className="acq-prep-row"><b>Authorization</b><div>{connectionKind === 'HOSTED_DEMO' ? <><strong>Confirmed before CALL-E is contacted</strong><small>Starting opens one explicit confirmation before any call begins.</small></> : <label className="authorization-check" htmlFor="acquisition-recipient-authorization"><input id="acquisition-recipient-authorization" name="authorizationConfirmed" type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} /><span>I confirm I own or am authorized to call this recipient.<small>No call begins until this confirmation is recorded.</small></span></label>}</div></div>

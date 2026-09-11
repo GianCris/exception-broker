@@ -50,13 +50,13 @@ const api = (initial = record()): AcquisitionBrowserApi & { create: ReturnType<t
   handoff: vi.fn(), getControl: vi.fn(), review: vi.fn(),
 });
 const unlock = async () => {
-  fireEvent.click(screen.getByRole('button', { name: 'Use hosted demo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Use hosted sandbox' }));
   await screen.findByRole('heading', { name: 'Acquire a decision' });
 };
 const unlockByok = async (fake: ReturnType<typeof api>) => {
   vi.mocked(fake.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
   fireEvent.change(screen.getByLabelText('CALL-E API key'), { target: { value: 'INERT-BYOK-KEY' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Connect CALL-E' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Connect your account' }));
   await screen.findByRole('heading', { name: 'Acquire a decision' });
 };
 
@@ -171,8 +171,8 @@ describe('Acquisition V1 experience', () => {
   it('offers hosted and own-account connection paths without exposing demo-token UX', () => {
     render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
     expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Use hosted demo' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Connect your CALL-E account' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Hosted sandbox' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Your CALL-E account' })).toBeVisible();
     expect(document.body.textContent).not.toMatch(/temporary live-access token/i);
   });
 
@@ -181,7 +181,7 @@ describe('Acquisition V1 experience', () => {
     vi.mocked(fake.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     fireEvent.change(screen.getByLabelText('CALL-E API key'), { target: { value: 'INERT-BYOK-KEY' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Connect CALL-E' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect your account' }));
     await screen.findByText('Your CALL-E account is connected for this session');
     expect(fake.connectByok).toHaveBeenCalledWith('INERT-BYOK-KEY');
     expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('INERT-BYOK-CONNECTION');
@@ -239,7 +239,7 @@ describe('Acquisition V1 experience', () => {
     expect(await screen.findByText(/connection is retained, but active acquisition state could not be verified/i)).toBeVisible();
     expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('ACCESS');
     expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Use hosted demo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use hosted sandbox' })).not.toBeInTheDocument();
   });
 
   it('keeps active acquisition evidence truthful with no fabricated turns', async () => {
@@ -795,7 +795,7 @@ describe('Acquisition V1 visual grammar', () => {
 
   it('tells the user Hosted demo outcomes are not scripted before they connect', () => {
     render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
-    expect(screen.getByText(/outcomes aren't scripted/i)).toBeVisible();
+    expect(screen.getByText(/outcomes are not scripted/i)).toBeVisible();
     expect(screen.queryByText(/guaranteed to be approved/i)).not.toBeInTheDocument();
   });
 
@@ -863,7 +863,7 @@ describe('Acquisition V1 Connection Gate', () => {
   it('keeps Hosted connection behavior unchanged from the gate — one connectHosted call, no acquisition created', async () => {
     const fake = api();
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Use hosted demo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted sandbox' }));
     await screen.findByRole('heading', { name: 'Acquire a decision' });
     expect(fake.connectHosted).toHaveBeenCalledTimes(1);
     expect(fake.create).not.toHaveBeenCalled();
@@ -877,7 +877,7 @@ describe('Acquisition V1 Connection Gate', () => {
     vi.mocked(fake.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     fireEvent.change(screen.getByLabelText('CALL-E API key'), { target: { value: 'INERT-BYOK-KEY' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Connect CALL-E' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect your account' }));
     await screen.findByRole('heading', { name: 'Acquire a decision' });
     expect(fake.connectByok).toHaveBeenCalledWith('INERT-BYOK-KEY');
     expect(fake.create).not.toHaveBeenCalled();
@@ -885,12 +885,17 @@ describe('Acquisition V1 Connection Gate', () => {
 
   it('gives Hosted and BYOK clear, distinct semantics on one gate composition', () => {
     render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
-    expect(screen.getByRole('heading', { name: 'Use hosted demo' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Connect your CALL-E account' })).toBeVisible();
-    expect(screen.getByText('Recommended')).toBeVisible();
-    expect(screen.getByText(/No real customer is contacted/)).toBeVisible();
-    expect(screen.getByText(/Uses your provider quota/)).toBeVisible();
-    expect(screen.getByText(/outcomes aren't scripted/i)).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Hosted sandbox' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Your CALL-E account' })).toBeVisible();
+    expect(screen.getByText('For live acquisitions')).toBeVisible();
+    expect(screen.getByText('Limited live test')).toBeVisible();
+    expect(screen.getByText(/No CALL-E account required/)).toBeVisible();
+    expect(screen.getByText(/Your CALL-E account and balance/)).toBeVisible();
+    expect(screen.getByText(/outcomes are not scripted/i)).toBeVisible();
+    // "Hosted live demo"/"Recommended" is retired: Try Demo owns the guided-demo concept and
+    // BYOK is the primary live route.
+    expect(screen.queryByText('Recommended')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hosted live demo/i)).not.toBeInTheDocument();
   });
 
   it('keeps CALL-E provider yellow off the rest of the interface — scoped to the gate only', () => {
@@ -905,5 +910,76 @@ describe('Acquisition V1 Connection Gate', () => {
     const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
     expect(within(eligibility).getByText('READY FOR REVIEW')).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Connect to CALL-E' })).not.toBeInTheDocument();
+  });
+
+  it('renders the real CALL-E brand artwork, never a redrawn or phone-glyph substitute', () => {
+    const { container } = render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    const brandImages = [...container.querySelectorAll<HTMLImageElement>('img')].filter((image) => /call-e/i.test(image.getAttribute('src') ?? ''));
+    expect(brandImages.length).toBeGreaterThanOrEqual(2);
+    expect(brandImages.some((image) => /icon-yellow/.test(image.src))).toBe(true);
+    expect(brandImages.some((image) => /logo-yellow/.test(image.src))).toBe(true);
+    for (const image of brandImages) expect(image.getAttribute('alt')).toBe('CALL-E');
+    // The previous text-pill / outgoing-call-glyph stand-in for CALL-E identity is gone.
+    expect(container.querySelector('.acq-gate-calle-mark')).toBeNull();
+    const source = readFileSync('src/ui/AcquisitionExperience.tsx', 'utf8');
+    expect(source).toMatch(/assets\/brands\/call-e\/icon-yellow/);
+    expect(source).toMatch(/assets\/brands\/call-e\/logo-yellow/);
+  });
+
+  it('keeps a real signal bridge between Exception Broker and CALL-E that only animates on real state', () => {
+    const { container } = render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    const bridge = container.querySelector('.acq-bridge');
+    expect(bridge).not.toBeNull();
+    expect(bridge).toHaveClass('is-idle');
+    // More than a divider: layered strands plus luminous signal points.
+    expect(bridge!.querySelectorAll('.acq-bridge-strands path').length).toBeGreaterThanOrEqual(4);
+    expect(bridge!.querySelectorAll('.acq-bridge-points circle').length).toBeGreaterThanOrEqual(2);
+    expect(bridge).toHaveAttribute('aria-hidden', 'true');
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    // At rest there is no travelling signal; the travelling pulse is bound to .is-connecting.
+    expect(css).toMatch(/\.acq-bridge\.is-connecting \.acq-bridge-pulse\s*\{[^}]*animation:acq-bridge-travel/);
+    expect(css).not.toMatch(/\.acq-bridge\.is-idle \.acq-bridge-pulse\s*\{[^}]*animation/);
+    // Reduced motion keeps the composition but removes the travelling signal.
+    expect(css.match(/@media \(prefers-reduced-motion:reduce\)[\s\S]*?\n\n/)?.[0] ?? css).toMatch(/\.acq-bridge \.acq-bridge-pulse \{ display:none; \}/);
+  });
+
+  it('shows a travelling signal only while a real connection request is in flight', async () => {
+    const fake = api();
+    let release!: (value: { connectionId: string; kind: 'HOSTED_DEMO'; connected: true }) => void;
+    vi.mocked(fake.connectHosted).mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    const { container } = render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    expect(container.querySelector('.acq-bridge')).toHaveClass('is-idle');
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted sandbox' }));
+    await waitFor(() => expect(container.querySelector('.acq-bridge')).toHaveClass('is-connecting'));
+    release({ connectionId: 'INERT-SESSION-TOKEN', kind: 'HOSTED_DEMO', connected: true });
+    await screen.findByRole('heading', { name: 'Acquire a decision' });
+  });
+
+  it('routes the Try Demo escape hatch through the existing demo navigation', () => {
+    const onNavigateControl = vi.fn();
+    render(<AcquisitionExperience api={api()} onNavigateControl={onNavigateControl} />);
+    const escape = screen.getByRole('button', { name: /Try the guided demo/ });
+    expect(escape).toBeVisible();
+    fireEvent.click(escape);
+    expect(onNavigateControl).toHaveBeenCalledTimes(1);
+  });
+
+  it('presents BYOK as the primary live route and Hosted sandbox as the secondary test route', () => {
+    const { container } = render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    const routes = [...container.querySelectorAll('.acq-gate-route')];
+    expect(routes).toHaveLength(2);
+    expect(routes[0]).toHaveClass('acq-gate-route--byok');
+    expect(routes[1]).toHaveClass('acq-gate-route--hosted');
+    expect(within(routes[0] as HTMLElement).getByRole('heading', { name: 'Your CALL-E account' })).toBeVisible();
+    expect(within(routes[1] as HTMLElement).getByRole('heading', { name: 'Hosted sandbox' })).toBeVisible();
+    // Hosted's session limit stays as restrained supporting copy, never a headline benefit.
+    const hostedLimit = screen.getByText(/one acquisition per browser session/i);
+    expect(hostedLimit.tagName).toBe('SMALL');
+  });
+
+  it('keeps CALL-E yellow out of every result, status and disposition color', () => {
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    const semanticSelectors = /\.(acq-resolution|acq-inline-status|acq-state|acq-rail-step)[^{]*\{[^}]*\}/g;
+    for (const rule of css.match(semanticSelectors) ?? []) expect(rule).not.toMatch(/--acq-calle/);
   });
 });
