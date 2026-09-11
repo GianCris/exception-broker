@@ -47,7 +47,7 @@ describe('Home product entry', () => {
   it('routes Acquisition and Control to real surfaces, and their logos return Home', () => {
     render(<App />);
     fireEvent.click(nav().getByRole('button', { name: 'Acquisition' }));
-    expect(screen.getByRole('heading', { name: 'Choose how to connect CALL-E' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Exception Broker home' }));
     fireEvent.click(nav().getByRole('button', { name: 'Control' }));
     expect(screen.getByRole('region', { name: 'Decision control model' })).toBeVisible();

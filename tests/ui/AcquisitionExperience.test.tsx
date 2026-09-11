@@ -163,14 +163,14 @@ describe('Acquisition V1 experience', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: 'Decisions need guardrails to reach reality.' })).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Acquisition' }));
-    expect(screen.getByRole('heading', { name: 'Choose how to connect CALL-E' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Control' }));
     expect(screen.getByRole('heading', { name: 'Decision is not authority.' })).toBeVisible();
   });
 
   it('offers hosted and own-account connection paths without exposing demo-token UX', () => {
     render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
-    expect(screen.getByRole('heading', { name: 'Choose how to connect CALL-E' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Use hosted demo' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Connect your CALL-E account' })).toBeVisible();
     expect(document.body.textContent).not.toMatch(/temporary live-access token/i);
@@ -828,5 +828,82 @@ describe('Acquisition V1 visual grammar', () => {
     expect(eligibility).toHaveClass('is-clarification');
     const css = readFileSync('src/styles/acquisition.css', 'utf8');
     expect(css.match(/\.acq-resolution\.is-safe-stop\.is-clarification h2[^{]*\{[^}]*\}/)?.[0]).not.toMatch(/var\(--acq-brass\)/);
+  });
+});
+
+describe('Acquisition V1 Connection Gate', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.useRealTimers(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('renders the rail alongside the gate without renaming the Conversation lifecycle step to Connection', () => {
+    render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    const rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
+    expect(within(rail).getByText('Conversation')).toBeVisible();
+    expect(within(rail).queryByText('Connection', { selector: 'strong' })).not.toBeInTheDocument();
+    expect(within(rail).getByText('CONNECTION REQUIRED')).toBeVisible();
+    expect(within(rail).getByText('Evidence')).toBeVisible();
+    expect(within(rail).getByText('Decision')).toBeVisible();
+    expect(within(rail).getByText('Control')).toBeVisible();
+    // Not yet connected: the rail's own connection/disconnect block stays hidden.
+    expect(screen.queryByRole('button', { name: 'Disconnect CALL-E' })).not.toBeInTheDocument();
+  });
+
+  it('creates no acquisition and makes no CALL-E request merely by viewing or selecting a connection route', () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
+    expect(fake.connectHosted).not.toHaveBeenCalled();
+    expect(fake.connectByok).not.toHaveBeenCalled();
+    expect(fake.create).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('CALL-E API key'), { target: { value: 'X' } });
+    expect(fake.connectByok).not.toHaveBeenCalled();
+    expect(fake.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps Hosted connection behavior unchanged from the gate — one connectHosted call, no acquisition created', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted demo' }));
+    await screen.findByRole('heading', { name: 'Acquire a decision' });
+    expect(fake.connectHosted).toHaveBeenCalledTimes(1);
+    expect(fake.create).not.toHaveBeenCalled();
+    // Reaching READY does not itself create an acquisition — the existing pre-call
+    // confirmation still gates that, unchanged by this presentation pass.
+    expect(screen.getByRole('button', { name: 'Start CALL-E acquisition' })).toBeVisible();
+  });
+
+  it('keeps BYOK connection behavior unchanged from the gate', async () => {
+    const fake = api();
+    vi.mocked(fake.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    fireEvent.change(screen.getByLabelText('CALL-E API key'), { target: { value: 'INERT-BYOK-KEY' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect CALL-E' }));
+    await screen.findByRole('heading', { name: 'Acquire a decision' });
+    expect(fake.connectByok).toHaveBeenCalledWith('INERT-BYOK-KEY');
+    expect(fake.create).not.toHaveBeenCalled();
+  });
+
+  it('gives Hosted and BYOK clear, distinct semantics on one gate composition', () => {
+    render(<AcquisitionExperience api={api()} onNavigateControl={() => undefined} />);
+    expect(screen.getByRole('heading', { name: 'Use hosted demo' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Connect your CALL-E account' })).toBeVisible();
+    expect(screen.getByText('Recommended')).toBeVisible();
+    expect(screen.getByText(/No real customer is contacted/)).toBeVisible();
+    expect(screen.getByText(/Uses your provider quota/)).toBeVisible();
+    expect(screen.getByText(/outcomes aren't scripted/i)).toBeVisible();
+  });
+
+  it('keeps CALL-E provider yellow off the rest of the interface — scoped to the gate only', () => {
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    const calleUsages = css.match(/[^\n{]*var\(--acq-calle\)[^\n{;]*\{[^}]*\}/g) ?? [];
+    for (const rule of calleUsages) expect(rule).toMatch(/\.acq-gate/);
+  });
+
+  it('does not change any Acquisition state after connection — READY_FOR_REVIEW stays reachable and untouched', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
+    const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
+    expect(within(eligibility).getByText('READY FOR REVIEW')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Connect to CALL-E' })).not.toBeInTheDocument();
   });
 });
