@@ -215,8 +215,9 @@ describe('Acquisition V1 experience', () => {
     expect(screen.getByText(ACQUISITION_V1_OBJECTIVE)).not.toBeVisible();
     expect(screen.getByText(ACQUISITION_V1_CONTEXT)).not.toBeVisible();
     expect(screen.queryByLabelText('Recipient phone')).not.toBeInTheDocument();
-    expect(screen.getByText('Hosted synthetic destination')).toBeVisible();
-    expect(screen.getByText(/Configured by Exception Broker/)).toBeVisible();
+    expect(screen.getAllByText('Hosted synthetic destination').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Configured by Exception Broker/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Not entered')).not.toBeInTheDocument();
   });
 
   it('recovers the current connection owned active acquisition before showing READY', async () => {
@@ -274,9 +275,19 @@ describe('Acquisition V1 experience', () => {
     const withTranscript = { ...complete, providerEvidence: { ...complete.providerEvidence!, recipients: [{ ...complete.providerEvidence!.recipients[0]!, attempts: [{ ...complete.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: turns }] }] } };
     render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
     expect((await screen.findAllByText('Returned turn 4'))[0]).toBeVisible();
+    expect(screen.getByText('Returned turn 1')).toBeVisible();
     expect(screen.getByText('Returned turn 5')).not.toBeVisible();
-    fireEvent.click(screen.getByText(/View full transcript/));
+    const toggle = screen.getByRole('button', { name: /View remaining 2 turns/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByText('Returned turn 1')).toBeVisible();
+    expect(screen.getByText('Returned turn 5')).toBeVisible();
     expect(screen.getByText('Returned turn 6')).toBeVisible();
+    expect(screen.getAllByText(/Returned turn 1$/)).toHaveLength(1);
+    const collapse = screen.getByRole('button', { name: /Collapse transcript/ });
+    expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(collapse);
+    expect(screen.getByText('Returned turn 5')).not.toBeVisible();
   });
 
   it('locking clears session access but preserves the non-sensitive recovery pointer', async () => {
@@ -543,5 +554,156 @@ describe('Acquisition V1 experience', () => {
     expect(source).not.toMatch(/@call-e\/calle|CALLE_API_KEY|VITE_|CallEProvider|operatorScenario|control\/service|control\/store|prepareProof\(|reviewProof\(|executeOrchestrationAction|OrchestrationState|ProofSession/);
     expect(source).not.toMatch(/localStorage\.setItem\([^\n]*access|localStorage\.setItem\([^\n]*token/i);
     expect(source).not.toMatch(/__mockup|mockup registry|prototype state selector|fixture business/i);
+  });
+});
+
+describe('Acquisition V1 visual polish', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.useRealTimers(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('gates Hosted acquisition creation behind an explicit pre-call confirmation and never double-confirms', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await unlock();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    expect(fake.create).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/synthetic CALL-E demonstration/)).toBeVisible();
+    expect(within(dialog).getByText(/No real customer is contacted/)).toBeVisible();
+    expect(within(dialog).getByText(/2–10 minutes/)).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(fake.create).not.toHaveBeenCalled();
+  });
+
+  it('creates no acquisition when the Hosted warning is dismissed with Escape', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await unlock();
+    fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    await screen.findByRole('dialog');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(fake.create).not.toHaveBeenCalled();
+  });
+
+  it('creates exactly one acquisition after explicit Hosted confirmation', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await unlock();
+    fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /Start hosted demo/ }));
+    await waitFor(() => expect(fake.create).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('never shows the Hosted pre-call warning for BYOK, which creates directly once authorized', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await unlockByok(fake);
+    fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(fake.create).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the BYOK recipient authorization requirement in place', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await unlockByok(fake);
+    fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    expect(fake.create).not.toHaveBeenCalled();
+    expect(screen.getByText(/Confirm recipient ownership or authorization/)).toBeVisible();
+  });
+
+  it('strips spaces, hyphens, parentheses and dots from the visible BYOK phone input as the user types', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await unlockByok(fake);
+    const input = screen.getByLabelText('Recipient phone');
+    fireEvent.change(input, { target: { value: '+1 (276) 322-9632' } });
+    expect(input).toHaveValue('+12763229632');
+    fireEvent.change(input, { target: { value: '+1-276-322-9632' } });
+    expect(input).toHaveValue('+12763229632');
+    fireEvent.change(input, { target: { value: '+1.276.322.9632' } });
+    expect(input).toHaveValue('+12763229632');
+  });
+
+  it('sends the normalized international BYOK phone number to create', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'FIXED'} clock={() => '2027-06-10T22:00:00Z'} />);
+    await unlockByok(fake);
+    fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+1 (276) 322-9632' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    await waitFor(() => expect(fake.create).toHaveBeenCalledTimes(1));
+    expect(fake.create.mock.calls[0]![0]).toMatchObject({ phoneNumber: '+12763229632' });
+  });
+
+  it('gives human-readable guidance, not schema language, for an unusable BYOK phone number', async () => {
+    const fake = api();
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await unlockByok(fake);
+    fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
+    expect(screen.getByText(/Enter a full phone number, including the country code/)).toBeVisible();
+    expect(screen.queryByText(/E\.164/)).not.toBeInTheDocument();
+    expect(fake.create).not.toHaveBeenCalled();
+  });
+
+  it('shows truthful QUEUED waiting copy as the empty conversation surface', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(record())} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Waiting for CALL-E')).toBeVisible();
+    expect(screen.getByText('CALL-E is preparing the interaction.')).toBeVisible();
+    expect(screen.queryByText('Finalizing provider result')).not.toBeInTheDocument();
+  });
+
+  it('shows truthful IN_PROGRESS copy while the attempt is active with no transcript yet', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const active = record({ status: 'in_progress', providerEvidence: { ...record().providerEvidence!, status: 'in_progress', recipients: [{ id: 'RECIPIENT', status: 'in_progress', summary: null, attempts: [{ id: 'ATTEMPT', status: 'in_progress', startedAt: '2027-06-10T22:00:02Z', completedAt: null, summary: null, transcriptTurns: [], providerCallId: 'PROVIDER-CALL', failureCode: null, failureMessage: null }] }] } });
+    const { container } = render(<AcquisitionExperience api={api(active)} onNavigateControl={() => undefined} />);
+    await screen.findByText('CALL-E interaction is active.');
+    const activity = container.querySelector<HTMLElement>('.acq-provider-activity')!;
+    expect(within(activity).getByText('Conversation in progress')).toBeVisible();
+  });
+
+  it('shows finalizing copy only once the attempt itself completed while the record stays non-terminal', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const finalizing = record({ status: 'in_progress', providerEvidence: { ...record().providerEvidence!, status: 'in_progress', recipients: [{ id: 'RECIPIENT', status: 'completed', summary: null, attempts: [{ id: 'ATTEMPT', status: 'completed', startedAt: '2027-06-10T22:00:02Z', completedAt: '2027-06-10T22:01:00Z', summary: null, transcriptTurns: [], providerCallId: 'PROVIDER-CALL', failureCode: null, failureMessage: null }] }] } });
+    render(<AcquisitionExperience api={api(finalizing)} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Finalizing provider result')).toBeVisible();
+    expect(screen.getByText(/The call may be complete while CALL-E prepares the terminal structured result/)).toBeVisible();
+  });
+
+  it('stops the provider activity indicator immediately once the record reaches a terminal state', async () => {
+    vi.useFakeTimers();
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const fake = api(record());
+    fake.refresh.mockResolvedValue({ found: true, record: completed('APPROVED') });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText('Waiting for CALL-E')).toBeVisible();
+    await act(async () => { vi.advanceTimersByTime(2_000); await Promise.resolve(); });
+    expect(screen.queryByText('Waiting for CALL-E')).not.toBeInTheDocument();
+    const eligibility = screen.getByRole('region', { name: 'Control eligibility' });
+    expect(within(eligibility).getByText('READY FOR REVIEW')).toBeVisible();
+  });
+
+  it('keeps SAFE_STOP and READY_FOR_REVIEW semantics unchanged after the visual pass', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const { unmount } = render(<AcquisitionExperience api={api(completed('PENDING'))} onNavigateControl={() => undefined} />);
+    expect(await screen.findByRole('heading', { name: 'SAFE STOP' })).toBeVisible();
+    expect(screen.getByText('NOT READY FOR REVIEW')).toBeVisible();
+    unmount();
+    render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
+    const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
+    expect(within(eligibility).getByText('READY FOR REVIEW')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Continue to Control' })).toBeVisible();
   });
 });
