@@ -313,39 +313,47 @@ export class AcquisitionService {
    * original call instead of dialling twice.
    */
   async #dispatchCreate(record: AcquisitionRecord, input: AcquisitionCreateInput): Promise<Readonly<{ accepted: true; record: AcquisitionRecord }>> {
-    const spent = record.technicalFailure?.attempts ?? 0;
-    const allowed = Math.min(dispatchesPerRequest, maximumCreateDispatches - spent);
     // The persisted counter is authoritative: an exhausted or already-closed acquisition is
     // returned untouched rather than dialling again or restating its ambiguity as resolved.
-    if (allowed <= 0 || record.technicalFailure?.reconciliationAvailable === false) return { accepted: true, record };
+    if ((record.technicalFailure?.attempts ?? 0) >= maximumCreateDispatches || record.technicalFailure?.reconciliationAvailable === false) {
+      return { accepted: true, record };
+    }
 
     const callRequest: CallRequest = { ...input.request, phoneNumber: input.phoneNumber };
     const providerInput = buildCallEInput(callRequest, ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION']);
-    let dispatched = 0;
+    let working = record;
     let failure: unknown;
     // Acceptance knowledge is monotonic: once any dispatch for this acquisition — this
     // invocation or an earlier one — left the process ambiguously, a later proven-local refusal
-    // must never downgrade that back to DEFINITELY_NOT_SENT.
+    // must never downgrade that back to DEFINITELY_NOT_SENT. Captured before the first
+    // reservation, so the reservation's own conservative UNKNOWN never masquerades as history.
     let ambiguityObserved = record.technicalFailure?.acceptance === 'UNKNOWN';
 
-    for (let attempt = 0; attempt < allowed; attempt += 1) {
-      dispatched += 1;
+    for (let attempt = 0; attempt < dispatchesPerRequest; attempt += 1) {
+      const reserved = (working.technicalFailure?.attempts ?? 0) + 1;
+      if (reserved > maximumCreateDispatches) break;
+      // Reserve the slot durably BEFORE crossing the provider boundary. If this write throws,
+      // the provider is never contacted. If the process dies any time after it lands, restart
+      // reads a consumed slot and conservative uncertainty instead of a never-dispatched record.
+      working = await this.#reserveDispatch(working, reserved);
+
       try {
-        const call = await this.#gateway.create(providerInput, record.idempotencyKey, input.clientToken);
-        return { accepted: true, record: await this.#recordCall(record, call, input.clientToken) };
+        const call = await this.#gateway.create(providerInput, working.idempotencyKey, input.clientToken);
+        return { accepted: true, record: await this.#recordCall(working, call, input.clientToken) };
       } catch (error: unknown) {
         failure = error;
-        if (!(error instanceof ProviderNotDispatchedError)) ambiguityObserved = true;
-        // Nothing left this process, so reconciliation cannot discover anything new.
+        // Proven local refusal: this live process knows the reserved slot never left it.
         if (error instanceof ProviderNotDispatchedError) break;
-        if (attempt + 1 < allowed) await this.#delay(this.#reconcileDelayMs);
+        ambiguityObserved = true;
+        if (attempt + 1 < dispatchesPerRequest && reserved < maximumCreateDispatches) await this.#delay(this.#reconcileDelayMs);
       }
     }
 
     const observedAt = this.#clock();
     const diagnostics = failureDiagnostics(failure);
     const notDispatched = !ambiguityObserved && failure instanceof ProviderNotDispatchedError;
-    const attempts = spent + dispatched;
+    // The reservation already consumed the slot; finalizing never counts it a second time.
+    const attempts = working.technicalFailure?.attempts ?? 0;
     const technicalFailure: AcquisitionTechnicalFailure = {
       stage: 'CREATE',
       acceptance: notDispatched ? 'DEFINITELY_NOT_SENT' : 'UNKNOWN',
@@ -357,9 +365,41 @@ export class AcquisitionService {
     return {
       accepted: true,
       record: notDispatched
-        ? await this.#recordCreateNotDispatched(record, input.clientToken, technicalFailure)
-        : await this.#recordAcceptanceUnknown(record, technicalFailure, observedAt),
+        ? await this.#recordCreateNotDispatched(working, input.clientToken, technicalFailure)
+        : await this.#recordAcceptanceUnknown(working, technicalFailure, observedAt),
     };
+  }
+
+  /**
+   * Durably reserves one create dispatch before it is attempted. The UNKNOWN it writes is a
+   * conservative reservation — "this dispatch may now reach CALL-E" — not a claim that anything
+   * already failed. Previously observed diagnostics carry forward untouched; every unrelated
+   * durable field (lineage, access mode, fingerprints, decision context) is preserved.
+   */
+  async #reserveDispatch(record: AcquisitionRecord, attempts: number): Promise<AcquisitionRecord> {
+    const reservedAt = this.#clock();
+    const reserved: AcquisitionRecord = {
+      ...record,
+      status: 'creating',
+      callId: null,
+      updatedAt: reservedAt,
+      terminalAt: null,
+      normalizedResult: null,
+      normalizationStatus: 'PENDING',
+      safeStopReason: null,
+      handoffState: 'NOT_READY',
+      technicalFailure: {
+        stage: 'CREATE',
+        acceptance: 'UNKNOWN',
+        reconciliationAvailable: attempts < maximumCreateDispatches,
+        attempts,
+        code: record.technicalFailure?.code ?? null,
+        message: record.technicalFailure?.message ?? null,
+        observedAt: reservedAt,
+      },
+    };
+    await this.#store.put(reserved);
+    return reserved;
   }
 
   async poll(acquisitionId: string, clientToken: string): Promise<PollAcquisitionResult> {

@@ -13,7 +13,7 @@ import { acquisitionGuardPolicyFromEnvironment, hashClientToken, type Acquisitio
 import { createAcquisitionHttpHandler } from '../../src/acquisition/http.js';
 import { createProductionAcquisitionHandler } from '../../src/acquisition/server.js';
 import { AcquisitionService } from '../../src/acquisition/service.js';
-import { JsonFileAcquisitionStore, MemoryAcquisitionStore } from '../../src/acquisition/store.js';
+import { JsonFileAcquisitionStore, MemoryAcquisitionStore, type AcquisitionStore } from '../../src/acquisition/store.js';
 import { PHONE_DECISION_SCHEMA } from '../../src/integrations/calle/contract.js';
 import { mapCalleResponseForContext } from '../../src/integrations/calle/mapper.js';
 
@@ -103,6 +103,16 @@ const policy = (overrides: Partial<AcquisitionGuardPolicy> = {}): AcquisitionGua
   cooldownMs: 0,
   ...overrides,
 });
+
+/** Accepts a fixed number of writes, then refuses — the durable boundary a dying process leaves behind. */
+const haltingStore = (store: AcquisitionStore, writes: number, reason: string): AcquisitionStore => {
+  let accepted = 0;
+  return {
+    get: (acquisitionId) => store.get(acquisitionId),
+    list: () => store.list(),
+    put: async (record) => { accepted += 1; if (accepted > writes) throw new Error(reason); await store.put(record); },
+  };
+};
 
 const setup = (created: Call = call(), policyOverride: Partial<AcquisitionGuardPolicy> = {}) => {
   const create = vi.fn(async (_request: CreateCallInput, _idempotencyKey: string) => structuredClone(created));
@@ -562,6 +572,137 @@ describe('Acquisition V1 server boundary', () => {
     expect(created).toMatchObject({ accepted: true, record: { status: 'failed', callId: null, technicalFailure: { acceptance: 'DEFINITELY_NOT_SENT', reconciliationAvailable: false, attempts: 1 } } });
     // No provider operation could have happened, so the Hosted budget is not consumed.
     expect(await service.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: true, record: { acquisitionId: 'ACQ-002', status: 'queued' } });
+  });
+
+  it('has already reserved the dispatch durably before the provider is ever invoked', async () => {
+    const store = new MemoryAcquisitionStore();
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); return call('queued'); });
+    const service = new AcquisitionService({ store, gateway: { create, get: vi.fn(async () => call('queued')) }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    // Snapshot taken inside gateway.create: the slot was already durable when the call began.
+    expect(seen[0]).toMatchObject({
+      acquisitionId: 'ACQ-001', idempotencyKey: 'exception-broker-acquisition-v1:ACQ-001', status: 'creating', callId: null,
+      normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY',
+      technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', attempts: 1, reconciliationAvailable: true },
+    });
+  });
+
+  it('reserves the second dispatch durably before retrying, without any post-call counter', async () => {
+    const store = new MemoryAcquisitionStore();
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); throw new Error('socket hang up'); });
+    const service = new AcquisitionService({ store, gateway: { create, get: vi.fn(async () => call('queued')) }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(seen[0]?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+    // The retry's slot is durable before it is spent, so the count never depends on memory.
+    expect(seen[1]?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2 });
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true });
+  });
+
+  it('never replays a dispatch slot that a crashed process had already reserved', async () => {
+    const store = new MemoryAcquisitionStore();
+    // A process that died after reserving slot #1: no further durable progress was possible.
+    const crashedCreate = vi.fn(async () => { throw new Error('socket hang up'); });
+    const dying = new AcquisitionService({ store: haltingStore(store, 2, 'process died'), gateway: { create: crashedCreate, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await expect(dying.create(input())).rejects.toThrow('process died');
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+
+    // A fresh process reads the reservation and continues from slot #2, never reusing #1.
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); throw new Error('socket hang up'); });
+    const restarted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await restarted.create(input());
+    expect(seen.map((record) => record?.technicalFailure?.attempts)).toEqual([2, 3]);
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false });
+    // The lifetime ceiling is durable, not per process: nothing may dial again.
+    const exhausted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await exhausted.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a crashed reservation UNKNOWN even when the next dispatch is proven local', async () => {
+    const store = new MemoryAcquisitionStore();
+    const dying = new AcquisitionService({ store: haltingStore(store, 2, 'process died'), gateway: { create: vi.fn(async () => { throw new Error('socket hang up'); }), get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await expect(dying.create(input())).rejects.toThrow('process died');
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+
+    // The restarted process lacks the dead process's proof, so local refusal cannot claim certainty.
+    const create = vi.fn(async () => { throw new ProviderNotDispatchedError(); });
+    const restarted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    const result = await restarted.create(input());
+    expect(result).toMatchObject({ accepted: true, record: {
+      status: 'creating', callId: null, terminalAt: null,
+      technicalFailure: { acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true },
+    } });
+    expect(await restarted.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+  });
+
+  it('still proves a true first-ever DEFINITELY_NOT_SENT despite reserving the slot first', async () => {
+    const store = new MemoryAcquisitionStore();
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); throw new ProviderNotDispatchedError(); });
+    const service = new AcquisitionService({ store, gateway: { create, get: vi.fn(async () => call('queued')) }, policy: policy({ perClientDailyLimit: 1 }), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    // The conservative reservation was written first, and the live proof still overrides it.
+    expect(seen[0]?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+    expect(created).toMatchObject({ accepted: true, record: { status: 'failed', callId: null, technicalFailure: { acceptance: 'DEFINITELY_NOT_SENT', attempts: 1, reconciliationAvailable: false } } });
+    expect(await store.get('ACQ-001')).toMatchObject({ normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY' });
+    // No provider operation happened, so the Hosted budget is untouched.
+    const gateway = { create: vi.fn(async () => call('queued')), get: vi.fn() };
+    const next = new AcquisitionService({ store, gateway, policy: policy({ perClientDailyLimit: 1 }), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    expect(await next.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: true, record: { acquisitionId: 'ACQ-002', status: 'queued' } });
+  });
+
+  it('resolves the reserved slot into the normal lifecycle when the provider answers', async () => {
+    const { service, create, store } = setup(call('queued'));
+    const resolved = await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    expect(create.mock.calls[0]?.[1]).toBe('exception-broker-acquisition-v1:ACQ-001');
+    expect(resolved).toMatchObject({ accepted: true, record: { status: 'queued', callId: 'call_test_001' } });
+    const stored = await store.get('ACQ-001');
+    // Provider identity resolves the reservation: the stale UNKNOWN does not survive.
+    expect(stored?.technicalFailure).toBeUndefined();
+    expect(stored?.idempotencyKey).toBe('exception-broker-acquisition-v1:ACQ-001');
+  });
+
+  it('contacts no provider at all when the dispatch reservation cannot be persisted', async () => {
+    const store = new MemoryAcquisitionStore();
+    const create = vi.fn(async () => call('queued'));
+    // Only the initial record lands; the dispatch reservation write fails.
+    const service = new AcquisitionService({ store: haltingStore(store, 1, 'durable write unavailable'), gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    await expect(service.create(input())).rejects.toThrow('durable write unavailable');
+    // The reservation never landed, so the provider was never contacted.
+    expect(create).not.toHaveBeenCalled();
+    expect((await store.get('ACQ-001'))?.technicalFailure).toBeUndefined();
+  });
+
+  it('stays exhausted across a restart at the persisted lifetime ceiling', async () => {
+    const store = new MemoryAcquisitionStore();
+    const ambiguous = vi.fn(async () => { throw new Error('socket hang up'); });
+    const first = new AcquisitionService({ store, gateway: { create: ambiguous, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await first.create(input());
+    await first.create(input());
+    expect(ambiguous).toHaveBeenCalledTimes(3);
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false });
+
+    const create = vi.fn(async () => call('queued'));
+    const restarted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    for (let repeat = 0; repeat < 5; repeat += 1) {
+      expect(await restarted.create(input())).toMatchObject({ accepted: true, existing: true, record: {
+        acquisitionId: 'ACQ-001', idempotencyKey: 'exception-broker-acquisition-v1:ACQ-001', status: 'creating',
+        technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false },
+      } });
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(await store.list()).toHaveLength(1);
   });
 
   it('resolves a monotonically-UNKNOWN acquisition once the allowed reconciliation returns the real provider call', async () => {
