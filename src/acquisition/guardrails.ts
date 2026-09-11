@@ -31,19 +31,21 @@ export const evaluateAcquisitionGuard = (
   if (policy.recipientAllowlist !== undefined && !policy.recipientAllowlist.has(input.phoneNumber)) {
     return rejection('RECIPIENT_NOT_ALLOWED', 'Recipient is not allowed by server policy');
   }
-  if (records.some((record) => record.status === 'creating' || record.status === 'queued' || record.status === 'in_progress')) {
-    return rejection('ACTIVE_ACQUISITION_EXISTS', 'Another live acquisition is active');
+  const clientHash = hashClientToken(input.clientToken);
+  if (records.some((record) => record.clientTokenHash === clientHash && (record.status === 'creating' || record.status === 'queued' || record.status === 'in_progress'))) {
+    return rejection('ACTIVE_ACQUISITION_EXISTS', 'This connection already owns an active acquisition');
   }
 
+  if (input.accessMode === 'BYOK') return undefined;
   const today = utcDay(now);
-  const todayRecords = records.filter((record) => utcDay(record.createdAt) === today);
+  // Missing accessMode is conservative legacy Hosted usage, never inferred BYOK.
+  const todayRecords = records.filter((record) => record.accessMode !== 'BYOK' && utcDay(record.createdAt) === today);
   if (todayRecords.length >= policy.globalDailyLimit) return rejection('CALL_LIMIT_REACHED', 'Global live acquisition limit reached');
 
-  const clientHash = hashClientToken(input.clientToken);
   const clientRecords = todayRecords.filter((record) => record.clientTokenHash === clientHash);
   if (clientRecords.length >= policy.perClientDailyLimit) return rejection('CALL_LIMIT_REACHED', 'Client live acquisition limit reached');
 
-  const latest = records.reduce<AcquisitionRecord | undefined>((candidate, record) =>
+  const latest = clientRecords.reduce<AcquisitionRecord | undefined>((candidate, record) =>
     candidate === undefined || Date.parse(record.createdAt) > Date.parse(candidate.createdAt) ? record : candidate, undefined);
   if (latest !== undefined && Date.parse(now) - Date.parse(latest.createdAt) < policy.cooldownMs) {
     return rejection('COOLDOWN_ACTIVE', 'Live acquisition cooldown is active');

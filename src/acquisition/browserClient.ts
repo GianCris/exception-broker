@@ -5,9 +5,8 @@ import type { AcquisitionConnectionPublic } from './access.js';
 
 export type BrowserAcquisitionCreateInput = Readonly<{
   acquisitionId: string;
-  clientToken: string;
   authorizationConfirmed: true;
-  phoneNumber: string;
+  phoneNumber?: string;
   request: Readonly<{
     requestId: string;
     caseId: string;
@@ -37,7 +36,8 @@ export interface AcquisitionBrowserApi {
   connectByok(apiKey: string): Promise<AcquisitionConnectionPublic>;
   getConnection(connectionId: string): Promise<AcquisitionConnectionPublic>;
   disconnect(connectionId: string): Promise<void>;
-  create(input: BrowserAcquisitionCreateInput): Promise<BrowserCreateResult>;
+  create(input: BrowserAcquisitionCreateInput, connectionId: string): Promise<BrowserCreateResult>;
+  getActive(connectionId: string): Promise<AcquisitionPublicRecord | null>;
   get(acquisitionId: string, accessToken: string): Promise<AcquisitionPublicRecord>;
   refresh(acquisitionId: string, accessToken: string): Promise<BrowserReadResult>;
   handoff(acquisitionId: string, accessToken: string): Promise<Readonly<{ accepted: true; record: LiveControlPublicRecord; existing: boolean }>>;
@@ -89,12 +89,17 @@ export const createAcquisitionBrowserApi = (
   async disconnect(connectionId) {
     await parseResponse(await fetcher('/api/acquisition-access', { method: 'DELETE', headers: { 'x-acquisition-connection': connectionId } }));
   },
-  async create(input) {
+  async create(input, connectionId) {
     return parseResponse<BrowserCreateResult>(await fetcher('/api/acquisitions', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-acquisition-connection': connectionId },
       body: JSON.stringify(input),
     }));
+  },
+  async getActive(connectionId) {
+    const response = await fetcher('/api/acquisitions/active', { headers: { 'x-acquisition-connection': connectionId } });
+    if (response.status === 204) return null;
+    return parseResponse<AcquisitionPublicRecord>(response);
   },
   async get(acquisitionId, accessToken) {
     return parseResponse<AcquisitionPublicRecord>(await fetcher(`/api/acquisitions/${encodeURIComponent(acquisitionId)}`, {
@@ -124,13 +129,11 @@ export const ACQUISITION_V1_CONTEXT = operatorSandboxContext();
 export const createBrowserAcquisitionRequest = (input: Readonly<{
   identity: string;
   createdAt: string;
-  accessToken: string;
-  phoneNumber: string;
+  phoneNumber?: string;
 }>): BrowserAcquisitionCreateInput => ({
   acquisitionId: `ACQ-BROWSER-V1-${input.identity}`,
-  clientToken: input.accessToken,
   authorizationConfirmed: true,
-  phoneNumber: input.phoneNumber,
+  ...(input.phoneNumber === undefined ? {} : { phoneNumber: input.phoneNumber }),
   request: {
     requestId: `REQUEST-BROWSER-V1-${input.identity}`,
     caseId: OPERATOR_SANDBOX_FACTS.caseId,

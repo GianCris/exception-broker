@@ -28,6 +28,7 @@ afterEach(async () => {
 const input = (overrides: Record<string, unknown> = {}): AcquisitionCreateInput => acquisitionCreateSchema.parse({
   acquisitionId: 'ACQ-001',
   clientToken: token,
+  accessMode: 'HOSTED_DEMO',
   authorizationConfirmed: true,
   phoneNumber: phone,
   request: {
@@ -152,7 +153,7 @@ describe('Acquisition V1 server boundary', () => {
     expect(providerInput?.resultSchema).toMatchObject({
       type: 'object',
       additionalProperties: false,
-      properties: { decision: { enum: ['APPROVED', 'REJECTED', 'PENDING', 'NEEDS_CLARIFICATION'] } },
+      properties: { decision: { enum: ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION'] } },
     });
   });
 
@@ -197,6 +198,19 @@ describe('Acquisition V1 server boundary', () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
+  it('allows different authorized Hosted and BYOK connections to own independent active acquisitions', async () => {
+    const connections = new Set(['CONNECTION-A', 'CONNECTION-B', 'CONNECTION-C']);
+    const { service, create } = setup(call('queued'), { allowedClientTokens: connections });
+    expect(await service.create(input({ clientToken: 'CONNECTION-A' }))).toMatchObject({ accepted: true });
+    expect(await service.create(input({ acquisitionId: 'ACQ-002', clientToken: 'CONNECTION-B', request: { ...input().request, requestId: 'REQUEST-ACQ-002' } }))).toMatchObject({ accepted: true });
+    expect(await service.create(input({ acquisitionId: 'ACQ-003', clientToken: 'CONNECTION-C', accessMode: 'BYOK', request: { ...input().request, requestId: 'REQUEST-ACQ-003' } }))).toMatchObject({ accepted: true });
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(await service.getActive('CONNECTION-A')).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.getActive('CONNECTION-B')).toMatchObject({ acquisitionId: 'ACQ-002' });
+    expect(await service.getActive('CONNECTION-C')).toMatchObject({ acquisitionId: 'ACQ-003' });
+    expect(await service.getActive('CONNECTION-OTHER')).toBeUndefined();
+  });
+
   it('enforces per-client cap and cooldown without another provider call', async () => {
     const capped = setup(call(), { perClientDailyLimit: 1 });
     await capped.service.create(input());
@@ -209,6 +223,14 @@ describe('Acquisition V1 server boundary', () => {
     expect(cooling.create).toHaveBeenCalledOnce();
   });
 
+  it('scopes Hosted cooldown to the owning connection rather than the whole service', async () => {
+    const connections = new Set(['HOSTED-A', 'HOSTED-B']);
+    const { service, create } = setup(call(), { allowedClientTokens: connections, cooldownMs: 60_000 });
+    expect(await service.create(input({ clientToken: 'HOSTED-A' }))).toMatchObject({ accepted: true });
+    expect(await service.create(input({ acquisitionId: 'ACQ-HOSTED-B', clientToken: 'HOSTED-B', request: { ...input().request, requestId: 'REQUEST-HOSTED-B' } }))).toMatchObject({ accepted: true });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
   it('separates one-per-session allowance from the server-wide hosted budget', async () => {
     const sessions = new Set(['HOSTED-SESSION-A', 'HOSTED-SESSION-B']);
     const { service, create } = setup(call(), { allowedClientTokens: sessions, perClientDailyLimit: 1, globalDailyLimit: 2, cooldownMs: 0 });
@@ -219,6 +241,33 @@ describe('Acquisition V1 server boundary', () => {
     expect(await service.create(sameSession)).toMatchObject({ accepted: false, code: 'CALL_LIMIT_REACHED' });
     expect(await service.create(distinctSession)).toMatchObject({ accepted: true });
     expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists trusted access mode and excludes BYOK from Hosted limits and cooldown', async () => {
+    const connections = new Set(['HOSTED', 'BYOK']);
+    const { service, create } = setup(call(), { allowedClientTokens: connections, perClientDailyLimit: 1, globalDailyLimit: 1, cooldownMs: 60_000 });
+    const hosted = await service.create(input({ clientToken: 'HOSTED' }));
+    const byok = await service.create(input({ acquisitionId: 'ACQ-BYOK-1', clientToken: 'BYOK', accessMode: 'BYOK', request: { ...input().request, requestId: 'REQUEST-BYOK-1' } }));
+    const byokAgain = await service.create(input({ acquisitionId: 'ACQ-BYOK-2', clientToken: 'BYOK', accessMode: 'BYOK', request: { ...input().request, requestId: 'REQUEST-BYOK-2' } }));
+    expect(hosted).toMatchObject({ accepted: true, record: { accessMode: 'HOSTED_DEMO' } });
+    expect(byok).toMatchObject({ accepted: true, record: { accessMode: 'BYOK' } });
+    expect(byokAgain).toMatchObject({ accepted: true, record: { accessMode: 'BYOK' } });
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
+  it('counts legacy records conservatively against the Hosted budget after registry loss', async () => {
+    const connections = new Set(['HOSTED-A', 'HOSTED-B']);
+    const first = setup(call(), { allowedClientTokens: connections, globalDailyLimit: 1 });
+    const created = await first.service.create(input({ clientToken: 'HOSTED-A' }));
+    expect(created).toMatchObject({ accepted: true });
+    if (!created.accepted) throw new Error('Expected initial acquisition');
+    const { accessMode: _mode, ...legacy } = created.record;
+    await first.store.put(legacy);
+    expect(await first.service.create(input({ acquisitionId: 'ACQ-HOSTED-B', clientToken: 'HOSTED-B', request: { ...input().request, requestId: 'REQUEST-HOSTED-B' } }))).toMatchObject({
+      accepted: false,
+      code: 'CALL_LIMIT_REACHED',
+    });
+    expect(first.create).toHaveBeenCalledOnce();
   });
 
   it('polls queued to in_progress to completed without recreating the call', async () => {
@@ -442,7 +491,7 @@ describe('Acquisition V1 server boundary', () => {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input()),
     }));
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'LIVE_CALLING_DISABLED' });
+    expect(await response.json()).toMatchObject({ code: 'CLIENT_NOT_ALLOWED' });
     expect(apiKeyReads).toBe(0);
   });
 });

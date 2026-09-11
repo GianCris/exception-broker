@@ -18,7 +18,7 @@ const response = (decision = 'APPROVED') => ({
     summary: 'The supplier stated a decision.', authorizationChanges: [],
     clarificationNeeded: decision === 'NEEDS_CLARIFICATION',
   },
-  taskCompleted: decision === 'APPROVED' || decision === 'REJECTED',
+  taskCompleted: true,
   completionConfidence: { score: 0.9, label: 'high' }, evidence: [],
 });
 

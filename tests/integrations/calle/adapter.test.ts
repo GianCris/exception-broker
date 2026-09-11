@@ -40,7 +40,7 @@ const structuredResult = (decision = 'APPROVED') => ({
 const externalResponse = (decision = 'APPROVED') => ({
   status: 'completed',
   structuredResult: structuredResult(decision),
-  taskCompleted: decision === 'APPROVED' || decision === 'REJECTED',
+  taskCompleted: true,
   completionConfidence: { score: 0.92, label: 'high' },
   evidence: ['The recipient stated the decision explicitly.'],
 });

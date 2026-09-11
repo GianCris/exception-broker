@@ -33,13 +33,15 @@ export const renderClientDecisionPolicy = (facts: OperatorSandboxFacts) => [
   `Then present the hard Client conditions: no more than ${facts.substituteAuthorizationLimit} substitute units, no more than ${facts.clientCostLimit} additional Client cost, and ${facts.requestedQuantity} total units delivered by ${facts.targetDeliveryDate}.`,
   `Supplier absorbed cost ${facts.supplierAbsorbedCost} is proposal context, not a Client hard condition.`,
   'Only after presenting the proposal and conditions, ask for exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION.',
-  'If the recipient gives a decision before hearing those terms, do not accept it as final; present the terms and ask again.',
+  'If the recipient gives a decision before hearing those terms, present only the missing terms and ask once again for the decision on that exact proposal.',
   'Return APPROVED only when every required Client condition is satisfied.',
   'Return REJECTED when any stated hard Client condition is violated.',
   'Return NEEDS_CLARIFICATION only when information necessary to evaluate those conditions is missing or ambiguous.',
-  'Evaluate neutrally; no outcome is preferred and you must not persuade the recipient.',
-  'Obtain a brief reason or evidence basis. Do not infer or request an authorization change.',
-  'Finish only after one explicit supported decision is captured, or when the conversation genuinely requires clarification.',
+  'After that explicit answer, accept APPROVED, REJECTED, or NEEDS_CLARIFICATION as final. Never try to convert one outcome into another.',
+  'Evaluate neutrally; no outcome is preferred and you must not persuade or pressure the recipient.',
+  'If no reason was given, ask at most once for a brief reason. If a reason was already given, do not ask again. Do not infer or request an authorization change.',
+  'Then finish promptly. Do not repeat the proposal to seek a different answer.',
+  'If the recipient becomes silent, make at most two brief connection checks and then terminate safely. Never enter a hold loop or repeatedly say you will wait.',
 ].join(' ');
 
 export const OPERATOR_SANDBOX_OBJECTIVE = 'Conduct a neutral synthetic Client decision acquisition for the controlled recovery proposal. Present the proposal and hard conditions before obtaining exactly one decision: APPROVED, REJECTED, or NEEDS_CLARIFICATION. No authorization change is requested.';

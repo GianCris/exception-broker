@@ -9,8 +9,9 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 export type AcquisitionHttpHandler = (request: Request) => Promise<Response>;
+export type AcquisitionHttpOptions = Readonly<{ hostedRecipient?: string }>;
 
-export const createAcquisitionHttpHandler = (service: AcquisitionService, controls?: LiveControlService, access?: AcquisitionAccessService): AcquisitionHttpHandler => async (request) => {
+export const createAcquisitionHttpHandler = (service: AcquisitionService, controls?: LiveControlService, access?: AcquisitionAccessService, options: AcquisitionHttpOptions = {}): AcquisitionHttpHandler => async (request) => {
   const url = new URL(request.url);
   const clientToken = request.headers.get('x-acquisition-connection') ?? request.headers.get('x-acquisition-demo-token') ?? '';
   const match = /^\/api\/acquisitions\/([^/]+)$/.exec(url.pathname);
@@ -21,6 +22,9 @@ export const createAcquisitionHttpHandler = (service: AcquisitionService, contro
   const reviewMatch = /^\/api\/control-sessions\/([^/]+)\/review$/.exec(url.pathname);
 
   if (access !== undefined && request.method === 'POST' && url.pathname === '/api/acquisition-access/hosted') {
+    if (options.hostedRecipient === undefined || !/^\+[1-9]\d{7,14}$/.test(options.hostedRecipient)) {
+      return json({ connected: false, code: 'HOSTED_ACCESS_UNAVAILABLE' }, 503);
+    }
     const connection = access.connectHosted(clientToken || undefined);
     return connection === undefined
       ? json({ connected: false, code: 'HOSTED_ACCESS_UNAVAILABLE' }, 503)
@@ -42,8 +46,16 @@ export const createAcquisitionHttpHandler = (service: AcquisitionService, contro
     return connection === undefined ? json({ connected: false, code: 'CONNECTION_NOT_FOUND' }, 404) : json(connection);
   }
   if (access !== undefined && request.method === 'DELETE' && url.pathname === '/api/acquisition-access') {
-    access.disconnect(clientToken);
-    return json({ connected: false });
+    if (access.get(clientToken) === undefined) return json({ connected: false, code: 'CONNECTION_NOT_FOUND' }, 404);
+    return access.disconnect(clientToken)
+      ? json({ connected: false })
+      : json({ connected: true, code: 'CONNECTION_ACTIVE' }, 409);
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/acquisitions/active') {
+    if (clientToken === '') return json({ found: false, code: 'NOT_FOUND' }, 404);
+    const active = await service.getActive(clientToken);
+    return active === undefined ? new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } }) : json(toPublicAcquisitionRecord(active));
   }
 
   if (controls !== undefined && request.method === 'POST' && controlMatch !== null) {
@@ -70,7 +82,19 @@ export const createAcquisitionHttpHandler = (service: AcquisitionService, contro
     } catch {
       return json({ accepted: false, code: 'INVALID_INPUT', reason: 'Request body must be JSON' }, 400);
     }
-    const result = await service.create(body);
+    let trustedInput = body;
+    if (access !== undefined) {
+      const connection = access.get(clientToken);
+      if (connection === undefined) return json({ accepted: false, code: 'CLIENT_NOT_ALLOWED', reason: 'CALL-E connection is unavailable' }, 403);
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) return json({ accepted: false, code: 'INVALID_INPUT', reason: 'Invalid acquisition request' }, 400);
+      const browser = body as Record<string, unknown>;
+      const phoneNumber = connection.kind === 'HOSTED_DEMO' ? options.hostedRecipient : browser.phoneNumber;
+      if (connection.kind === 'HOSTED_DEMO' && (typeof phoneNumber !== 'string' || !/^\+[1-9]\d{7,14}$/.test(phoneNumber))) {
+        return json({ accepted: false, code: 'RECIPIENT_NOT_ALLOWED', reason: 'Hosted synthetic destination is unavailable' }, 503);
+      }
+      trustedInput = { ...browser, clientToken: connection.connectionId, accessMode: connection.kind, phoneNumber };
+    }
+    const result = await service.create(trustedInput);
     return result.accepted
       ? json({ ...result, record: toPublicAcquisitionRecord(result.record) }, result.existing ? 200 : 201)
       : json(result, result.code === 'INVALID_INPUT' ? 400 : 403);

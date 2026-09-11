@@ -31,25 +31,32 @@ const record = (overrides: Partial<AcquisitionPublicRecord> = {}): AcquisitionPu
   providerEvidence: { callId: 'CALL-TEST-1', status: 'queued', taskCompleted: null, completionConfidence: null, summary: null, evidence: [], structuredResult: null, createdAt: '2027-06-10T22:00:00Z', completedAt: null, failureCode: null, failureMessage: null, recipients: [] },
   normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY', ...overrides,
 });
-const completed = (decision: 'APPROVED' | 'REJECTED' | 'PENDING' = 'PENDING'): AcquisitionPublicRecord => record({
+const completed = (decision: 'APPROVED' | 'REJECTED' | 'NEEDS_CLARIFICATION' | 'PENDING' = 'PENDING'): AcquisitionPublicRecord => record({
   status: 'completed', terminalAt: '2027-06-10T22:02:00Z', updatedAt: '2027-06-10T22:02:00Z',
   providerEvidence: { callId: 'CALL-TEST-1', status: 'completed', taskCompleted: true, completionConfidence: { score: .93, label: 'high' }, summary: 'Synthetic participant responded.', evidence: ['One supported decision was requested.'], structuredResult: phoneDecisionSchema.parse({ decision, actorId: 'ACTOR-ACQUISITION-V1-CLIENT', actorRole: 'client', caseId: 'CASE-ACQUISITION-V1-SANDBOX', planId: 'PLAN-ACQUISITION-V1-SANDBOX', summary: 'Synthetic decision.', authorizationChanges: [], clarificationNeeded: decision === 'PENDING' }), createdAt: '2027-06-10T22:00:00Z', completedAt: '2027-06-10T22:02:00Z', failureCode: null, failureMessage: null, recipients: [{ id: 'RECIPIENT-1', status: 'completed', summary: 'Complete', attempts: [{ id: 'ATTEMPT-1', status: 'completed', startedAt: '2027-06-10T22:00:02Z', completedAt: '2027-06-10T22:01:59Z', summary: 'Done', transcriptTurns: [{ offsetSeconds: 2, speaker: 'bot', text: 'Choose one decision.' }, { offsetSeconds: 9, speaker: 'user', text: decision }], providerCallId: 'PROVIDER-CALL-1', failureCode: null, failureMessage: null }] }] },
   normalizedResult: decision === 'APPROVED' || decision === 'REJECTED' ? { requestId: 'REQUEST-TEST-1', createdAt: '2027-06-10T22:00:00Z', receivedAt: '2027-06-10T22:02:00Z', decision, actorId: 'ACTOR-ACQUISITION-V1-CLIENT', actorRole: 'client', caseId: 'CASE-ACQUISITION-V1-SANDBOX', planId: 'PLAN-ACQUISITION-V1-SANDBOX', summary: 'Synthetic decision.', authorizationChanges: [], evidence: ['One supported decision was requested.'], completionConfidence: { score: .93, label: 'high' } } : null,
   normalizationStatus: decision === 'APPROVED' || decision === 'REJECTED' ? 'USABLE' : 'SAFE_STOP',
   handoffState: decision === 'APPROVED' || decision === 'REJECTED' ? 'READY_FOR_REVIEW' : 'SAFE_STOP',
-  safeStopReason: decision === 'PENDING' ? 'Decision PENDING requires a safe stop before review' : null,
+  safeStopReason: decision === 'PENDING' || decision === 'NEEDS_CLARIFICATION' ? `Decision ${decision} requires a safe stop before review` : null,
 });
 const api = (initial = record()): AcquisitionBrowserApi & { create: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn>; handoff: ReturnType<typeof vi.fn>; getControl: ReturnType<typeof vi.fn>; review: ReturnType<typeof vi.fn> } => ({
   connectHosted: vi.fn().mockResolvedValue({ connectionId: 'INERT-SESSION-TOKEN', kind: 'HOSTED_DEMO', connected: true }),
   connectByok: vi.fn().mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true }),
   getConnection: vi.fn().mockResolvedValue({ connectionId: 'ACCESS', kind: 'HOSTED_DEMO', connected: true }),
   disconnect: vi.fn().mockResolvedValue(undefined),
+  getActive: vi.fn().mockResolvedValue(null),
   create: vi.fn().mockResolvedValue({ accepted: true, record: initial, existing: false }),
   get: vi.fn().mockResolvedValue(initial), refresh: vi.fn().mockResolvedValue({ found: true, record: initial }),
   handoff: vi.fn(), getControl: vi.fn(), review: vi.fn(),
 });
 const unlock = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Use hosted demo' }));
+  await screen.findByRole('heading', { name: 'Acquire a decision' });
+};
+const unlockByok = async (fake: ReturnType<typeof api>) => {
+  vi.mocked(fake.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
+  fireEvent.change(screen.getByLabelText('CALL-E API key'), { target: { value: 'INERT-BYOK-KEY' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Connect CALL-E' }));
   await screen.findByRole('heading', { name: 'Acquire a decision' });
 };
 
@@ -66,15 +73,15 @@ describe('Acquisition V1 browser client', () => {
     expect(JSON.stringify(connection)).not.toContain('INERT-BYOK-KEY');
   });
 
-  it('uses the existing create body contract without putting access in URL or headers', async () => {
+  it('uses the server connection header without putting access identity in the body or URL', async () => {
     const response = { accepted: true, record: record(), existing: false };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 201, headers: { 'content-type': 'application/json' } }));
-    const input = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', accessToken: 'ACCESS', phoneNumber: '+15551234567' });
-    await createAcquisitionBrowserApi(fetcher).create(input);
+    const input = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', phoneNumber: '+15551234567' });
+    await createAcquisitionBrowserApi(fetcher).create(input, 'ACCESS');
     expect(fetcher).toHaveBeenCalledTimes(1);
     const [url, init] = fetcher.mock.calls[0]!;
     expect(url).toBe('/api/acquisitions');
-    expect(init.headers).toEqual({ 'content-type': 'application/json' });
+    expect(init.headers).toEqual({ 'content-type': 'application/json', 'x-acquisition-connection': 'ACCESS' });
     expect(JSON.parse(init.body)).toEqual(input);
     expect(String(url)).not.toContain('ACCESS');
   });
@@ -103,13 +110,13 @@ describe('Acquisition V1 browser client', () => {
   });
 
   it('builds a fixed controlled request rather than accepting browser-authored correlation truth', () => {
-    const input = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', accessToken: 'ACCESS', phoneNumber: '+15551234567' });
+    const input = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', phoneNumber: '+15551234567' });
     expect(input.request).toMatchObject({ caseId: 'CASE-OPERATOR-SANDBOX', planId: 'PLAN-OPERATOR-SANDBOX', actorId: 'ACTOR-OPERATOR-CLIENT', actorRole: 'client' });
     expect(input).not.toHaveProperty('operationalTruth');
   });
 
   it('builds a neutral terms-before-decision CALL-E protocol from the real scenario values', () => {
-    const browser = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', accessToken: 'ACCESS', phoneNumber: '+15551234567' });
+    const browser = createBrowserAcquisitionRequest({ identity: 'FIXED', createdAt: '2027-06-10T22:00:00Z', phoneNumber: '+15551234567' });
     const task = buildCallEInput(callRequestSchema.parse({ ...browser.request, phoneNumber: browser.phoneNumber })).task;
     expect(task).toContain('present the exact proposal: 350 original units, 150 substitute units, 0 additional Client cost, 500 total units');
     expect(task).toContain('no more than 180 substitute units');
@@ -117,12 +124,18 @@ describe('Acquisition V1 browser client', () => {
     expect(task).toContain('Only after presenting the proposal and conditions');
     expect(task).toContain('If the recipient gives a decision before hearing those terms');
     expect(task).toContain('no outcome is preferred');
+    expect(task).toContain('accept APPROVED, REJECTED, or NEEDS_CLARIFICATION as final');
+    expect(task).toContain('ask at most once for a brief reason');
+    expect(task).toContain('Do not repeat the proposal');
+    expect(task).toContain('at most two brief connection checks');
+    expect(task).toContain('Never enter a hold loop');
+    expect(task).toContain('must not persuade or pressure');
     expect(task).not.toMatch(/prefer APPROVED|expected answer is APPROVED/i);
   });
 
   it('keeps per-call identity, recipient and time outside the canonical definition', () => {
-    const left = createBrowserAcquisitionRequest({ identity: 'ONE', createdAt: '2027-06-10T22:00:00Z', accessToken: 'A', phoneNumber: '+15551234567' });
-    const right = createBrowserAcquisitionRequest({ identity: 'TWO', createdAt: '2027-06-11T22:00:00Z', accessToken: 'B', phoneNumber: '+15557654321' });
+    const left = createBrowserAcquisitionRequest({ identity: 'ONE', createdAt: '2027-06-10T22:00:00Z', phoneNumber: '+15551234567' });
+    const right = createBrowserAcquisitionRequest({ identity: 'TWO', createdAt: '2027-06-11T22:00:00Z', phoneNumber: '+15557654321' });
     expect(left).toMatchObject({ acquisitionId: 'ACQ-BROWSER-V1-ONE', phoneNumber: '+15551234567', request: { requestId: 'REQUEST-BROWSER-V1-ONE', createdAt: '2027-06-10T22:00:00Z' } });
     expect(right).toMatchObject({ acquisitionId: 'ACQ-BROWSER-V1-TWO', phoneNumber: '+15557654321', request: { requestId: 'REQUEST-BROWSER-V1-TWO', createdAt: '2027-06-11T22:00:00Z' } });
     expect(left.request).toMatchObject({ caseId: right.request.caseId, planId: right.request.planId, actorId: right.request.actorId, actorRole: right.request.actorRole, context: right.request.context });
@@ -201,14 +214,41 @@ describe('Acquisition V1 experience', () => {
     expect(screen.queryByRole('button', { name: 'Continue to Control' })).not.toBeInTheDocument();
     expect(screen.getByText(ACQUISITION_V1_OBJECTIVE)).not.toBeVisible();
     expect(screen.getByText(ACQUISITION_V1_CONTEXT)).not.toBeVisible();
+    expect(screen.queryByLabelText('Recipient phone')).not.toBeInTheDocument();
+    expect(screen.getByText('Hosted synthetic destination')).toBeVisible();
+    expect(screen.getByText(/Configured by Exception Broker/)).toBeVisible();
+  });
+
+  it('recovers the current connection owned active acquisition before showing READY', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    const fake = api();
+    vi.mocked(fake.getActive).mockResolvedValueOnce(record());
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Waiting for CALL-E to begin…')).toBeVisible();
+    expect(fake.getActive).toHaveBeenCalledWith('ACCESS');
+    expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-TEST-1');
+    expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
+  });
+
+  it('retains the opaque connection and withholds READY when active-state verification fails', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    const fake = api();
+    vi.mocked(fake.getActive).mockRejectedValueOnce(new Error('inert lookup failure'));
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText(/connection is retained, but active acquisition state could not be verified/i)).toBeVisible();
+    expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('ACCESS');
+    expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use hosted demo' })).not.toBeInTheDocument();
   });
 
   it('keeps active acquisition evidence truthful with no fabricated turns', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     const active = record({ providerEvidence: { ...record().providerEvidence!, status: 'in_progress', recipients: [{ id: 'RECIPIENT', status: 'in_progress', summary: null, attempts: [{ id: 'ATTEMPT', status: 'in_progress', startedAt: '2027-06-10T22:00:02Z', completedAt: null, summary: null, transcriptTurns: [], providerCallId: 'PROVIDER-CALL', failureCode: null, failureMessage: null }] }] } });
     const { unmount } = render(<AcquisitionExperience api={api(active)} onNavigateControl={() => undefined} />);
-    expect(await screen.findByText('Conversation evidence not available yet.')).toBeVisible();
+    expect(await screen.findByText('Listening for provider transcript…')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Continue to Control' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disconnect CALL-E' })).toBeDisabled();
+    expect(screen.getByText('Connection locked while this acquisition is active.')).toBeVisible();
     unmount();
     const withTurns = { ...active, providerEvidence: { ...active.providerEvidence!, recipients: [{ ...active.providerEvidence!.recipients[0]!, attempts: [{ ...active.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: [{ offsetSeconds: 4, speaker: 'bot' as const, text: 'Returned CALL-E turn.' }, { offsetSeconds: null, speaker: 'unknown' as const, text: 'Returned unknown turn.' }] }] }] } };
     render(<AcquisitionExperience api={api(withTurns)} onNavigateControl={() => undefined} />);
@@ -251,9 +291,9 @@ describe('Acquisition V1 experience', () => {
     const fake = api(); let resolveCreate!: (value: { accepted: true; record: AcquisitionPublicRecord; existing: false }) => void;
     fake.create.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve; }));
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'FIXED'} clock={() => '2027-06-10T22:00:00Z'} />);
-    await unlock(); fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
+    await unlockByok(fake); fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
-    expect(fake.create).not.toHaveBeenCalled(); expect(screen.getByText(/Confirm explicit recipient authorization/)).toBeVisible();
+    expect(fake.create).not.toHaveBeenCalled(); expect(screen.getByText(/Confirm recipient ownership or authorization/)).toBeVisible();
     fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
     fireEvent.submit(document.getElementById('acquisition-create')!);
     expect(fake.create).toHaveBeenCalledTimes(1);
@@ -278,9 +318,30 @@ describe('Acquisition V1 experience', () => {
   it('keeps the opaque pointer after failed restoration and clears it only explicitly', async () => {
     localStorage.setItem(acquisitionStorageKey, 'ACQ-OPAQUE'); sessionStorage.setItem(acquisitionAccessKey, 'WRONG'); const fake = api(); fake.get.mockRejectedValue(new Error('opaque'));
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
-    expect((await screen.findAllByText(/could not be restored with the current live-access session/i))[0]).toBeVisible();
+    expect((await screen.findAllByText(/no active acquisition belongs to this connection/i))[0]).toBeVisible();
     expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-OPAQUE');
     fireEvent.click(screen.getByRole('button', { name: 'Clear recovery pointer' })); expect(localStorage.getItem(acquisitionStorageKey)).toBeNull();
+  });
+
+  it('replaces a stale local pointer only with the same connection owned active acquisition', async () => {
+    localStorage.setItem(acquisitionStorageKey, 'ACQ-STALE'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    const owned = record({ acquisitionId: 'ACQ-ACTIVE' }); const fake = api();
+    fake.get.mockRejectedValueOnce(new Error('stale pointer')); vi.mocked(fake.getActive).mockResolvedValueOnce(owned);
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText(/Acquisition record ACQ-ACTIVE/)).toBeVisible();
+    expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-ACTIVE');
+    expect(screen.getByRole('button', { name: 'Recovery pointer locked while active' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a stale pointer locked when same-connection active recovery cannot be verified', async () => {
+    localStorage.setItem(acquisitionStorageKey, 'ACQ-STALE'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    const fake = api(); fake.get.mockRejectedValueOnce(new Error('stale pointer')); vi.mocked(fake.getActive).mockRejectedValueOnce(new Error('lookup unavailable'));
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    expect((await screen.findAllByText(/Recovery could not be verified/))[0]).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Recovery pointer locked pending verification' })).toBeDisabled();
+    expect(localStorage.getItem(acquisitionStorageKey)).toBe('ACQ-STALE');
+    expect(sessionStorage.getItem(acquisitionAccessKey)).toBe('ACCESS');
   });
 
   it('refreshes through refresh only and stops at a terminal response', async () => {
@@ -295,31 +356,28 @@ describe('Acquisition V1 experience', () => {
   it('cancels scheduled monitoring when the Acquisition surface unmounts', async () => {
     vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
     const { unmount } = render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
-    await act(async () => { await fake.get.mock.results[0]!.value; await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await vi.mocked(fake.getConnection).mock.results[0]!.value; await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await fake.get.mock.results[0]!.value; await Promise.resolve(); });
     unmount();
     await vi.advanceTimersByTimeAsync(300_000);
     expect(fake.refresh).not.toHaveBeenCalled();
   });
 
-  it('does not let an older in-flight refresh overwrite a newly created acquisition', async () => {
+  it('does not allow an active acquisition to be orphaned or replaced while a refresh is in flight', async () => {
     vi.useFakeTimers(); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1'); const fake = api(record());
     let releaseOld!: (value: { found: true; record: AcquisitionPublicRecord }) => void;
     fake.refresh.mockReturnValueOnce(new Promise((resolve) => { releaseOld = resolve; }));
-    const replacement = record({ acquisitionId: 'ACQ-TEST-2', idempotencyKey: 'IDEMPOTENCY-TEST-2', callId: 'CALL-TEST-2' });
-    fake.create.mockResolvedValueOnce({ accepted: true, record: replacement, existing: false });
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'TWO'} clock={() => '2027-06-10T22:05:00Z'} />);
-    await act(async () => { await fake.get.mock.results[0]!.value; await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await vi.mocked(fake.getConnection).mock.results[0]!.value; await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await fake.get.mock.results[0]!.value; await Promise.resolve(); });
     await act(async () => { await vi.runOnlyPendingTimersAsync(); });
-    fireEvent.click(screen.getByRole('button', { name: 'Clear acquisition recovery pointer' }));
-    expect(screen.getByRole('button', { name: 'Start CALL-E acquisition' })).toBeEnabled();
-    fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
-    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Start CALL-E acquisition' }));
-    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('button', { name: 'Recovery pointer locked while active' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
     releaseOld({ found: true, record: completed('APPROVED') });
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByText(/Acquisition record ACQ-TEST-2/)).toBeVisible();
-    expect(screen.queryByText('Call completed')).not.toBeInTheDocument();
-    expect(fake.create).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Acquisition record ACQ-TEST-1/)).toBeVisible();
+    expect(screen.getByText('Call completed')).toBeVisible();
+    expect(fake.create).not.toHaveBeenCalled();
   });
 
   it('keeps Provider Evidence waiting until actual evidence items exist', async () => {
@@ -340,7 +398,7 @@ describe('Acquisition V1 experience', () => {
   it('renders only returned transcript turns and otherwise promises no fake streaming', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     const { unmount } = render(<AcquisitionExperience api={api(record())} onNavigateControl={() => undefined} />);
-    expect(await screen.findByText('Conversation evidence not available yet.')).toBeVisible(); unmount();
+    expect(await screen.findByText('Waiting for CALL-E to begin…')).toBeVisible(); unmount();
     render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
     expect(await screen.findByText('Choose one decision.')).toBeVisible(); expect(screen.getByText('APPROVED', { selector: '.transcript-timeline p' })).toBeVisible();
     expect(screen.queryByText(/waveform|audio streaming/i)).not.toBeInTheDocument();
@@ -354,6 +412,18 @@ describe('Acquisition V1 experience', () => {
     expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('presents completed NEEDS_CLARIFICATION as a legitimate clarification safe stop with no Control handoff', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    render(<AcquisitionExperience api={api(completed('NEEDS_CLARIFICATION'))} onNavigateControl={() => undefined} />);
+    const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
+    expect(within(eligibility).getByRole('heading', { name: 'CLARIFICATION REQUIRED' })).toBeVisible();
+    expect(within(eligibility).getByText('Provider decision: NEEDS_CLARIFICATION')).toBeVisible();
+    expect(within(eligibility).getByText(/legitimate clarification outcome/)).toBeVisible();
+    expect(within(eligibility).getByText(/No authority/, { selector: 'small' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Continue to Control' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('explains APPROVED plus taskCompleted false as a human-readable SAFE_STOP while retaining technical provenance', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     const acquired = completed('APPROVED');
@@ -361,7 +431,7 @@ describe('Acquisition V1 experience', () => {
     const fake = api(contradiction);
     render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
     const eligibility = await screen.findByRole('region', { name: 'Control eligibility' });
-    expect(within(eligibility).getByText('CALL-E decision: APPROVED')).toBeVisible();
+    expect(within(eligibility).getByText('Provider decision: APPROVED')).toBeVisible();
     expect(within(eligibility).getByText(/provider did not mark the acquisition task complete/)).toBeVisible();
     expect(within(eligibility).getByText(/Required decision conditions were not sufficiently established/)).toBeVisible();
     expect(within(eligibility).getByText('NOT READY FOR REVIEW')).toBeVisible();
@@ -423,7 +493,7 @@ describe('Acquisition V1 experience', () => {
     fake.refresh.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
     const refresh = screen.getByRole('button', { name: 'Check latest status' });
     fireEvent.click(refresh); fireEvent.click(refresh);
-    expect(fake.refresh).toHaveBeenCalledTimes(67); expect(screen.getByRole('button', { name: 'Checking latest status…' })).toBeDisabled();
+    expect(fake.refresh).toHaveBeenCalledTimes(67); expect(screen.getByRole('button', { name: 'Checking latest provider status…' })).toBeDisabled();
     release({ found: true, record: record({ updatedAt: '2027-06-10T22:03:00Z' }) });
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByRole('button', { name: 'Check latest status' })).toBeVisible(); expect(localStorage.getItem(acquisitionStorageKey)).toBe(beforeId); expect(fake.create).not.toHaveBeenCalled();

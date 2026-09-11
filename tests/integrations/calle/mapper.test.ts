@@ -18,7 +18,7 @@ const structured = (decision = 'APPROVED'): Record<string, unknown> & { authoriz
 });
 const response = (decision = 'APPROVED') => ({
   status: 'completed', structuredResult: structured(decision),
-  taskCompleted: decision === 'APPROVED' || decision === 'REJECTED',
+  taskCompleted: true,
   completionConfidence: { score: 0.92, label: 'high' },
   evidence: ['The recipient stated the decision explicitly.'],
 });
@@ -28,6 +28,10 @@ describe('CALL-E response mapper', () => {
     const result = mapCalleResponse(request(), response(decision), receivedAt);
     expect(result.success).toBe(true);
     if (result.success) expect(result.value.decision).toBe(decision);
+  });
+
+  it.each(['APPROVED', 'REJECTED', 'PENDING', 'NEEDS_CLARIFICATION'])('fails closed for %s when taskCompleted is not true', (decision) => {
+    expect(mapCalleResponse(request(), { ...response(decision), taskCompleted: false }, receivedAt)).toMatchObject({ success: false, reason: 'taskCompleted contradicts the structured decision' });
   });
 
   it('accepts empty authorization changes and evidence without inventing content', () => {

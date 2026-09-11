@@ -15,7 +15,7 @@ const awaiting = (): LiveControlPublicRecord => ({
   caseId: 'CASE-OPERATOR-SANDBOX', planId: 'PLAN-OPERATOR-SANDBOX', planVersion: 1, actorId: 'ACTOR-OPERATOR-CLIENT', actorRole: 'client', createdAt: '2027-07-01T17:05:00-05:00',
 });
 const terminal = (action: 'APPLY' | 'DISCARD' = 'APPLY'): LiveControlPublicRecord => ({ ...awaiting(), status: 'TERMINAL', review: { action, operationId: 'OPERATION-CONTROL', eventId: 'EVENT-CONTROL', approvalId: 'APPROVAL-CONTROL', reviewedAt: '2027-07-01T17:06:00-05:00', reviewer: 'LOCAL-SANDBOX-OPERATOR-NOT-AUTHENTICATED' }, receipt: { disposition: action === 'APPLY' ? 'ALLOW' : 'DISCARDED', reason: action === 'APPLY' ? 'PLAN_APPROVED' : 'DISCARDED_BY_REVIEWER', planStatus: action === 'APPLY' ? 'APPROVED' : 'PENDING_APPROVAL', before: { decisions: 2, operations: 2, events: 2 }, effects: { decisions: action === 'APPLY' ? 1 : 0, operations: action === 'APPLY' ? 1 : 0, events: action === 'APPLY' ? 1 : 0 } } });
-const api = (): AcquisitionBrowserApi => ({ connectHosted: vi.fn(), connectByok: vi.fn(), getConnection: vi.fn(), disconnect: vi.fn(), create: vi.fn(), get: vi.fn(), refresh: vi.fn(), handoff: vi.fn(), getControl: vi.fn(), review: vi.fn() });
+const api = (): AcquisitionBrowserApi => ({ connectHosted: vi.fn(), connectByok: vi.fn(), getConnection: vi.fn(), disconnect: vi.fn(), getActive: vi.fn(), create: vi.fn(), get: vi.fn(), refresh: vi.fn(), handoff: vi.fn(), getControl: vi.fn(), review: vi.fn() });
 
 describe('Live Control browser experience', () => {
   beforeEach(() => { localStorage.clear(); sessionStorage.clear(); }); afterEach(cleanup);

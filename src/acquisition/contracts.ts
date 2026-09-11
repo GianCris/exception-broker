@@ -9,6 +9,7 @@ const isoTime = z.string().datetime({ offset: true });
 export const acquisitionCreateSchema = z.object({
   acquisitionId: nonEmpty.max(120),
   clientToken: nonEmpty.max(256),
+  accessMode: z.enum(['HOSTED_DEMO', 'BYOK']),
   authorizationConfirmed: z.literal(true),
   phoneNumber: z.string().regex(/^\+[1-9]\d{7,14}$/, 'Phone number must use E.164 format'),
   request: callRequestSchema.omit({ phoneNumber: true }).extend({
@@ -20,6 +21,7 @@ export const acquisitionCreateSchema = z.object({
 export type AcquisitionCreateInput = z.infer<typeof acquisitionCreateSchema>;
 
 export type AcquisitionStatus = 'creating' | z.infer<typeof calleStatusSchema>;
+export type AcquisitionAccessMode = 'HOSTED_DEMO' | 'BYOK';
 export type NormalizationStatus = 'PENDING' | 'USABLE' | 'SAFE_STOP';
 export type HandoffState = 'NOT_READY' | 'READY_FOR_REVIEW' | 'SAFE_STOP';
 
@@ -78,6 +80,8 @@ export type AcquisitionRecord = Readonly<{
   requestFingerprint: string;
   requestDefinitionFingerprint?: string;
   clientTokenHash: string;
+  /** Server-derived metadata. Missing only on records created before access-mode persistence. */
+  accessMode?: AcquisitionAccessMode;
   authorizationConfirmed: true;
   maskedRecipient: string;
   decisionContext: PersistedDecisionContext;

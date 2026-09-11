@@ -34,6 +34,7 @@ export type AcquisitionServiceOptions = Readonly<{
   delay?: AcquisitionDelay;
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
+  onConnectionActiveChange?: (connectionId: string, active: boolean) => void;
 }>;
 
 const defaultClock: AcquisitionClock = () => new Date().toISOString();
@@ -134,6 +135,7 @@ export class AcquisitionService {
   readonly #delay: AcquisitionDelay;
   readonly #pollIntervalMs: number;
   readonly #pollTimeoutMs: number;
+  readonly #onConnectionActiveChange: (connectionId: string, active: boolean) => void;
   readonly #creates = new Map<string, Promise<CreateAcquisitionResult>>();
   #creationQueue: Promise<void> = Promise.resolve();
 
@@ -145,12 +147,18 @@ export class AcquisitionService {
     this.#delay = options.delay ?? defaultDelay;
     this.#pollIntervalMs = options.pollIntervalMs ?? 2_000;
     this.#pollTimeoutMs = options.pollTimeoutMs ?? 60_000;
+    this.#onConnectionActiveChange = options.onConnectionActiveChange ?? (() => undefined);
     if (this.#pollIntervalMs <= 0 || this.#pollTimeoutMs < this.#pollIntervalMs) throw new Error('Invalid polling bounds');
   }
 
   async get(acquisitionId: string, clientToken: string): Promise<AcquisitionRecord | undefined> {
     const record = await this.#store.get(acquisitionId);
     return record?.clientTokenHash === hashClientToken(clientToken) ? record : undefined;
+  }
+
+  async getActive(clientToken: string): Promise<AcquisitionRecord | undefined> {
+    const clientHash = hashClientToken(clientToken);
+    return (await this.#store.list()).find((record) => record.clientTokenHash === clientHash && !isTerminalStatus(record.status));
   }
 
   async create(input: unknown): Promise<CreateAcquisitionResult> {
@@ -179,12 +187,13 @@ export class AcquisitionService {
         return { accepted: false, code: 'INVALID_INPUT', reason: 'Acquisition id is already bound to different request content' };
       }
       if (existing.status === 'creating' && existing.callId === null) {
+        this.#onConnectionActiveChange(input.clientToken, true);
         const callRequest: CallRequest = { ...input.request, phoneNumber: input.phoneNumber };
         try {
-          const call = await this.#gateway.create(buildCallEInput(callRequest), existing.idempotencyKey, input.clientToken);
-          return { accepted: true, record: await this.#recordCall(existing, call), existing: true };
+          const call = await this.#gateway.create(buildCallEInput(callRequest, ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION']), existing.idempotencyKey, input.clientToken);
+          return { accepted: true, record: await this.#recordCall(existing, call, input.clientToken), existing: true };
         } catch (_error: unknown) {
-          return { accepted: true, record: await this.#recordProviderCreateFailure(existing), existing: true };
+          return { accepted: true, record: await this.#recordProviderCreateFailure(existing, input.clientToken), existing: true };
         }
       }
       return { accepted: true, record: existing, existing: true };
@@ -201,6 +210,7 @@ export class AcquisitionService {
       requestFingerprint: fingerprint,
       requestDefinitionFingerprint: acquisitionRequestDefinitionFingerprint(input.request),
       clientTokenHash: hashClientToken(input.clientToken),
+      accessMode: input.accessMode,
       authorizationConfirmed: true,
       maskedRecipient: maskPhone(input.phoneNumber),
       decisionContext: contextFor(input.request),
@@ -216,14 +226,15 @@ export class AcquisitionService {
       handoffState: 'NOT_READY',
     };
     await this.#store.put(initial);
+    this.#onConnectionActiveChange(input.clientToken, true);
 
     const callRequest: CallRequest = { ...input.request, phoneNumber: input.phoneNumber };
     try {
-      const call = await this.#gateway.create(buildCallEInput(callRequest), idempotencyKey, input.clientToken);
-      const record = await this.#recordCall(initial, call);
+      const call = await this.#gateway.create(buildCallEInput(callRequest, ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION']), idempotencyKey, input.clientToken);
+      const record = await this.#recordCall(initial, call, input.clientToken);
       return { accepted: true, record, existing: false };
     } catch (_error: unknown) {
-      const failed = await this.#recordProviderCreateFailure(initial);
+      const failed = await this.#recordProviderCreateFailure(initial, input.clientToken);
       return { accepted: true, record: failed, existing: false };
     }
   }
@@ -240,7 +251,7 @@ export class AcquisitionService {
     for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
       try {
         const call = await this.#gateway.get(callId, clientToken);
-        record = await this.#recordCall(record, call);
+        record = await this.#recordCall(record, call, clientToken);
       } catch (_error: unknown) {
         return { found: false, code: 'PROVIDER_FAILURE', reason: safeProviderFailure };
       }
@@ -259,13 +270,13 @@ export class AcquisitionService {
 
     try {
       const call = await this.#gateway.get(record.callId, clientToken);
-      return { found: true, record: await this.#recordCall(record, call) };
+      return { found: true, record: await this.#recordCall(record, call, clientToken) };
     } catch (_error: unknown) {
       return { found: false, code: 'PROVIDER_FAILURE', reason: safeProviderFailure };
     }
   }
 
-  async #recordProviderCreateFailure(previous: AcquisitionRecord): Promise<AcquisitionRecord> {
+  async #recordProviderCreateFailure(previous: AcquisitionRecord, clientToken: string): Promise<AcquisitionRecord> {
     const updatedAt = this.#clock();
     const failed: AcquisitionRecord = {
       ...previous,
@@ -277,10 +288,11 @@ export class AcquisitionService {
       handoffState: 'SAFE_STOP',
     };
     await this.#store.put(failed);
+    this.#onConnectionActiveChange(clientToken, false);
     return failed;
   }
 
-  async #recordCall(previous: AcquisitionRecord, call: Call): Promise<AcquisitionRecord> {
+  async #recordCall(previous: AcquisitionRecord, call: Call, clientToken: string): Promise<AcquisitionRecord> {
     const updatedAt = this.#clock();
     const sanitized = sanitizeCall(call);
     let record: AcquisitionRecord = {
@@ -304,6 +316,7 @@ export class AcquisitionService {
       }
     }
     await this.#store.put(record);
+    if (isTerminalStatus(record.status)) this.#onConnectionActiveChange(clientToken, false);
     return record;
   }
 }

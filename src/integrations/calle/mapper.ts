@@ -83,7 +83,7 @@ export const mapCalleResponseForContext = (
   if (decision.actorId !== request.actorId) return failure('Decision actorId does not match request', false, response.status);
   if (decision.actorRole !== request.actorRole) return failure('Decision actorRole does not match request', false, response.status);
 
-  if (decision.decision === 'APPROVED' && response.taskCompleted !== true) {
+  if (response.taskCompleted !== true) {
     return failure('taskCompleted contradicts the structured decision', false, response.status);
   }
   const expectsClarification = decision.decision === 'NEEDS_CLARIFICATION';
