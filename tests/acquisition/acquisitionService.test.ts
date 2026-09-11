@@ -324,11 +324,17 @@ describe('Acquisition V1 server boundary', () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
-  it.each(['failed', 'canceled'] as const)('persists terminal %s as a safe stop', async (status) => {
-    const { service } = setup(call(status));
+  it.each(['failed', 'canceled'] as const)('keeps terminal %s technical and never turns it into a business safe stop', async (status) => {
+    const { service, store } = setup(call(status));
     const result = await service.create(input());
-    expect(result).toMatchObject({ accepted: true, record: { status, normalizationStatus: 'SAFE_STOP', handoffState: 'SAFE_STOP' } });
+    // Technical terminal outcomes stop before business normalization entirely.
+    expect(result).toMatchObject({ accepted: true, record: { status, normalizationStatus: 'PENDING', handoffState: 'NOT_READY', safeStopReason: null } });
     if (result.accepted) expect(result.record.normalizedResult).toBeNull();
+    const stored = await store.get('ACQ-001');
+    expect(stored?.technicalFailure).toMatchObject({ stage: 'PROVIDER_TERMINAL', acceptance: 'PROVIDER_IDENTIFIED', reconciliationAvailable: false });
+    // Whatever CALL-E actually returned survives; nothing is invented for it.
+    expect(stored?.providerEvidence?.status).toBe(status);
+    expect(stored?.technicalFailure?.code).toBe(status === 'failed' ? 'call_failed' : null);
   });
 
   it('normalizes APPROVED through the existing mapper but grants no authority or application effect', async () => {
@@ -490,8 +496,8 @@ describe('Acquisition V1 server boundary', () => {
     } } });
     const stored = await store.get('ACQ-001');
     expect(stored?.providerEvidence).toBeNull();
-    expect(stored?.normalizedResult).toBeNull();
-    expect(stored?.handoffState).toBe('SAFE_STOP');
+    // Nothing business-shaped is recorded: no decision, no verdict, no review eligibility.
+    expect(stored).toMatchObject({ normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY' });
   });
 
   it('does not burn the Hosted allowance when no provider operation could have happened', async () => {
@@ -631,6 +637,126 @@ describe('Acquisition V1 server boundary', () => {
     await owned.service.create(input());
     expect(await owned.service.create(input({ acquisitionId: 'ACQ-R4', clientToken: 'other-token', recoveryOfAcquisitionId: 'ACQ-001' })))
       .toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+  });
+
+  it('spends at most three provider create dispatches across the lifetime of one acquisition', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+
+    // The original request spends the initial dispatch plus one automatic reconciliation.
+    const first = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(first).toMatchObject({ accepted: true, record: { status: 'creating', technicalFailure: { acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true } } });
+
+    // One explicit reconciliation may spend the last dispatch — exactly one, never two.
+    const second = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(second).toMatchObject({ accepted: true, existing: true, record: { status: 'creating', technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false } } });
+
+    for (let repeat = 0; repeat < 10; repeat += 1) {
+      const exhausted = await service.create(input());
+      expect(exhausted).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', status: 'creating', callId: null, technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false } } });
+    }
+    // The ceiling holds: no further provider request, no second acquisition, no second key.
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set(['exception-broker-acquisition-v1:ACQ-001']));
+    const records = await store.list();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ idempotencyKey: 'exception-broker-acquisition-v1:ACQ-001', normalizationStatus: 'PENDING', handoffState: 'NOT_READY', safeStopReason: null });
+    // Still protected: the provider may have accepted one of those requests.
+    expect(await service.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.create(input({ acquisitionId: 'ACQ-SECOND' }))).toMatchObject({ accepted: false, code: 'ACTIVE_ACQUISITION_EXISTS' });
+  });
+
+  it('resumes the normal lifecycle when the third dispatch finally returns the original call', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+    await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+
+    create.mockResolvedValue(call('queued'));
+    const reconciled = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', status: 'queued', callId: 'call_test_001' } });
+    const stored = await store.get('ACQ-001');
+    // The ambiguity is resolved, so its diagnostics must not linger on the record.
+    expect(stored?.technicalFailure).toBeUndefined();
+    expect(stored?.idempotencyKey).toBe('exception-broker-acquisition-v1:ACQ-001');
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set(['exception-broker-acquisition-v1:ACQ-001']));
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('never runs a technical terminal outcome through business decision normalization', async () => {
+    // A provider-terminal call may still carry a structured result; a business verdict must not
+    // be manufactured from it, because the call itself did not complete.
+    for (const status of ['failed', 'canceled'] as const) {
+      const { service, store } = setup(call(status, decision('APPROVED')));
+      await service.create(input());
+      const stored = await store.get('ACQ-001');
+      expect(stored).toMatchObject({ status, normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY' });
+      expect(stored?.technicalFailure?.acceptance).toBe('PROVIDER_IDENTIFIED');
+    }
+  });
+
+  it('keeps completed business outcomes on the existing mapper path', async () => {
+    const usable = setup(call('completed', decision('APPROVED')));
+    expect(await usable.service.create(input())).toMatchObject({ accepted: true, record: { status: 'completed', normalizationStatus: 'USABLE', handoffState: 'READY_FOR_REVIEW', normalizedResult: { decision: 'APPROVED' } } });
+
+    // A legitimate completed non-reviewable result is still a business SAFE_STOP.
+    const clarification = setup(call('completed', decision('NEEDS_CLARIFICATION')));
+    const stopped = await clarification.service.create(input());
+    expect(stopped).toMatchObject({ accepted: true, record: { status: 'completed', normalizationStatus: 'SAFE_STOP', handoffState: 'SAFE_STOP', safeStopReason: 'Decision NEEDS_CLARIFICATION requires a safe stop before review' } });
+    expect(stopped.accepted && stopped.record.technicalFailure).toBeUndefined();
+  });
+
+  it('reconciles a reloaded BYOK acquisition only when the same authorized recipient is re-entered', async () => {
+    const { service, create, store } = setup();
+    const browserInput = createBrowserAcquisitionRequest({ identity: 'BYOK-RELOAD', createdAt: '2026-09-05T14:59:00.000Z', phoneNumber: phone });
+    const asServerWould = (browser: BrowserAcquisitionCreateInput) => ({ ...browser, clientToken: token, accessMode: 'BYOK', phoneNumber: browser.phoneNumber });
+
+    create.mockRejectedValue(new Error('socket hang up'));
+    await service.create(asServerWould(browserInput));
+    expect(create).toHaveBeenCalledTimes(2);
+
+    // Only the public projection survives the reload, and it never carries the full recipient.
+    const restored = toPublicAcquisitionRecord((await store.get(browserInput.acquisitionId))!);
+    expect(JSON.stringify(restored)).not.toContain(phone);
+
+    const wrongPhone = reconcileBrowserAcquisitionRequest(restored, '+12025550999')!;
+    const rejected = await service.create(asServerWould(wrongPhone));
+    expect(rejected).toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+    // A mismatch costs nothing: no provider request, no spent allowance, no mutation.
+    expect(create).toHaveBeenCalledTimes(2);
+    expect((await store.get(browserInput.acquisitionId))?.technicalFailure).toMatchObject({ attempts: 2, reconciliationAvailable: true });
+
+    create.mockResolvedValue(call('queued'));
+    const rebuilt = reconcileBrowserAcquisitionRequest(restored, phone)!;
+    const reconciled = await service.create(asServerWould(rebuilt));
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: browserInput.acquisitionId, status: 'queued' } });
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set([`exception-broker-acquisition-v1:${browserInput.acquisitionId}`]));
+    const persisted = JSON.stringify(await store.list());
+    expect(persisted).not.toContain(phone);
+    expect(persisted).not.toContain(token);
+  });
+
+  it('never lets an observation error end the provider lifecycle or unlock the connection', async () => {
+    const active: Array<Readonly<{ connectionId: string; active: boolean }>> = [];
+    const gatewayCall = call('in_progress');
+    const create = vi.fn(async () => structuredClone(gatewayCall));
+    const get = vi.fn(async () => { throw new Error('transport reset'); });
+    const store = new MemoryAcquisitionStore();
+    const service = new AcquisitionService({ store, gateway: { create, get }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30,
+      onConnectionActiveChange: (connectionId, isActive) => { active.push({ connectionId, active: isActive }); } });
+    await service.create(input());
+    const before = await store.get('ACQ-001');
+
+    expect(await service.refresh('ACQ-001', token)).toEqual({ found: false, code: 'PROVIDER_FAILURE', reason: 'CALL-E provider operation failed safely' });
+    expect(await service.poll('ACQ-001', token)).toEqual({ found: false, code: 'PROVIDER_FAILURE', reason: 'CALL-E provider operation failed safely' });
+    // The record is untouched: no terminal state, no decision, no redial, no unlock.
+    expect(await store.get('ACQ-001')).toEqual(before);
+    expect(create).toHaveBeenCalledOnce();
+    expect(active).toEqual([{ connectionId: token, active: true }]);
   });
 
   it('never lets recovery chain: a failed recovery earns no further allowance', async () => {

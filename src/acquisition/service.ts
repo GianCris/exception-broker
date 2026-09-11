@@ -131,6 +131,16 @@ const contextFor = (request: AcquisitionCreateInput['request']): PersistedDecisi
 const safeProviderFailure = 'CALL-E provider operation failed safely';
 
 /**
+ * Lifetime ceiling on provider create requests for one acquisition: the initial dispatch, one
+ * automatic same-key reconciliation inside that request, and one later explicit reconciliation.
+ * Past it the acquisition stays protected and ambiguous rather than dialling again, because
+ * CALL-E may have accepted any of them.
+ */
+const maximumCreateDispatches = 3;
+/** Dispatches a single create/reconcile request may spend, so a manual retry can never spend two. */
+const dispatchesPerRequest = 2;
+
+/**
  * Provider error text is untrusted and may embed credentials the transcript redaction never
  * anticipated, so diagnostics get a stricter pass than conversation content: the shared
  * redaction first, then credential-shaped and long opaque values.
@@ -276,6 +286,10 @@ export class AcquisitionService {
    * Verifies a claimed Hosted technical recovery entirely server-side. The browser flag alone
    * never relaxes quota: ownership, access mode and a provider-identified terminal failure must
    * all hold, and the allowance is proven spent by durable lineage rather than session memory.
+   *
+   * Claim coordination assumes the current single-writer deployment: one AcquisitionService owns
+   * the store, and #creationQueue serializes the read-then-claim window. Running several writer
+   * processes against one store would need a compare-and-set claim instead.
    */
   #resolveTechnicalRecovery(
     input: AcquisitionCreateInput,
@@ -299,12 +313,19 @@ export class AcquisitionService {
    * original call instead of dialling twice.
    */
   async #dispatchCreate(record: AcquisitionRecord, input: AcquisitionCreateInput): Promise<Readonly<{ accepted: true; record: AcquisitionRecord }>> {
+    const spent = record.technicalFailure?.attempts ?? 0;
+    const allowed = Math.min(dispatchesPerRequest, maximumCreateDispatches - spent);
+    // The persisted counter is authoritative: an exhausted or already-closed acquisition is
+    // returned untouched rather than dialling again or restating its ambiguity as resolved.
+    if (allowed <= 0 || record.technicalFailure?.reconciliationAvailable === false) return { accepted: true, record };
+
     const callRequest: CallRequest = { ...input.request, phoneNumber: input.phoneNumber };
     const providerInput = buildCallEInput(callRequest, ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION']);
-    const spent = record.technicalFailure?.attempts ?? 0;
+    let dispatched = 0;
     let failure: unknown;
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < allowed; attempt += 1) {
+      dispatched += 1;
       try {
         const call = await this.#gateway.create(providerInput, record.idempotencyKey, input.clientToken);
         return { accepted: true, record: await this.#recordCall(record, call, input.clientToken) };
@@ -312,18 +333,19 @@ export class AcquisitionService {
         failure = error;
         // Nothing left this process, so reconciliation cannot discover anything new.
         if (error instanceof ProviderNotDispatchedError) break;
-        if (attempt === 0) await this.#delay(this.#reconcileDelayMs);
+        if (attempt + 1 < allowed) await this.#delay(this.#reconcileDelayMs);
       }
     }
 
     const observedAt = this.#clock();
     const diagnostics = failureDiagnostics(failure);
     const notDispatched = failure instanceof ProviderNotDispatchedError;
+    const attempts = spent + dispatched;
     const technicalFailure: AcquisitionTechnicalFailure = {
       stage: 'CREATE',
       acceptance: notDispatched ? 'DEFINITELY_NOT_SENT' : 'UNKNOWN',
-      reconciliationAvailable: !notDispatched,
-      attempts: spent + (notDispatched ? 1 : 2),
+      reconciliationAvailable: !notDispatched && attempts < maximumCreateDispatches,
+      attempts,
       ...diagnostics,
       observedAt,
     };
@@ -372,7 +394,11 @@ export class AcquisitionService {
     }
   }
 
-  /** Proven local pre-dispatch refusal: terminal, and no provider operation was ever spent. */
+  /**
+   * Proven local pre-dispatch refusal: terminal, and no provider operation was ever spent.
+   * A technical stop is not a business disposition, so normalization never runs and the record
+   * carries no SAFE_STOP verdict — only the diagnostics that explain the technical cause.
+   */
   async #recordCreateNotDispatched(previous: AcquisitionRecord, clientToken: string, technicalFailure: AcquisitionTechnicalFailure): Promise<AcquisitionRecord> {
     const updatedAt = technicalFailure.observedAt;
     const failed: AcquisitionRecord = {
@@ -380,9 +406,10 @@ export class AcquisitionService {
       status: 'failed',
       updatedAt,
       terminalAt: updatedAt,
-      normalizationStatus: 'SAFE_STOP',
-      safeStopReason: safeProviderFailure,
-      handoffState: 'SAFE_STOP',
+      normalizedResult: null,
+      normalizationStatus: 'PENDING',
+      safeStopReason: null,
+      handoffState: 'NOT_READY',
       technicalFailure,
     };
     await this.#store.put(failed);
@@ -414,7 +441,9 @@ export class AcquisitionService {
       updatedAt,
       terminalAt: isTerminalStatus(call.status) ? (call.completedAt ?? updatedAt) : null,
       providerEvidence: sanitized,
-      ...(call.status === 'failed' ? { technicalFailure: {
+      // A provider-terminal technical outcome keeps whatever CALL-E actually returned — including
+      // nothing — rather than inventing failure semantics the provider never sent.
+      ...(call.status === 'failed' || call.status === 'canceled' ? { technicalFailure: {
         stage: 'PROVIDER_TERMINAL' as const,
         acceptance: 'PROVIDER_IDENTIFIED' as const,
         reconciliationAvailable: false,
@@ -425,7 +454,9 @@ export class AcquisitionService {
       } } : {}),
     };
 
-    if (isTerminalStatus(call.status)) {
+    // Only a completed call carries a business result, so only a completed call may reach the
+    // decision mapper. Technical terminal outcomes never become a business SAFE_STOP.
+    if (call.status === 'completed') {
       const mapped = mapCalleResponseForContext(previous.decisionContext, sanitized, updatedAt);
       if (mapped.success && (mapped.value.decision === 'APPROVED' || mapped.value.decision === 'REJECTED')) {
         record = { ...record, normalizedResult: mapped.value, normalizationStatus: 'USABLE', safeStopReason: null, handoffState: 'READY_FOR_REVIEW' };
@@ -435,6 +466,8 @@ export class AcquisitionService {
           : mapped.reason;
         record = { ...record, normalizedResult: mapped.success ? mapped.value : null, normalizationStatus: 'SAFE_STOP', safeStopReason: reason, handoffState: 'SAFE_STOP' };
       }
+    } else if (isTerminalStatus(call.status)) {
+      record = { ...record, normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY' };
     }
     await this.#store.put(record);
     if (isTerminalStatus(record.status)) this.#onConnectionActiveChange(clientToken, false);

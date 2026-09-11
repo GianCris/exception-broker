@@ -132,15 +132,21 @@ export const ACQUISITION_V1_CONTEXT = operatorSandboxContext();
  * Rebuilds the canonical create input for an acquisition whose provider acceptance is unknown,
  * so reconciliation re-submits the same content under the same acquisition id. The server still
  * recomputes and verifies the fingerprint and keeps its own persisted idempotency key: this only
- * supplies request content the server never stored. Hosted recipients are server-owned, so only
- * Hosted records are reconstructible from a public record alone.
+ * supplies request content the server never stored.
+ *
+ * Hosted recipients are server-owned, so a Hosted record rebuilds from its public projection
+ * alone. BYOK deliberately never persists the full recipient anywhere the browser can read, so
+ * after a reload the operator must supply the same authorized number again.
  */
-export const reconcileBrowserAcquisitionRequest = (record: AcquisitionPublicRecord): BrowserAcquisitionCreateInput | null => {
+export const reconcileBrowserAcquisitionRequest = (record: AcquisitionPublicRecord, phoneNumber?: string): BrowserAcquisitionCreateInput | null => {
   const { requestId, createdAt, caseId, planId, actorId, actorRole } = record.decisionContext;
-  if (record.accessMode !== 'HOSTED_DEMO' || actorRole !== 'client' || planId === undefined) return null;
+  if (actorRole !== 'client' || planId === undefined) return null;
+  const hosted = record.accessMode === 'HOSTED_DEMO';
+  if (!hosted && (phoneNumber === undefined || phoneNumber === '')) return null;
   return {
     acquisitionId: record.acquisitionId,
     authorizationConfirmed: true,
+    ...(hosted || phoneNumber === undefined ? {} : { phoneNumber }),
     request: {
       requestId,
       caseId,

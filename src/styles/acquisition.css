@@ -121,6 +121,10 @@
 .acq-technical-details dl div { display:grid; grid-template-columns:112px minmax(0,1fr); gap:10px; }
 .acq-technical-details dt { color:var(--text-muted); font-size:7px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
 .acq-technical-details dd { margin:0; overflow-wrap:anywhere; color:var(--text-secondary); font-size:8px; line-height:1.45; }
+.acq-reconcile-form { display:grid; justify-items:stretch; gap:6px; width:min(290px,100%); }
+.acq-reconcile-form .acq-phone-label { justify-self:stretch; text-align:left; }
+.acq-reconcile-form > small { color:var(--text-muted); font-size:8px; line-height:1.45; text-align:left; }
+.acq-reconcile-form .authorization-check { font-size:8px; }
 .acq-failure-escape { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px 14px; margin:2px 0 0; }
 .acq-failure-escape button { padding:0; border:0; min-width:0; min-height:0; color:color-mix(in srgb,var(--acq-plum) 75%,var(--text-primary)); background:none; font-size:8px; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
 .acq-unknown-panel { display:grid; gap:8px; margin:14px; padding:16px 18px; border:1px solid color-mix(in srgb,var(--acq-brass) 24%,var(--border-subtle)); border-radius:9px; background:color-mix(in srgb,var(--surface-depth) 72%,transparent); }

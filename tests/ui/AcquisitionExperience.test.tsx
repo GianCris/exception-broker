@@ -1223,6 +1223,65 @@ describe('Acquisition V1 technical failure and recovery', () => {
     expect(byok.create).not.toHaveBeenCalled();
   });
 
+  it('stops offering a retry once the server has spent its reconciliation budget', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    const exhausted = record({
+      accessMode: 'HOSTED_DEMO',
+      technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', reconciliationAvailable: false, attempts: 3, code: 'Error', message: 'socket hang up', observedAt: '2027-06-10T22:00:09Z' },
+    });
+    const fake = api(exhausted);
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} />);
+    expect(await screen.findByRole('heading', { name: 'CALL-E acceptance is still unresolved' })).toBeVisible();
+    expect(screen.getByText(/retaining this acquisition because CALL-E may have accepted an earlier request\. No additional call will be started automatically\./)).toBeVisible();
+    expect(screen.getByText(/No further check will be made from here/)).toBeVisible();
+    // No retry, no redial, no fresh start, and nothing dialled on its own.
+    expect(screen.queryByRole('button', { name: /Retry safely/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retry hosted test/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start CALL-E acquisition' })).not.toBeInTheDocument();
+    expect(fake.create).not.toHaveBeenCalled();
+    // Truthful about what it is not: never a provider verdict or a business disposition.
+    expect(screen.queryByText('SAFE STOP')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: "CALL-E couldn't complete this acquisition" })).not.toBeInTheDocument();
+    // Control stays locked and the acquisition stays protected.
+    expect(screen.queryByRole('button', { name: 'Continue to Control' })).not.toBeInTheDocument();
+    const rail = screen.getByRole('complementary', { name: 'Acquisition flow' });
+    expect(within(rail).getByText('LOCKED')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Disconnect CALL-E' })).toBeDisabled();
+  });
+
+  it('lets a reloaded BYOK acquisition reconcile by re-entering the same authorized recipient', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
+    // A reload loses the in-session request, and BYOK deliberately never stored the full number.
+    const byok = record({
+      accessMode: 'BYOK',
+      technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', reconciliationAvailable: true, attempts: 2, code: 'Error', message: 'socket hang up', observedAt: '2027-06-10T22:00:05Z' },
+    });
+    const fake = api(byok);
+    vi.mocked(fake.getConnection).mockResolvedValue({ connectionId: 'INERT-BYOK-CONNECTION', kind: 'BYOK', connected: true });
+    render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'FRESH-IDENTITY'} />);
+    await screen.findByRole('heading', { name: 'Acquisition needs reconciliation' });
+    expect(screen.getByText('This must be the same recipient used for the original acquisition.')).toBeVisible();
+
+    const submit = screen.getByRole('button', { name: /Retry safely/ });
+    fireEvent.change(screen.getByLabelText('Authorized recipient'), { target: { value: '+1 (555) 123-4567' } });
+    fireEvent.click(submit);
+    // Authorization is still required before anything reaches the server.
+    expect(fake.create).not.toHaveBeenCalled();
+    expect(screen.getByText(/Confirm recipient ownership or authorization before reconciling/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(submit);
+    await waitFor(() => expect(fake.create).toHaveBeenCalledTimes(1));
+    const [submitted] = fake.create.mock.calls[0] as [{ acquisitionId: string; phoneNumber?: string; recoveryOfAcquisitionId?: string; request: { requestId: string; createdAt: string } }];
+    // Same acquisition and same canonical request: a reconciliation, never a new call.
+    expect(submitted.acquisitionId).toBe('ACQ-TEST-1');
+    expect(submitted.phoneNumber).toBe('+15551234567');
+    expect(submitted.recoveryOfAcquisitionId).toBeUndefined();
+    expect(submitted.request.requestId).toBe('REQUEST-TEST-1');
+    expect(submitted.request.createdAt).toBe('2027-06-10T22:00:00Z');
+    expect(JSON.stringify(submitted)).not.toContain('FRESH-IDENTITY');
+  });
+
   it('keeps the Pass 2A shell and the guided-demo escape hatch available through a technical failure', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     const onNavigateControl = vi.fn();
