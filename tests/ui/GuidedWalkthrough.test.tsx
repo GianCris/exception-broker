@@ -7,7 +7,7 @@ import { App } from '../../src/App.js';
 import { GuidedWalkthroughExperience, walkthroughHash } from '../../src/ui/GuidedWalkthroughExperience.js';
 import { controlSessionStorageKey } from '../../src/ui/LiveControlExperience.js';
 import { guidedScenario } from '../../src/walkthrough/guidedScenario.js';
-import { guidedWalkthroughSteps } from '../../src/walkthrough/guidedFlow.js';
+import { guidedStepCount, guidedWalkthroughSteps } from '../../src/walkthrough/guidedFlow.js';
 
 const facts = guidedScenario.canonicalFacts;
 const setHash = (hash: string) => { window.history.replaceState(null, '', hash === '' ? '/' : hash); };
@@ -17,10 +17,22 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); setHash(''); });
 
 const Walkthrough = () => <GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} />;
 const progress = () => screen.getByText(/^Step \d of 6$/).textContent;
-const coach = () => screen.getByLabelText('Interactive demo coach');
+/**
+ * The teaching layer writes {tokens} and the scenario owns the facts, so the tests resolve
+ * them the same way the surface does — a copy edit can never make these assertions pass
+ * against a sentence the learner would not actually read.
+ */
+const resolve = (line: string) => line
+  .replaceAll('{total}', String(facts.requestedTotalUnits))
+  .replaceAll('{date}', facts.targetDeliverySpoken)
+  .replaceAll('{substitutes}', String(facts.substituteUnits))
+  .replaceAll('{available}', String(facts.availableSubstitutes));
+
+/** The rail orients; the coach narrates in the workspace. Two surfaces, two jobs. */
+const rail = () => screen.getByLabelText('Interactive demo orientation');
+const coach = () => screen.getByLabelText('Interactive demo step guidance');
 const target = (name: string) => document.querySelector(`[data-walkthrough-target="${name}"]`) as HTMLElement;
-const beacon = () => screen.getByLabelText('Interactive demo next action');
-const next = () => fireEvent.click(within(beacon()).getByRole('button', { name: /^Continue/ }));
+const next = () => fireEvent.click(within(coach()).getByRole('button', { name: /^Continue/ }));
 const provenance = () => screen.getByLabelText(/Interactive demo: simulated conversation and a deterministic scenario/i);
 
 /** Walks the whole six-step flow the way a learner does, with the real controls. */
@@ -57,7 +69,7 @@ describe('Interactive demo architecture', () => {
     const before = JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } });
     render(<Walkthrough />);
     runToOutcome();
-    fireEvent.click(within(coach()).getByRole('button', { name: 'Restart demo' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Restart demo' }));
     expect(JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } })).toBe(before);
   });
 
@@ -72,45 +84,115 @@ describe('Interactive demo architecture', () => {
   });
 });
 
-describe('Interactive demo action discoverability', () => {
-  it('gives the passive steps exactly one progression control, and it is the beacon', () => {
+describe('Interactive demo storytelling', () => {
+  it('tells the story in the workspace, so the rail never has to be read', () => {
+    render(<Walkthrough />);
+    const seen: string[] = [];
+    // Every step 1-5 narrates centrally: which step this is, what is happening, and — where
+    // the step has one — the idea to keep. The rail is not consulted at all.
+    const readCoach = () => {
+      const step = guidedWalkthroughSteps[seen.length]!;
+      expect(within(coach()).getByText(step.story.eyebrow)).toBeVisible();
+      for (const line of [...step.story.lines, ...(step.story.takeaway === undefined ? [] : [step.story.takeaway])]) {
+        expect(within(coach()).getByText(resolve(line))).toBeVisible();
+      }
+      seen.push(progress()!);
+    };
+    readCoach(); next();
+    readCoach(); next();
+    readCoach(); fireEvent.click(target('continue-control'));
+    readCoach(); fireEvent.click(target('review-proposal'));
+    readCoach();
+    expect(seen).toEqual(['Step 1 of 6', 'Step 2 of 6', 'Step 3 of 6', 'Step 4 of 6', 'Step 5 of 6']);
+  });
+
+  it('resolves scenario facts into the story instead of restating them in the teaching layer', () => {
+    render(<Walkthrough />);
+    // The customer's own numbers, read from the scenario — never written into the copy.
+    expect(within(coach()).getByText(`A customer needs ${facts.requestedTotalUnits} units by ${facts.targetDeliverySpoken}.`)).toBeVisible();
+    expect(coach().textContent).not.toMatch(/\{\w+\}/);
+    runToOutcome();
+    // And the conclusion states the real shortfall the Broker acted on.
+    expect(within(rail()).getByText(`${facts.substituteUnits} substitutes were required. Only ${facts.availableSubstitutes} were available.`)).toBeVisible();
+  });
+
+  it('shows a six-node progress map whose state matches the step the learner is on', () => {
+    render(<Walkthrough />);
+    const nodes = () => [...document.querySelectorAll('.guided-progress-map li')].map((node) => node.className);
+    expect(nodes()).toHaveLength(guidedStepCount);
+    expect(nodes()).toEqual(['progress-current', ...Array<string>(5).fill('progress-future')]);
+    next();
+    expect(nodes()).toEqual(['progress-completed', 'progress-current', ...Array<string>(4).fill('progress-future')]);
+    next();
+    fireEvent.click(target('continue-control'));
+    expect(nodes()).toEqual([...Array<string>(3).fill('progress-completed'), 'progress-current', 'progress-future', 'progress-future']);
+    fireEvent.click(target('review-proposal'));
+    fireEvent.click(target('apply-reviewed'));
+    expect(nodes()).toEqual([...Array<string>(5).fill('progress-completed'), 'progress-current']);
+  });
+
+  it('keeps the step 5 guidance structurally outside the dimmed product layer', () => {
+    render(<Walkthrough />);
+    next(); next();
+    fireEvent.click(target('continue-control'));
+    fireEvent.click(target('review-proposal'));
+    expect(progress()).toBe('Step 5 of 6');
+    // The sheet makes the product chassis inert; the coach lives outside it, so the
+    // instruction is neither dimmed by the scrim nor trapped behind the dialog.
+    const chassis = document.querySelector<HTMLElement>('.control-chassis')!;
+    expect(chassis.inert).toBe(true);
+    expect(chassis.contains(coach())).toBe(false);
+    expect(screen.getByRole('dialog').contains(coach())).toBe(false);
+    expect(coach().closest('.guided-control')).not.toBeNull();
+  });
+
+  it('names the learning mode in full inside guided Control, never as a bare Demo badge', () => {
+    render(<Walkthrough />);
+    next(); next();
+    fireEvent.click(target('continue-control'));
+    const context = screen.getByRole('region', { name: 'Interactive demo case context' });
+    expect(within(context).getByText('Interactive demo')).toBeVisible();
+    expect(within(context).queryByText('Demo', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('gives the passive steps exactly one progression control, and it is the story coach', () => {
     render(<Walkthrough />);
     for (const step of ['Step 1 of 6', 'Step 2 of 6'] as const) {
       expect(progress()).toBe(step);
-      // The beacon owns progression outright: no second Next hiding in the coach rail.
-      expect(within(beacon()).getByRole('button', { name: /^Continue/ })).toBeVisible();
-      expect(within(coach()).queryByRole('button', { name: /^Continue|^Next/ })).not.toBeInTheDocument();
+      // The coach owns progression outright: no second Continue hiding in the rail.
+      expect(within(coach()).getByRole('button', { name: /^Continue/ })).toBeVisible();
+      expect(within(rail()).queryByRole('button', { name: /^Continue|^Next/ })).not.toBeInTheDocument();
       // And the rail keeps only identity, progress, the concept and the quiet exits.
-      expect(within(coach()).getAllByRole('button').map((button) => button.textContent))
+      expect(within(rail()).getAllByRole('button').map((button) => button.textContent))
         .toEqual(['Restart demo', 'Skip demo']);
       next();
     }
     expect(progress()).toBe('Step 3 of 6');
   });
 
-  it('makes the beacon instructional on the real-action steps, never a second button', () => {
+  it('makes the coach instructional on the real-action steps, never a second button', () => {
     render(<Walkthrough />);
     next(); next();
-    // Step 3: the beacon names the real control and offers nothing to press.
-    expect(within(beacon()).queryByRole('button')).not.toBeInTheDocument();
-    expect(within(beacon()).getByText('Your turn')).toBeVisible();
-    expect(beacon().querySelector('strong')).toHaveTextContent('Continue to Control');
+    // Step 3: the coach names the real control and offers nothing to press.
+    expect(within(coach()).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(coach()).getByText(/Your turn/)).toBeVisible();
+    expect(coach().querySelector('strong')).toHaveTextContent('Use Continue to Control');
     expect(progress()).toBe('Step 3 of 6');
-    // Clicking the beacon itself advances nothing; only the real product control does.
-    fireEvent.click(beacon());
+    // Clicking the coach itself advances nothing; only the real product control does.
+    fireEvent.click(coach());
     expect(progress()).toBe('Step 3 of 6');
     fireEvent.click(target('continue-control'));
     // Step 4 and step 5 keep the same rule, against the real Control surface.
     expect(progress()).toBe('Step 4 of 6');
-    expect(within(beacon()).queryByRole('button')).not.toBeInTheDocument();
-    expect(beacon().querySelector('strong')).toHaveTextContent('Review exact proposal');
-    fireEvent.click(beacon());
+    expect(within(coach()).queryByRole('button')).not.toBeInTheDocument();
+    expect(coach().querySelector('strong')).toHaveTextContent('Open Review exact proposal');
+    fireEvent.click(coach());
     expect(progress()).toBe('Step 4 of 6');
     fireEvent.click(target('review-proposal'));
     expect(progress()).toBe('Step 5 of 6');
-    expect(within(beacon()).queryByRole('button')).not.toBeInTheDocument();
-    expect(beacon().querySelector('strong')).toHaveTextContent('Apply reviewed decision');
-    fireEvent.click(beacon());
+    expect(within(coach()).queryByRole('button')).not.toBeInTheDocument();
+    expect(coach().querySelector('strong')).toHaveTextContent('Apply the reviewed decision');
+    fireEvent.click(coach());
     expect(progress()).toBe('Step 5 of 6');
   });
 
@@ -118,12 +200,12 @@ describe('Interactive demo action discoverability', () => {
     render(<Walkthrough />);
     runToOutcome();
     expect(progress()).toBe('Step 6 of 6');
-    expect(screen.queryByLabelText('Interactive demo next action')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Interactive demo step guidance')).not.toBeInTheDocument();
   });
 
   it('uses no looping attention animation anywhere in the demo treatment', () => {
     const walkthroughCss = readFileSync('src/styles/walkthrough.css', 'utf8');
-    expect(walkthroughCss).toMatch(/\.guided-beacon \{/);
+    expect(walkthroughCss).toMatch(/\.guided-story \{/);
     // A static luminous edge and one entrance settle — never a pulse, blink or bounce.
     expect(walkthroughCss).not.toMatch(/@keyframes|animation:|infinite/);
     const source = readFileSync('src/ui/GuidedWalkthroughExperience.tsx', 'utf8');
@@ -135,10 +217,10 @@ describe('Interactive demo flow', () => {
   it('starts at step one and keeps six instructional moments', () => {
     render(<Walkthrough />);
     expect(progress()).toBe('Step 1 of 6');
-    expect(within(coach()).getByRole('heading', { level: 2 })).toHaveTextContent(guidedWalkthroughSteps[0]!.title);
+    expect(within(rail()).getByRole('heading', { level: 2 })).toHaveTextContent(guidedWalkthroughSteps[0]!.title);
   });
 
-  it('advances the two passive steps from the beacon and shows the acquired decision', () => {
+  it('advances the two passive steps from the coach and shows the acquired decision', () => {
     render(<Walkthrough />);
     expect(target('decision')).toBeNull();
     next();
@@ -192,7 +274,7 @@ describe('Interactive demo flow', () => {
     expect(within(model).getAllByText(/No external execution/).length).toBeGreaterThan(0);
     expect(within(model).queryByText('REJECTED', { exact: true })).not.toBeInTheDocument();
     // The completion summary reads the Broker's own answer back, not a literal of its own.
-    const summary = within(coach());
+    const summary = within(rail());
     expect(summary.getByText('Broker disposition').closest('div')).toHaveTextContent('Broker dispositionBLOCK');
     // The application is what was blocked; it is not itself a disposition.
     expect(summary.queryByText('Application', { exact: true })).not.toBeInTheDocument();
@@ -204,11 +286,11 @@ describe('Interactive demo flow', () => {
     const acquisition = vi.fn(); const control = vi.fn();
     render(<GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={acquisition} onNavigateControl={vi.fn()} onNavigateControlProof={control} />);
     runToOutcome();
-    expect(screen.queryByLabelText('Interactive demo next action')).not.toBeInTheDocument();
-    expect(within(coach()).queryByRole('button', { name: 'Skip demo' })).not.toBeInTheDocument();
-    fireEvent.click(within(coach()).getByRole('button', { name: /Try live acquisition/ }));
+    expect(screen.queryByLabelText('Interactive demo step guidance')).not.toBeInTheDocument();
+    expect(within(rail()).queryByRole('button', { name: 'Skip demo' })).not.toBeInTheDocument();
+    fireEvent.click(within(rail()).getByRole('button', { name: /Try live acquisition/ }));
     expect(acquisition).toHaveBeenCalledTimes(1);
-    fireEvent.click(within(coach()).getByRole('button', { name: 'Explore Control proof' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Explore Control proof' }));
     expect(control).toHaveBeenCalledTimes(1);
   });
 
@@ -216,7 +298,7 @@ describe('Interactive demo flow', () => {
     render(<Walkthrough />);
     runToOutcome();
     expect(progress()).toBe('Step 6 of 6');
-    fireEvent.click(within(coach()).getByRole('button', { name: 'Restart demo' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Restart demo' }));
     expect(progress()).toBe('Step 1 of 6');
     next(); next();
     fireEvent.click(target('continue-control'));
@@ -228,7 +310,7 @@ describe('Interactive demo flow', () => {
   it('skips to an honest exit instead of pretending the walkthrough was completed', () => {
     const home = vi.fn();
     render(<GuidedWalkthroughExperience onNavigateHome={home} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} />);
-    fireEvent.click(within(coach()).getByRole('button', { name: 'Skip demo' }));
+    fireEvent.click(within(rail()).getByRole('button', { name: 'Skip demo' }));
     expect(screen.getByRole('heading', { name: 'Demo skipped' })).toBeVisible();
     expect(screen.getByText(/nothing was demonstrated and nothing was recorded/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Return home' }));
@@ -242,7 +324,7 @@ describe('Interactive demo flow', () => {
     fireEvent.click(target('review-proposal'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard' }));
     expect(progress()).toBe('Step 5 of 6');
-    expect(within(coach()).getByRole('heading', { name: 'The proposal was discarded' })).toBeVisible();
+    expect(within(rail()).getByRole('heading', { name: 'The proposal was discarded' })).toBeVisible();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
   });
 });
@@ -433,8 +515,8 @@ describe('Interactive demo accessibility', () => {
     render(<Walkthrough />);
     const step = screen.getByText('Step 1 of 6');
     expect(step).toHaveAttribute('aria-live', 'polite');
-    expect(coach()).toHaveAttribute('aria-label', 'Interactive demo coach');
-    const nextButton = within(beacon()).getByRole('button', { name: /^Continue/ });
+    expect(rail()).toHaveAttribute('aria-label', 'Interactive demo orientation');
+    const nextButton = within(coach()).getByRole('button', { name: /^Continue/ });
     nextButton.focus();
     expect(nextButton).toHaveFocus();
     expect(nextButton).toHaveAttribute('type', 'button');

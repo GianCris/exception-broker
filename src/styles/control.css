@@ -688,91 +688,138 @@
 :root[data-theme="light"] .control-drawer,
 :root[data-theme="light"] .control-surface .action-receipt details[open] .receipt-depth { box-shadow: 0 -18px 54px rgb(72 44 160 / 18%); }
 
-/* ── Dormant Control canvas: Control with nothing to work on ─────────
-   The empty Gate and Live Control recovery are different truths but the same workspace,
-   so they share one canvas. It draws the REAL Control architecture — Decision, Application
-   Boundary, Operational Reality, Broker Disposition — as linework rather than as four
-   equal cards, because the point is that the architecture is sensed and every region of it
-   is seen to be dormant. There is no Sentinel rail here: there is no workspace activity
-   for it to preside over. The focal announcement sits over that architecture, so it reads
-   as a state of Control and never as a generic card floating in an empty page. */
+/* ── Dormant Control mosaic: the whole instrument, waiting ───────────
+   The empty Gate and Live Control recovery are different truths but the same workspace, so
+   they share one canvas. It is the REAL Control instrument in its own geometry — Decision
+   and Exact Review on the left, the Application Boundary on the spine, Operational Reality
+   and Broker Disposition on the right — drawn as a ghost, so the user reads "the whole
+   system is here and nothing has activated it" rather than "this page is empty".
+
+   The ghost is atmosphere and structure, never fictional state: every interior row is an
+   abstract bar with no glyphs in it, so there is nothing to misread as a decision, a
+   quantity or a disposition. Contrast is deliberately far below the reading threshold and
+   no blur is used — the structure should be sensed, and the focal message should stay
+   obviously sharp above it. There is no Sentinel rail: there is no workspace activity for
+   it to preside over. */
 .control-dormant-shell .control-chassis { min-height: 100dvh; }
 .control-dormant-page {
   position: relative; display: grid; flex: 1 1 auto; min-height: 0;
-  padding: clamp(18px, 3vh, 40px) clamp(18px, 3.4vw, 56px) clamp(20px, 3.4vh, 46px);
+  padding: clamp(16px, 2.6vh, 34px) clamp(16px, 3vw, 48px) clamp(18px, 3vh, 40px);
 }
-.control-dormant-canvas { position: relative; display: grid; min-width: 0; min-height: min(520px, 58vh); }
+.control-dormant-canvas { position: relative; display: grid; min-width: 0; min-height: min(520px, 60vh); }
 .control-dormant-canvas > * { grid-area: 1 / 1; }
 
-/* The architecture in its dormant state: the real instrument reduced to its silhouette.
-   The four regions hold the corners and the boundary keeps the spine, so the middle of the
-   grid is deliberately free — that is where the announcement goes, and nothing structural
-   ever ends up behind it. */
+/* The instrument's own grid: two object columns either side of the boundary spine. */
 .dormant-architecture {
   display: grid; align-self: stretch; min-width: 0;
   grid-template-columns: minmax(0, 1fr) clamp(122px, 9.6vw, 148px) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(9px, 1.5vh, 15px) 0;
 }
 .dormant-region {
-  position: relative; display: grid; align-content: start; gap: 5px; min-width: 0;
-  padding: 15px 0 0; border-top: 1px solid color-mix(in srgb, var(--border-strong) 62%, transparent);
+  position: relative; display: grid; grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 4px; min-width: 0; overflow: hidden;
+  padding: var(--control-pad) var(--control-gutter);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 74%, transparent); border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-base) 22%, transparent);
 }
 .dormant-decision { grid-column: 1; grid-row: 1; }
+.dormant-review { grid-column: 1; grid-row: 2; }
 .dormant-reality { grid-column: 3; grid-row: 1; }
-.dormant-review { grid-column: 1; grid-row: 3; align-content: end; }
-.dormant-disposition { grid-column: 3; grid-row: 3; align-content: end; }
-/* The node where a region faces the boundary: the same ringed endpoint the live
-   Application Boundary draws, so the two read as one architecture. */
-.dormant-region::before {
-  position: absolute; top: -4px; z-index: 1; width: 7px; height: 7px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 85%, transparent); border-radius: 50%;
-  background: color-mix(in srgb, var(--surface-depth) 90%, transparent); content: "";
-}
-/* A hairline from the node toward the boundary: Decision and Exact review lead into it,
-   Operational reality and Broker disposition lead out of it. */
-.dormant-region::after {
-  position: absolute; top: -1px; width: clamp(26px, 5.5vw, 68px); height: 1px; content: "";
-  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--ctl-plum) 40%, transparent) 0 4px, transparent 4px 9px);
-}
-/* Each column reads outward from the spine, so the corners stay clear of the message. */
-.dormant-decision, .dormant-review { padding-right: clamp(10px, 1.4vw, 20px); }
-.dormant-decision::before, .dormant-review::before { right: 0; }
-.dormant-decision::after, .dormant-review::after { right: 7px; }
-.dormant-reality, .dormant-disposition { padding-left: clamp(10px, 1.4vw, 20px); text-align: right; }
-.dormant-reality::before, .dormant-disposition::before { left: 0; }
-.dormant-reality::after, .dormant-disposition::after { left: 7px; }
+.dormant-disposition { grid-column: 3; grid-row: 2; }
+.dormant-region .control-label { color: color-mix(in srgb, var(--text-muted) 92%, transparent); }
 .dormant-region strong { color: var(--text-muted); font-size: .74rem; font-weight: 550; }
+/* Each column names itself on its own outer edge, so the focal message can sit in the
+   middle of the instrument without ever hiding what a region is. */
+.dormant-reality > .control-label, .dormant-reality > strong,
+.dormant-disposition > .control-label, .dormant-disposition > strong { text-align: right; }
 
-/* The signature element keeps its shape and states the one thing true of it: the spine
-   runs the full height of the canvas, and the plate names it at the top of that spine. */
+/* ── The ghost interior ──────────────────────────────────────────────
+   Bars, never glyphs. Each panel keeps the shape of the real object it stands for, and
+   none of them can be read, because there is nothing in them to read. */
+.ghost-panel {
+  display: block; min-height: 0; margin-top: 9px; overflow: hidden; pointer-events: none;
+  --ghost-ink: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  --ghost-edge: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+.ghost-body { display: grid; gap: 7px; }
+.ghost-bar { display: block; height: 6px; border-radius: 3px; background: var(--ghost-ink); }
+.ghost-rule { display: block; height: 1px; margin: 2px 0; background: var(--ghost-edge); }
+.ghost-headline {
+  display: block; width: 58%; height: clamp(20px, 2.6vh, 26px); border-radius: 5px;
+  background: color-mix(in srgb, var(--ctl-plum) 11%, transparent);
+}
+.ghost-headline--short { width: 42%; }
+/* Decision keeps its mark, rotated square and unfilled, exactly where the diamond sits. */
+.ghost-decision { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px 13px; }
+.ghost-mark {
+  display: block; grid-row: 1 / span 2; width: clamp(30px, 2.6vw, 38px); height: clamp(30px, 2.6vw, 38px);
+  border: 1px solid color-mix(in srgb, var(--ctl-plum) 20%, transparent); border-radius: 5px;
+  transform: rotate(45deg);
+}
+.ghost-decision .ghost-rule, .ghost-decision .ghost-bar:last-child { grid-column: 1 / -1; }
+/* Exact review keeps the proposal table's line structure: label left, value right. */
+.ghost-review { gap: 0; }
+.ghost-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: clamp(4px, .7vh, 7px) 0; border-bottom: 1px solid var(--ghost-edge);
+}
+.ghost-value { flex: none; }
+.ghost-action {
+  display: block; height: clamp(30px, 4vh, 40px); margin-top: 9px; border-radius: 8px;
+  background: color-mix(in srgb, var(--ctl-plum) 12%, transparent);
+}
+/* Operational reality keeps the two slots the boundary compares, unfilled. */
+.ghost-measure { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 11px; }
+.ghost-slot {
+  display: block; height: clamp(38px, 5.4vh, 54px); border-radius: 8px;
+  border: 1px dashed var(--ghost-edge); background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+.ghost-link { display: block; width: 15px; height: 1px; background: var(--ghost-edge); }
+
+/* The signature element: the spine runs the full height and the plate names it. */
 .dormant-boundary {
   position: relative; display: grid; align-content: start; justify-items: center;
   grid-column: 2; grid-row: 1 / -1; min-width: 0; padding: 0 clamp(7px, .75vw, 14px);
 }
 .dormant-rail {
   position: absolute; top: 3px; bottom: 3px; left: 50%; width: 2px; transform: translateX(-50%);
-  background: repeating-linear-gradient(180deg, var(--border-strong) 0 4px, transparent 4px 10px); opacity: .75;
+  background: repeating-linear-gradient(180deg, var(--border-strong) 0 4px, transparent 4px 10px); opacity: .6;
 }
+/* The same ringed endpoints the live Application Boundary draws. */
+.dormant-boundary::before, .dormant-boundary::after {
+  position: absolute; left: 50%; z-index: 1; width: 7px; height: 7px; margin-left: -3.5px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent); border-radius: 50%;
+  background: color-mix(in srgb, var(--surface-depth) 90%, transparent); content: "";
+}
+.dormant-boundary::before { top: 0; }
+.dormant-boundary::after { bottom: 0; }
 .dormant-plate {
   position: relative; z-index: 2; display: grid; gap: 4px; justify-items: center; width: 100%;
   padding: 13px 8px; border: 1px solid var(--border-subtle); border-radius: 11px;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--ctl-panel) 88%, transparent), color-mix(in srgb, var(--surface-depth) 86%, transparent));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ctl-panel) 90%, transparent), color-mix(in srgb, var(--surface-depth) 88%, transparent));
   text-align: center;
 }
 .dormant-plate .control-label { font-size: .5rem; letter-spacing: .14em; line-height: 1.4; }
 .dormant-plate strong { color: var(--text-muted); font-size: .63rem; font-weight: 850; letter-spacing: .1em; }
 
 /* ── The focal announcement ──────────────────────────────────────────
-   One message, then a deliberately unequal set of exits. It is the only lit object on the
-   canvas, so it can never be mistaken for one more dormant region. */
+   One message, then a deliberately unequal set of exits. Its own ground fades outward, so
+   the ghost recedes around it instead of competing with it, and it is the only sharp,
+   fully lit object on the canvas. */
 .dormant-announcement {
   position: relative; z-index: 3; place-self: center; display: grid; gap: 12px;
   width: min(600px, 100%); padding: clamp(22px, 3.8vh, 36px) clamp(22px, 3vw, 38px);
-  border: 1px solid color-mix(in srgb, var(--ctl-plum) 26%, var(--border-strong)); border-radius: 15px;
+  border: 1px solid color-mix(in srgb, var(--ctl-plum) 30%, var(--border-strong)); border-radius: 15px;
   background:
-    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--ctl-plum) 9%, transparent), transparent 68%),
-    linear-gradient(160deg, color-mix(in srgb, var(--ctl-panel) 99%, transparent), color-mix(in srgb, var(--surface-depth) 98%, transparent));
-  box-shadow: var(--ctl-lift), 0 0 0 7px color-mix(in srgb, var(--ctl-plum) 6%, transparent);
+    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--ctl-plum) 10%, transparent), transparent 68%),
+    linear-gradient(160deg, color-mix(in srgb, var(--ctl-panel) 99%, transparent), color-mix(in srgb, var(--surface-depth) 99%, transparent));
+  box-shadow: var(--ctl-lift), 0 0 0 9px color-mix(in srgb, var(--ctl-plum) 6%, transparent), 0 26px 70px rgb(3 7 22 / 34%);
+}
+/* The halo that lets the ghost dissolve toward the message rather than stop at its edge. */
+.dormant-announcement::before {
+  position: absolute; inset: -40px -56px; z-index: -1; content: ""; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--surface-base) 72%, transparent), transparent);
 }
 .dormant-announcement .eyebrow {
   margin: 0; color: color-mix(in srgb, var(--ctl-plum) 82%, var(--text-primary));
@@ -821,21 +868,29 @@
 .dormant-announcement .gate-quiet .gate-icon { width: 13px; height: 13px; }
 .dormant-announcement button:focus-visible { outline: 2px solid var(--ctl-plum); outline-offset: 3px; }
 
+/* In daylight the ghost needs slightly more ink to stay perceptible without becoming
+   readable, and the halo needs the page's own paper rather than the night ground. */
+:root[data-theme="light"] .ghost-panel {
+  --ghost-ink: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  --ghost-edge: color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+:root[data-theme="light"] .dormant-announcement::before { background: radial-gradient(closest-side, color-mix(in srgb, #f5f1ea 78%, transparent), transparent); }
+:root[data-theme="light"] .dormant-announcement { box-shadow: var(--ctl-lift), 0 0 0 9px color-mix(in srgb, var(--ctl-plum) 5%, transparent), 0 22px 56px rgb(72 44 160 / 12%); }
+
 @media (max-width: 980px) { .control-dormant-canvas { min-height: 0; } }
 @media (max-width: 860px) {
-  /* Natural flow on a phone: the message first, the architecture stated beneath it. */
+  /* Natural flow on a phone: the message first, the instrument stated beneath it. */
   .control-dormant-page { display: block; }
-  .control-dormant-canvas { display: grid; gap: 20px; min-height: 0; }
+  .control-dormant-canvas { display: grid; gap: 14px; min-height: 0; }
   .control-dormant-canvas > * { grid-area: auto; }
   .dormant-announcement { order: -1; width: 100%; }
-  .dormant-architecture { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 14px; }
-  .dormant-architecture > * { grid-column: 1 !important; grid-row: auto !important; align-content: start; }
-  .dormant-region { padding-right: 0; padding-left: 0; text-align: left; }
-  .dormant-region::before { right: auto; left: 0; }
-  .dormant-region::after { right: auto; left: 7px; }
-  .dormant-boundary { justify-items: start; padding: 0; }
+  .dormant-announcement::before { display: none; }
+  .dormant-architecture { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 12px; }
+  .dormant-architecture > * { grid-column: 1 !important; grid-row: auto !important; }
+  .dormant-region { min-height: 128px; }
+  .dormant-boundary { align-content: start; justify-items: stretch; padding: 0; }
   .dormant-plate { text-align: left; justify-items: start; }
-  .dormant-rail { display: none; }
+  .dormant-rail, .dormant-boundary::before, .dormant-boundary::after { display: none; }
 }
 @media (max-width: 640px) {
   .dormant-actions { display: grid; }

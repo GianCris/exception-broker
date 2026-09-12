@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, MotionConfig } from 'motion/react';
 
 import { prepareProof, reviewProof } from '../demo/proofDemo.js';
-import { guidedCompletionActions, guidedFirstStepId, guidedStep, guidedStepCount, type GuidedStepId, type GuidedTarget, type GuidedWalkthroughStep } from '../walkthrough/guidedFlow.js';
+import { guidedCompletionActions, guidedFirstStepId, guidedProgressState, guidedStep, guidedStepCount, guidedWalkthroughSteps, type GuidedStepId, type GuidedTarget, type GuidedWalkthroughStep } from '../walkthrough/guidedFlow.js';
 import { guidedScenario } from '../walkthrough/guidedScenario.js';
 import { motionTokens } from './motion.js';
 import { ProductTopbar, SentinelScene, SurfaceContext } from './ProductShell.js';
@@ -20,20 +20,38 @@ import '../styles/walkthrough.css';
  * decision has to be reviewed and its application evaluated against operational reality,
  * which can block it.
  *
+ * The story is told in the WORKSPACE, beside whatever it is about, and never only in the
+ * rail. The rail is orientation — who you are, where you are, how to leave — and the
+ * central story coach is the narrator. A learner who never looks left should still
+ * understand every step, and should never have to hunt for what to click.
+ *
  * What it does NOT do: contact CALL-E, construct or call an acquisition API, touch live
  * acquisition or Live Control storage, or implement a second Broker. Steps 1-3 present the
  * simulated scenario in Acquisition's own documentary language; steps 4-6 hand over to the
  * real Control experience running the real deterministic H02 evaluation. The BLOCK the
  * learner sees is produced by the Broker, never by the scenario's expected value.
  *
- * All walkthrough state is ephemeral: nothing is persisted, and every entry or restart
- * begins at step 1 with fresh deterministic state.
+ * All demo state is ephemeral: nothing is persisted, and every entry or restart begins at
+ * step 1 with fresh deterministic state.
  */
 
 export const walkthroughHash = '#walkthrough';
 const scenario = guidedScenario;
 const facts = scenario.canonicalFacts;
 const turnCount = scenario.conversationTurns.length;
+
+/**
+ * The teaching layer writes {tokens}; the scenario owns the facts. Resolving them here is
+ * what keeps a sentence like "a customer needs 500 units" true by construction rather than
+ * by somebody remembering to edit two files at once.
+ */
+const storyFacts: Readonly<Record<string, string>> = {
+  total: String(facts.requestedTotalUnits),
+  date: facts.targetDeliverySpoken,
+  substitutes: String(facts.substituteUnits),
+  available: String(facts.availableSubstitutes),
+};
+const tell = (line: string) => line.replaceAll(/\{(\w+)\}/g, (match, token: string) => storyFacts[token] ?? match);
 
 /** The caller is simulated and says so, every time it speaks. */
 const guidedSpeaker: SpeakerName = (speaker) => speaker === 'bot' ? 'CALL-E · simulated' : speaker === 'user' ? 'Recipient · simulated' : 'Unknown speaker';
@@ -53,17 +71,20 @@ const guidedContext = (
 /**
  * The guided Control stage's own context, replacing the proof-case block.
  *
- * Steps 4-6 run the real deterministic H02 evaluation, and outside the walkthrough Control
- * correctly describes that input as a configured proof case. Inside the walkthrough that
- * same sentence would read as though the acquired decision had been thrown away and an
+ * Steps 4-6 run the real deterministic H02 evaluation, and outside the demo Control
+ * correctly describes that input as a configured proof case. Inside the demo that same
+ * sentence would read as though the acquired decision had been thrown away and an
  * unrelated case loaded instead — so here the surface states both truths at once: the
  * acquisition the learner just watched was simulated, and the evaluation it is being put
  * through is the real deterministic one. The decision moved forward; what can be done with
  * it is established somewhere else.
+ *
+ * The chip names the learning mode in full. A bare "Demo" would be the only place in the
+ * product using a shorthand for it, and shorthand is how a name starts drifting.
  */
 const guidedCaseContext = (
   <section className="control-context guided-case-context" aria-label="Interactive demo case context">
-    <b>Demo</b>
+    <b>Interactive demo</b>
     <h2>The decision you just acquired</h2>
     <small>Guided simulated acquisition <span aria-hidden="true">·</span> deterministic H02 evaluation</small>
     <strong>Operational truth is checked independently</strong>
@@ -77,7 +98,7 @@ const guidedDecisionSource = {
 } as const;
 
 /**
- * Points the coach at a real control without replacing it: the target element is marked so
+ * Points the story at a real control without replacing it: the target element is marked so
  * CSS can draw one restrained ring. Re-runs per step, and retries for a few frames because
  * some targets (the review sheet's action) mount with the step that spotlights them.
  */
@@ -91,7 +112,15 @@ const useGuidedSpotlight = (target: GuidedTarget | null) => {
       clear();
       if (target === null) return;
       marked = document.querySelector(`[data-walkthrough-target="${target}"]`);
-      if (marked !== null) { marked.setAttribute('data-walkthrough-active', 'true'); return; }
+      if (marked !== null) {
+        marked.setAttribute('data-walkthrough-active', 'true');
+        // On a screen tall enough for the whole workspace this does nothing at all: the
+        // subject is already in view. On a short one it brings the step's subject above
+        // the coach — 'nearest' plus the scroll-margin the guided stage sets, so the
+        // camera moves the minimum and never animates.
+        try { marked.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch { /* Layout stays authoritative where scrolling is unavailable. */ }
+        return;
+      }
       if (attempts++ < 8) frame = requestAnimationFrame(assign);
     };
     assign();
@@ -99,43 +128,63 @@ const useGuidedSpotlight = (target: GuidedTarget | null) => {
   }, [target]);
 };
 
-type CoachProps = Readonly<{
+/**
+ * Six nodes, one lit. "Step 3 of 6" is a fact the learner has to read and convert; a path
+ * is a position they can see. Both are here — the sentence is what assistive technology
+ * announces, the path is what an eye resolves in well under a second — so the map itself
+ * is decorative and the sentence beside it carries the meaning.
+ */
+const GuidedProgressMap = ({ current }: Readonly<{ current: number }>) => (
+  <ol className="guided-progress-map" aria-hidden="true">
+    {guidedWalkthroughSteps.map((step) => (
+      <li key={step.stepId} className={`progress-${guidedProgressState(step.index, current)}`}>
+        <span>{step.index}</span>
+      </li>
+    ))}
+  </ol>
+);
+
+type OrientationProps = Readonly<{
   step: GuidedWalkthroughStep; discarded: boolean; disposition: string | null;
   onSkip: () => void; onRestart: () => void;
   onTryLive: () => void; onExploreProof: () => void;
 }>;
 
 /**
- * The coach lives in the product's own branded rail rather than floating over the
- * interface, so it can never cover the action it is pointing at and never dims the product.
+ * The rail is ORIENTATION, not narration: identity, position, the name of the current
+ * step, and the two quiet ways out. It deliberately holds no progression control and no
+ * long explanation, because a learner who reads only the workspace must still get the
+ * whole story — and if the story were told in both places, neither would feel like the
+ * authoritative one.
  *
- * It carries identity, progress, the concept and the two quiet exits — and deliberately no
- * progression control at all. Progression belongs to the Action Beacon, so at any moment
- * there is exactly one thing to click and it is never hidden beside the product.
+ * The one exception is the final step. Step 6 has no coach at all, by design: the Broker's
+ * answer is the protagonist and nothing may float over it. So the conclusion is stated
+ * here, beside a workspace that is already showing APPROVED, the shortfall and the
+ * disposition.
  */
-const GuidedCoach = ({ step, discarded, disposition, onSkip, onRestart, onTryLive, onExploreProof }: CoachProps) => {
+const GuidedOrientation = ({ step, discarded, disposition, onSkip, onRestart, onTryLive, onExploreProof }: OrientationProps) => {
   const heading = useRef<HTMLParagraphElement>(null);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, [step.stepId]);
   const complete = step.stepId === 'outcome';
-  return <div className="guided-coach" aria-label="Interactive demo coach">
+  return <div className="guided-coach" aria-label="Interactive demo orientation">
     <p className="eyebrow">Interactive demo</p>
+    <GuidedProgressMap current={step.index} />
     <p className="guided-progress" aria-live="polite" tabIndex={-1} ref={heading}>Step {step.index} of {guidedStepCount}</p>
     <MotionConfig reducedMotion="user">
       <motion.div key={`${step.stepId}-${discarded ? 'discarded' : 'active'}`} className="guided-coach-body"
         initial={{ opacity: 0.35, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={{ ...motionTokens.reveal, duration: 0.2 }}>
         <h2>{discarded ? 'The proposal was discarded' : step.title}</h2>
-        <p>{discarded
-          ? 'Discarding closes this exact proposal, so there is nothing left to apply — a real and correct outcome. Restart the demo to see what the Broker answers instead.'
-          : step.coachCopy}</p>
-        {/* The rail explains; it never holds the progression action. Exactly one control
-            advances a passive step and it is the central Action Beacon, so a first-time
-            learner never has to find a button hidden beside the product. */}
-        {discarded || step.teachingNote === undefined ? null : <p className="guided-teaching">{step.teachingNote}</p>}
+        {discarded ? <p>Discarding closes this exact proposal, so there is nothing left to apply — a real and correct outcome. Restart the demo to see what the Broker answers instead.</p> : null}
+        {complete && !discarded ? <div className="guided-conclusion">
+          <p className="story-eyebrow">{step.story.eyebrow}</p>
+          {step.story.lines.map((line) => <p key={line}>{tell(line)}</p>)}
+          {step.story.takeaway === undefined ? null : <p className="guided-conclusion-causal">{tell(step.story.takeaway)}</p>}
+        </div> : null}
         {complete ? <div className="guided-summary">
           {/* The decision and the disposition are read back from what Control rendered; the
-              walkthrough never states an outcome of its own. The middle row names the
+              demo never states an outcome of its own here. The middle row names the
               Broker's disposition, because it is the Broker that answered — the application
-              is the thing that was blocked, it is not itself a BLOCK. */}
+              is the thing that was blocked, it is not itself a disposition. */}
           <dl>
             <div><dt>Decision</dt><dd>{scenario.normalizedDecision}</dd></div>
             <div><dt>Broker disposition</dt><dd>{disposition ?? 'NOT EVALUATED'}</dd></div>
@@ -154,54 +203,67 @@ const GuidedCoach = ({ step, discarded, disposition, onSkip, onRestart, onTryLiv
 };
 
 /**
- * The Action Beacon: what to do next, where the learner is already looking.
+ * The story coach: what is happening, what it means, and what to do — in the workspace,
+ * beside the thing it is about.
  *
- * A first-time user must never have to hunt for the next action, so the beacon sits in the
- * lower centre of the workspace — inside the stable camera, clear of the transcript, the
- * evidence and the decision payoff — and it changes meaning with the step:
+ * It is docked per step rather than parked in one convenient corner, because a card that
+ * always appears in the same place stops being a pointer and becomes furniture. Step 1
+ * sits under the conversation, step 3 under the handoff action, step 4 under the review
+ * action, step 5 beside the open drawer. What each dock resolves to is in walkthrough.css,
+ * mirrored from each stage's own column geometry.
  *
- *   passive steps (1, 2)  the beacon IS the progression control, and the only one
- *   real-action steps (3, 4, 5)  the beacon is INSTRUCTION, and the real product control
- *                                remains the only thing that advances anything
- *   the outcome step (6)  there is no beacon; the consequence is the protagonist
+ * Its action changes meaning with the step:
  *
- * That distinction is the whole point: a tutorial button that stands in for Continue to
- * Control, Review exact proposal or Apply reviewed decision would teach a product the user
- * has not actually used. So on those steps the beacon renders no button at all — it names
- * the real control, which wears the same plum spotlight, and the learner goes and uses it.
+ *   passive steps (1, 2)  the coach carries Continue, and it is the only Continue
+ *   real-action steps (3, 4, 5)  the coach carries a CUE, not a button; the real product
+ *                                control remains the only thing that advances anything
+ *   the outcome step (6)  there is no coach; the Broker's answer is the protagonist
  *
- * The treatment is a static luminous edge and one short entrance settle. Nothing loops,
- * blinks or bounces, and reduced motion removes the entrance without removing the beacon.
+ * That distinction is the whole point. A tutorial button standing in for Continue to
+ * Control, Review exact proposal or Apply reviewed decision would teach a product the
+ * learner has not actually used — so on those steps the coach renders no button at all. It
+ * names the real control, the real control wears the plum spotlight, and the learner goes
+ * and uses it.
+ *
+ * The treatment is a static luminous edge plus one short entrance settle. Nothing loops,
+ * blinks or bounces, and reduced motion lands on the final state immediately.
  */
-const GuidedActionBeacon = ({ step, discarded, onContinue }: Readonly<{
+const GuidedStoryCoach = ({ step, discarded, onContinue }: Readonly<{
   step: GuidedWalkthroughStep; discarded: boolean; onContinue: () => void;
 }>) => {
   const action = step.requiredAction;
   if (discarded || action.kind === 'NONE') return null;
   const instructional = action.kind === 'REAL_ACTION';
-  // The dock owns the placement and the card owns the treatment: the entrance transform
-  // belongs to the card, so it can never fight the centring the dock is responsible for.
+  // The dock owns placement and the card owns treatment: the entrance transform belongs to
+  // the card, so it can never fight the alignment the dock is responsible for.
   return <MotionConfig reducedMotion="user">
-    <div className="guided-beacon-dock">
-      <motion.div key={step.stepId} className={`guided-beacon${instructional ? ' guided-beacon--instruction' : ''}`}
-        aria-label="Interactive demo next action"
-        initial={{ opacity: 0.3, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ ...motionTokens.reveal, duration: 0.2 }}>
-        {/* Points back up at the product the beacon is talking about. Decorative only. */}
-        <i className="beacon-link" aria-hidden="true" />
-        {instructional
-          ? <p className="beacon-instruction"><b>Your turn</b><strong>{action.label} <span aria-hidden="true">→</span></strong><span>{action.hint}</span></p>
-          : <button type="button" className="beacon-action" onClick={onContinue}>{action.label} <Arrow /></button>}
-      </motion.div>
+    <div className={`guided-coach-dock guided-dock-${step.stepId}`}>
+      <motion.aside key={step.stepId} className={`guided-story${instructional ? ' guided-story--turn' : ''}`}
+        aria-label="Interactive demo step guidance"
+        initial={{ opacity: 0.3, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...motionTokens.reveal, duration: 0.22 }}>
+        {/* A quiet luminous trail toward the thing this step is about. Decorative only. */}
+        <i className="story-link" aria-hidden="true" />
+        <div className="story-copy">
+          <p className="story-eyebrow">{step.story.eyebrow}</p>
+          {step.story.lines.map((line) => <p className="story-line" key={line}>{tell(line)}</p>)}
+          {step.story.takeaway === undefined ? null : <p className="story-takeaway">{tell(step.story.takeaway)}</p>}
+        </div>
+        <div className="story-act">
+          {instructional
+            ? <p className="story-cue"><strong>{action.cue}</strong> <span aria-hidden="true">→</span></p>
+            : <button type="button" className="story-action" onClick={onContinue}>{action.label} <Arrow /></button>}
+        </div>
+      </motion.aside>
     </div>
   </MotionConfig>;
 };
 
 /** Steps 1-3: the simulated scenario, in Acquisition's documentary language. */
-const GuidedAcquisitionStage = ({ step, coach, beacon, onContinue }: Readonly<{ step: GuidedWalkthroughStep; coach: ReactNode; beacon: ReactNode; onContinue: () => void }>) => (
+const GuidedAcquisitionStage = ({ step, orientation, coach, onContinue }: Readonly<{ step: GuidedWalkthroughStep; orientation: ReactNode; coach: ReactNode; onContinue: () => void }>) => (
   <main className="acq-page">
     <div className="acq-layout">
       <aside className="acq-rail guided-rail" aria-label="Interactive demo">
-        <div className="acq-rail-top">{coach}</div>
+        <div className="acq-rail-top">{orientation}</div>
         <div className="acq-rail-scene" aria-hidden="true"><div className="acq-rail-motif"><q>Higher ground is a choice.</q><span>— The Sentinel</span></div></div>
       </aside>
       {/* Step 1 is about the conversation, so everything the conversation has not caused
@@ -275,11 +337,11 @@ const GuidedAcquisitionStage = ({ step, coach, beacon, onContinue }: Readonly<{ 
         </section> : null}
       </div>
     </div>
-    {beacon}
+    {coach}
   </main>
 );
 
-/** Skip leaves honestly: it never pretends the walkthrough was completed. */
+/** Skip leaves honestly: it never pretends the demo was completed. */
 const GuidedExit = ({ onTryLive, onExploreProof, onHome, onRestart }: Readonly<{ onTryLive: () => void; onExploreProof: () => void; onHome: () => void; onRestart: () => void }>) => (
   <main className="acq-page guided-exit-page">
     <section className="guided-exit" aria-labelledby="guided-exit-title">
@@ -297,10 +359,10 @@ const GuidedExit = ({ onTryLive, onExploreProof, onHome, onRestart }: Readonly<{
 );
 
 /**
- * Primary Control navigation leaves the walkthrough for the real Control WORKSPACE, while
+ * Primary Control navigation leaves the demo for the real Control WORKSPACE, while
  * "Explore Control proof" opens the deterministic verification surface. They are different
- * destinations, so they are different props: the walkthrough must never turn its own exit
- * into the other one.
+ * destinations, so they are different props: the demo must never turn its own exit into
+ * the other one.
  */
 export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisition, onNavigateControl, onNavigateControlProof }: Readonly<{
   onNavigateHome: () => void;
@@ -321,12 +383,12 @@ export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisit
     if (current.nextStep !== undefined) setStepId(current.nextStep);
   };
   const restart = () => { setStepId(guidedFirstStepId); setDiscarded(false); setDisposition(null); setSkipped(false); setRunId((value) => value + 1); };
-  const coach = <GuidedCoach step={step} discarded={discarded} disposition={disposition}
+  const orientation = <GuidedOrientation step={step} discarded={discarded} disposition={disposition}
     onSkip={() => setSkipped(true)} onRestart={restart}
     onTryLive={onNavigateAcquisition} onExploreProof={onNavigateControlProof} />;
-  // One beacon definition for both stages: the passive steps advance through it, the
+  // One coach definition for both stages: the passive steps advance through it, the
   // real-action steps only read from it, and step 6 renders none.
-  const beacon = <GuidedActionBeacon step={step} discarded={discarded} onContinue={() => advance(stepId)} />;
+  const coach = <GuidedStoryCoach step={step} discarded={discarded} onContinue={() => advance(stepId)} />;
 
   if (skipped) {
     return <div className="acquisition-shell guided-shell">
@@ -338,14 +400,14 @@ export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisit
   if (step.stage === 'acquisition') {
     return <div className="acquisition-shell guided-shell">
       <ProductTopbar surface="walkthrough" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl} context={guidedContext} />
-      <GuidedAcquisitionStage step={step} coach={coach} beacon={beacon} onContinue={() => advance('handoff')} />
+      <GuidedAcquisitionStage step={step} orientation={orientation} coach={coach} onContinue={() => advance('handoff')} />
     </div>;
   }
 
-  // Steps 4-6 are the real Control experience on real deterministic H02 state. The
-  // walkthrough supplies only the guided rail, the provenance label and completion hooks;
-  // the Decision, the Exact Review sheet, the Application Boundary, Operational Reality,
-  // the Broker disposition and the APPLY choreography are all Control's own.
+  // Steps 4-6 are the real Control experience on real deterministic H02 state. The demo
+  // supplies only the guided rail, the provenance label and completion hooks; the
+  // Decision, the Exact Review sheet, the Application Boundary, Operational Reality, the
+  // Broker disposition and the APPLY choreography are all Control's own.
   return <div className="guided-control" key={runId}>
     <ProofExperience
       prepare={prepareProof} review={reviewProof} initialScenario={scenario.operationalContext.controlScenario}
@@ -355,7 +417,7 @@ export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisit
         caseContext: guidedCaseContext,
         decisionSource: guidedDecisionSource,
         rail: <aside className="control-queue guided-rail" aria-label="Interactive demo">
-          <div className="queue-top">{coach}</div>
+          <div className="queue-top">{orientation}</div>
           <SentinelScene />
         </aside>,
         onReviewOpen: () => { if (stepId === 'review') advance('review'); },
@@ -366,6 +428,6 @@ export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisit
         },
       }}
     />
-    {beacon}
+    {coach}
   </div>;
 };

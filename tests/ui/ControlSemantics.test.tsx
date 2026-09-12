@@ -165,6 +165,25 @@ describe('Control Gate', () => {
     expect(document.querySelector('.control-queue')).toBeNull();
   });
 
+  it('draws the whole instrument as a ghost that carries structure and no state', () => {
+    render(<App />);
+    goControl();
+    // Every region of the real instrument is present in silhouette, so the workspace reads
+    // as Control waiting rather than as a page with nothing on it.
+    const ghosts = document.querySelectorAll('.ghost-panel');
+    expect(ghosts).toHaveLength(4);
+    for (const ghost of ghosts) {
+      // Bars, never glyphs: there is nothing in the ghost that could be read as a
+      // decision, a quantity or a disposition, because it contains no text at all.
+      expect(ghost.textContent).toBe('');
+      expect(ghost.getAttribute('aria-hidden')).toBe('true');
+    }
+    // Nowhere on the canvas — ghost included — is a single operational value invented.
+    const canvas = document.querySelector('.control-dormant-canvas')!;
+    expect(canvas.textContent).not.toMatch(/APPROVED|REJECTED|ALLOW|BLOCK|WAIT|H0[123]|CASE-|PLAN-/);
+    expect(canvas.textContent).not.toMatch(/\d/);
+  });
+
   it('routes its quiet exit to Control Proof, not back into the workspace', () => {
     render(<App />);
     goControl();
