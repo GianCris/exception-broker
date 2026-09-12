@@ -962,10 +962,10 @@ describe('Acquisition V1 Connection Gate', () => {
     await screen.findByRole('heading', { name: 'Acquire a decision' });
   });
 
-  it('routes the learning escape hatch to the guided walkthrough', () => {
+  it('routes the learning escape hatch to the interactive demo', () => {
     const onNavigateControl = vi.fn(); const onNavigateWalkthrough = vi.fn();
     render(<AcquisitionExperience api={api()} onNavigateControl={onNavigateControl} onNavigateWalkthrough={onNavigateWalkthrough} />);
-    const escape = screen.getByRole('button', { name: /Try the guided walkthrough/ });
+    const escape = screen.getByRole('button', { name: /Try the interactive demo/ });
     expect(escape).toBeVisible();
     fireEvent.click(escape);
     expect(onNavigateWalkthrough).toHaveBeenCalledTimes(1);
@@ -975,7 +975,7 @@ describe('Acquisition V1 Connection Gate', () => {
   it('keeps the learning escape hatch working when no walkthrough destination is supplied', () => {
     const onNavigateControl = vi.fn();
     render(<AcquisitionExperience api={api()} onNavigateControl={onNavigateControl} />);
-    fireEvent.click(screen.getByRole('button', { name: /Try the guided walkthrough/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Try the interactive demo/ }));
     expect(onNavigateControl).toHaveBeenCalledTimes(1);
   });
 
@@ -1313,7 +1313,7 @@ describe('Acquisition V1 technical failure and recovery', () => {
     expect(container.querySelector('.acq-rail')).not.toBeNull();
     expect(container.querySelector('.acq-rail-scene')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Connect your CALL-E account' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Try guided walkthrough' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try interactive demo' }));
     expect(onNavigateControl).toHaveBeenCalledTimes(1);
   });
 });

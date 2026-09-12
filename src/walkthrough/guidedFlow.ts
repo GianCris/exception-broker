@@ -18,8 +18,10 @@ export type GuidedTarget =
 export type GuidedStage = 'acquisition' | 'control';
 
 /**
- * Passive steps accept a Next control. Interactive steps must be advanced by the learner
- * operating the real product control — never by the coach auto-advancing.
+ * Passive steps accept a Continue control, which the guided Action Beacon renders. An
+ * interactive step's label and hint are INSTRUCTION only: the beacon states them and the
+ * learner advances by operating the real product control, never by the coach auto-advancing
+ * and never by a second button that stands in for the real one.
  */
 export type GuidedRequiredAction =
   | Readonly<{ kind: 'ACKNOWLEDGE'; label: string }>
@@ -56,7 +58,7 @@ export const guidedWalkthroughSteps: readonly GuidedWalkthroughStep[] = [
     title: 'A conversation can acquire a decision',
     coachCopy: 'This conversation is simulated, but it is how a decision reaches Exception Broker. Read what the recipient actually committed to — the conversation can produce a decision, and a decision is not execution authority.',
     spotlightTarget: 'conversation',
-    requiredAction: { kind: 'ACKNOWLEDGE', label: 'Next' },
+    requiredAction: { kind: 'ACKNOWLEDGE', label: 'Continue' },
     nextStep: 'decision',
   },
   {
@@ -64,7 +66,7 @@ export const guidedWalkthroughSteps: readonly GuidedWalkthroughStep[] = [
     title: 'The decision is now fixed',
     coachCopy: 'The conversation produced an APPROVED decision. The decision is now fixed — but APPROVED does not mean execute.',
     spotlightTarget: 'decision',
-    requiredAction: { kind: 'ACKNOWLEDGE', label: 'Next' },
+    requiredAction: { kind: 'ACKNOWLEDGE', label: 'Continue' },
     nextStep: 'handoff',
   },
   {
@@ -72,7 +74,7 @@ export const guidedWalkthroughSteps: readonly GuidedWalkthroughStep[] = [
     title: 'Hand the decision to Control',
     coachCopy: 'APPROVED still does not mean execute. Continue to Control to review exactly what was acquired.',
     spotlightTarget: 'continue-control',
-    requiredAction: { kind: 'REAL_ACTION', label: 'Continue to Control', hint: 'Use the Continue to Control action to make the handoff yourself.' },
+    requiredAction: { kind: 'REAL_ACTION', label: 'Continue to Control', hint: 'Make the handoff yourself, from the acquired decision.' },
     teachingNote: guidedHandoffTeaching,
     nextStep: 'review',
   },
@@ -116,5 +118,5 @@ export const guidedFirstStepId: GuidedStepId = guidedWalkthroughSteps[0]!.stepId
 export const guidedCompletionActions = {
   live: { label: 'Try live acquisition', detail: 'Run a real CALL-E acquisition with your own provider account.' },
   proof: { label: 'Explore Control proof', detail: 'Inspect the deterministic H01 / H02 / H03 cases and their dispositions.' },
-  restart: { label: 'Restart walkthrough', detail: 'Start again from the simulated conversation.' },
+  restart: { label: 'Restart demo', detail: 'Start again from the simulated conversation.' },
 } as const;

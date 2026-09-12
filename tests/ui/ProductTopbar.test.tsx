@@ -7,10 +7,13 @@ import { App } from '../../src/App.js';
 import type { AcquisitionBrowserApi } from '../../src/acquisition/browserClient.js';
 import type { LiveControlPublicRecord } from '../../src/control/contracts.js';
 import { acquisitionAccessKey } from '../../src/ui/AcquisitionExperience.js';
-import { LiveControlExperience } from '../../src/ui/LiveControlExperience.js';
+import { controlSessionStorageKey, LiveControlExperience } from '../../src/ui/LiveControlExperience.js';
 
-beforeEach(() => { localStorage.clear(); sessionStorage.clear(); });
-afterEach(cleanup);
+// The Interactive Demo owns the hash while it is open, so each test starts from a
+// clean location as well as clean storage.
+const setHash = (hash: string) => { window.history.replaceState(null, '', hash === '' ? '/' : hash); };
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); setHash(''); });
+afterEach(() => { cleanup(); setHash(''); });
 
 const topbar = () => screen.getByRole('navigation', { name: 'Primary navigation' }).closest('header')!;
 const nav = () => within(screen.getByRole('navigation', { name: 'Primary navigation' }));
@@ -53,22 +56,55 @@ describe('Shared product topbar', () => {
     expect(currentRoute()).toBe('Control');
   });
 
-  it('exposes the learning entry as Guided walkthrough and never as a demo that does not exist', () => {
+  it('names the learning entry Interactive demo, and never by a stale or invented label', () => {
     render(<App />);
-    // Home and Acquisition may open the walkthrough; the label says exactly what it opens.
-    expect(within(topbar()).getByRole('button', { name: /Guided walkthrough/ })).toBeVisible();
-    goto('Acquisition');
-    expect(within(topbar()).getByRole('button', { name: /Guided walkthrough/ })).toBeVisible();
+    // Home, Acquisition and the empty Control Gate all open the learning mode, and all
+    // three call it by the one commercial name the product uses for it.
+    for (const route of ['Home', 'Acquisition', 'Control'] as const) {
+      goto(route);
+      expect(within(topbar()).getByRole('button', { name: /Interactive demo/ })).toBeVisible();
+      expect(within(topbar()).queryByRole('button', { name: /Guided walkthrough/i })).not.toBeInTheDocument();
+    }
     expect(document.body.textContent).not.toMatch(/Try demo|Start demo|Run demo|View proof/i);
+  });
+
+  it('renders one shared action component for the learning entry, not a per-route copy', () => {
+    render(<App />);
+    const action = () => within(topbar()).getByRole('button', { name: /Interactive demo/ });
+    const [label, classes] = [action().textContent, action().className];
+    for (const route of ['Acquisition', 'Control'] as const) {
+      goto(route);
+      // Identical element, so identical geometry, material and typography by construction.
+      expect(action().textContent).toBe(label);
+      expect(action().className).toBe(classes);
+      expect(action()).toHaveClass('shell-slot', 'product-cta');
+    }
+  });
+
+  it('gives every right-slot state the one shared chassis, action or context alike', () => {
+    // The action and every context indicator wear .shell-slot: one height, one radius,
+    // one padding rhythm, one trailing-edge position. Only the content differs.
+    const shell = readFileSync('src/styles/shell.css', 'utf8');
+    expect(shell).toMatch(/\.product-topbar \.shell-slot \{[^}]*height: 34px/);
+    expect(shell).toMatch(/\.product-topbar \.shell-slot \{[^}]*border-radius: 6px/);
+    render(<App />);
+    expect(within(topbar()).getByRole('button', { name: /Interactive demo/ })).toHaveClass('shell-slot');
+    // The Interactive Demo itself states its simulation instead of offering the action.
+    fireEvent.click(within(topbar()).getByRole('button', { name: /Interactive demo/ }));
+    const demoContext = within(topbar()).getByText('Interactive demo').closest<HTMLElement>('.proof-mode')!;
+    expect(demoContext).toHaveClass('shell-slot');
+    expect(demoContext.tagName).toBe('SPAN');
+    expect(within(demoContext).getByText('Simulated conversation · deterministic scenario')).toBeVisible();
+    expect(within(topbar()).queryByRole('button', { name: /Interactive demo/ })).not.toBeInTheDocument();
   });
 
   it('replaces the proof action with a truthful context badge once the user is inside the proof', () => {
     render(<App />);
     // Control Proof is reached by an explicit proof entry point, never by primary Control.
     fireEvent.click(screen.getByRole('button', { name: /View all scenarios/ }));
-    expect(within(topbar()).queryByRole('button', { name: /Guided walkthrough/ })).not.toBeInTheDocument();
+    expect(within(topbar()).queryByRole('button', { name: /Interactive demo/ })).not.toBeInTheDocument();
     const context = screen.getByLabelText(/deterministic local proof with configured evidence.*No external execution/i);
-    expect(context).toHaveClass('proof-mode');
+    expect(context).toHaveClass('shell-slot', 'proof-mode');
     expect(context.tagName).toBe('SPAN');
     expect(within(context).getByText('Deterministic proof')).toBeVisible();
     expect(within(context).getByText('Configured evidence · local only · no external execution')).toBeVisible();
@@ -80,9 +116,20 @@ describe('Shared product topbar', () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
     render(<LiveControlExperience api={noopApi()} initial={liveRecord()} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
     const context = within(topbar()).getByText('Live control').closest<HTMLElement>('.proof-mode')!;
+    expect(context).toHaveClass('shell-slot');
     expect(within(context).getByText('CALL-E acquisition · controlled local context · no external execution')).toBeVisible();
     expect(within(topbar()).queryByText('Deterministic proof')).not.toBeInTheDocument();
-    expect(within(topbar()).queryByRole('button', { name: /Guided walkthrough/ })).not.toBeInTheDocument();
+    expect(within(topbar()).queryByRole('button', { name: /Interactive demo/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps Live Control recovery on LIVE CONTROL rather than offering the demo action', () => {
+    localStorage.setItem(controlSessionStorageKey, 'CONTROL-LOCAL-RESUME');
+    render(<LiveControlExperience api={noopApi()} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
+    // Recovery represents an existing live Control session, so it states that truth.
+    const context = within(topbar()).getByText('Live control').closest<HTMLElement>('.proof-mode')!;
+    expect(context).toHaveClass('shell-slot');
+    expect(within(context).getByText('Saved session · live access required · no external execution')).toBeVisible();
+    expect(within(topbar()).queryByRole('button', { name: /Interactive demo/ })).not.toBeInTheDocument();
   });
 
   it('shares one mobile navigation disclosure across routes, closing on Escape with focus restored', () => {

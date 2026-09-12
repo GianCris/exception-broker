@@ -688,75 +688,160 @@
 :root[data-theme="light"] .control-drawer,
 :root[data-theme="light"] .control-surface .action-receipt details[open] .receipt-depth { box-shadow: 0 -18px 54px rgb(72 44 160 / 18%); }
 
-/* ── Control Gate: Control with nothing acquired yet ─────────────────
-   The honest empty state, not an error and not a dashboard. It reuses the Control shell
-   and the Control material so it reads as the same module the user asked for, and it
-   carries no operational object at all — no disposition plate, no instrument, no case.
-   The only hierarchy it expresses is between its three exits: acquire, then learn, then
-   verify. That ranking is the whole design, so it is carried by size, weight and colour
-   rather than by three equal buttons in a row. */
-.control-gate-page {
-  display: grid; place-items: center; min-height: 0; flex: 1;
-  padding: clamp(24px, 7vh, 78px) clamp(18px, 4vw, 60px);
+/* ── Dormant Control canvas: Control with nothing to work on ─────────
+   The empty Gate and Live Control recovery are different truths but the same workspace,
+   so they share one canvas. It draws the REAL Control architecture — Decision, Application
+   Boundary, Operational Reality, Broker Disposition — as linework rather than as four
+   equal cards, because the point is that the architecture is sensed and every region of it
+   is seen to be dormant. There is no Sentinel rail here: there is no workspace activity
+   for it to preside over. The focal announcement sits over that architecture, so it reads
+   as a state of Control and never as a generic card floating in an empty page. */
+.control-dormant-shell .control-chassis { min-height: 100dvh; }
+.control-dormant-page {
+  position: relative; display: grid; flex: 1 1 auto; min-height: 0;
+  padding: clamp(18px, 3vh, 40px) clamp(18px, 3.4vw, 56px) clamp(20px, 3.4vh, 46px);
 }
-.control-gate {
-  display: grid; gap: 12px; width: min(620px, 100%);
-  padding: clamp(24px, 4.4vh, 40px) clamp(22px, 3vw, 40px);
-  border: 1px solid var(--border-subtle); border-radius: 15px;
-  background: var(--ctl-material); box-shadow: var(--ctl-lift);
+.control-dormant-canvas { position: relative; display: grid; min-width: 0; min-height: min(520px, 58vh); }
+.control-dormant-canvas > * { grid-area: 1 / 1; }
+
+/* The architecture in its dormant state: the real instrument reduced to its silhouette.
+   The four regions hold the corners and the boundary keeps the spine, so the middle of the
+   grid is deliberately free — that is where the announcement goes, and nothing structural
+   ever ends up behind it. */
+.dormant-architecture {
+  display: grid; align-self: stretch; min-width: 0;
+  grid-template-columns: minmax(0, 1fr) clamp(122px, 9.6vw, 148px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
-.control-gate .eyebrow {
+.dormant-region {
+  position: relative; display: grid; align-content: start; gap: 5px; min-width: 0;
+  padding: 15px 0 0; border-top: 1px solid color-mix(in srgb, var(--border-strong) 62%, transparent);
+}
+.dormant-decision { grid-column: 1; grid-row: 1; }
+.dormant-reality { grid-column: 3; grid-row: 1; }
+.dormant-review { grid-column: 1; grid-row: 3; align-content: end; }
+.dormant-disposition { grid-column: 3; grid-row: 3; align-content: end; }
+/* The node where a region faces the boundary: the same ringed endpoint the live
+   Application Boundary draws, so the two read as one architecture. */
+.dormant-region::before {
+  position: absolute; top: -4px; z-index: 1; width: 7px; height: 7px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 85%, transparent); border-radius: 50%;
+  background: color-mix(in srgb, var(--surface-depth) 90%, transparent); content: "";
+}
+/* A hairline from the node toward the boundary: Decision and Exact review lead into it,
+   Operational reality and Broker disposition lead out of it. */
+.dormant-region::after {
+  position: absolute; top: -1px; width: clamp(26px, 5.5vw, 68px); height: 1px; content: "";
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--ctl-plum) 40%, transparent) 0 4px, transparent 4px 9px);
+}
+/* Each column reads outward from the spine, so the corners stay clear of the message. */
+.dormant-decision, .dormant-review { padding-right: clamp(10px, 1.4vw, 20px); }
+.dormant-decision::before, .dormant-review::before { right: 0; }
+.dormant-decision::after, .dormant-review::after { right: 7px; }
+.dormant-reality, .dormant-disposition { padding-left: clamp(10px, 1.4vw, 20px); text-align: right; }
+.dormant-reality::before, .dormant-disposition::before { left: 0; }
+.dormant-reality::after, .dormant-disposition::after { left: 7px; }
+.dormant-region strong { color: var(--text-muted); font-size: .74rem; font-weight: 550; }
+
+/* The signature element keeps its shape and states the one thing true of it: the spine
+   runs the full height of the canvas, and the plate names it at the top of that spine. */
+.dormant-boundary {
+  position: relative; display: grid; align-content: start; justify-items: center;
+  grid-column: 2; grid-row: 1 / -1; min-width: 0; padding: 0 clamp(7px, .75vw, 14px);
+}
+.dormant-rail {
+  position: absolute; top: 3px; bottom: 3px; left: 50%; width: 2px; transform: translateX(-50%);
+  background: repeating-linear-gradient(180deg, var(--border-strong) 0 4px, transparent 4px 10px); opacity: .75;
+}
+.dormant-plate {
+  position: relative; z-index: 2; display: grid; gap: 4px; justify-items: center; width: 100%;
+  padding: 13px 8px; border: 1px solid var(--border-subtle); border-radius: 11px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ctl-panel) 88%, transparent), color-mix(in srgb, var(--surface-depth) 86%, transparent));
+  text-align: center;
+}
+.dormant-plate .control-label { font-size: .5rem; letter-spacing: .14em; line-height: 1.4; }
+.dormant-plate strong { color: var(--text-muted); font-size: .63rem; font-weight: 850; letter-spacing: .1em; }
+
+/* ── The focal announcement ──────────────────────────────────────────
+   One message, then a deliberately unequal set of exits. It is the only lit object on the
+   canvas, so it can never be mistaken for one more dormant region. */
+.dormant-announcement {
+  position: relative; z-index: 3; place-self: center; display: grid; gap: 12px;
+  width: min(600px, 100%); padding: clamp(22px, 3.8vh, 36px) clamp(22px, 3vw, 38px);
+  border: 1px solid color-mix(in srgb, var(--ctl-plum) 26%, var(--border-strong)); border-radius: 15px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--ctl-plum) 9%, transparent), transparent 68%),
+    linear-gradient(160deg, color-mix(in srgb, var(--ctl-panel) 99%, transparent), color-mix(in srgb, var(--surface-depth) 98%, transparent));
+  box-shadow: var(--ctl-lift), 0 0 0 7px color-mix(in srgb, var(--ctl-plum) 6%, transparent);
+}
+.dormant-announcement .eyebrow {
   margin: 0; color: color-mix(in srgb, var(--ctl-plum) 82%, var(--text-primary));
   font-size: 9px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase;
 }
-.control-gate-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
+.dormant-announcement-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
 /* The decision mark in its unfilled state: the object Control works on is absent. */
-.control-gate .gate-mark { width: 34px; height: 34px; flex: none; }
-.control-gate .gate-mark-body {
+.dormant-announcement .gate-mark { width: 34px; height: 34px; flex: none; }
+.dormant-announcement .gate-mark-body {
   fill: color-mix(in srgb, var(--ctl-plum) 8%, transparent);
   stroke: color-mix(in srgb, var(--ctl-plum) 42%, var(--border-strong)); stroke-width: 1.4;
 }
-.control-gate h1 {
+.dormant-announcement h1 {
   margin: 0; color: var(--text-primary); font-family: var(--ctl-serif);
   font-size: clamp(1.5rem, 2.5vw, 2.05rem); font-weight: 500; letter-spacing: -.03em; line-height: 1.1;
 }
-.control-gate-lede { margin: 0; max-width: 62ch; color: var(--text-secondary); font-size: .8rem; line-height: 1.6; }
-.control-gate-state {
+.dormant-lede { margin: 0; max-width: 62ch; color: var(--text-secondary); font-size: .8rem; line-height: 1.6; }
+.dormant-state {
   justify-self: start; margin: 2px 0 0; padding: 5px 10px;
   color: var(--text-muted); border: 1px solid var(--border-subtle); border-radius: 7px;
   background: color-mix(in srgb, var(--surface-base) 46%, transparent);
   font-size: .62rem; font-weight: 700; letter-spacing: .04em;
 }
-.control-gate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 6px; }
-.control-gate .gate-primary {
+.dormant-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 6px; }
+.dormant-announcement .gate-primary {
   display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 19px;
   color: #fff; border: 1px solid var(--ctl-action-edge); border-radius: 10px;
   background: var(--ctl-action); box-shadow: 0 14px 30px rgb(60 34 150 / 32%);
   font: inherit; font-size: .82rem; font-weight: 750; cursor: pointer; transition: filter 140ms ease;
 }
-.control-gate .gate-primary:hover { filter: brightness(1.1); }
-.control-gate .gate-secondary {
+.dormant-announcement .gate-primary:hover { filter: brightness(1.1); }
+.dormant-announcement .gate-secondary {
   display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px;
   color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 9px;
   background: transparent; font: inherit; font-size: .72rem; font-weight: 700; cursor: pointer;
 }
-.control-gate .gate-secondary:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.dormant-announcement .gate-secondary:hover { color: var(--text-primary); border-color: var(--text-muted); }
 /* Verification is the quietest exit: available, never competing with acquiring. */
-.control-gate .gate-quiet {
+.dormant-announcement .gate-quiet {
   display: inline-flex; align-items: center; gap: 7px; justify-self: start;
   margin-top: 2px; padding: 0; border: 0; background: transparent; color: var(--text-muted);
   font: inherit; font-size: .6rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
 }
-.control-gate .gate-quiet:hover { color: var(--text-secondary); }
-.control-gate .gate-icon { width: 15px; height: 15px; flex: none; }
-.control-gate .gate-quiet .gate-icon { width: 13px; height: 13px; }
-.control-gate button:focus-visible { outline: 2px solid var(--ctl-plum); outline-offset: 3px; }
+.dormant-announcement .gate-quiet:hover { color: var(--text-secondary); }
+.dormant-announcement .gate-icon { width: 15px; height: 15px; flex: none; }
+.dormant-announcement .gate-quiet .gate-icon { width: 13px; height: 13px; }
+.dormant-announcement button:focus-visible { outline: 2px solid var(--ctl-plum); outline-offset: 3px; }
 
-@media (max-width: 640px) {
-  .control-gate-actions { display: grid; }
-  .control-gate .gate-primary, .control-gate .gate-secondary { justify-content: center; }
-  /* Quiet is about visual weight, not about being hard to hit: on touch the tertiary
-     exit keeps a real target while staying the least prominent of the three. */
-  .control-gate .gate-quiet { min-height: 34px; }
+@media (max-width: 980px) { .control-dormant-canvas { min-height: 0; } }
+@media (max-width: 860px) {
+  /* Natural flow on a phone: the message first, the architecture stated beneath it. */
+  .control-dormant-page { display: block; }
+  .control-dormant-canvas { display: grid; gap: 20px; min-height: 0; }
+  .control-dormant-canvas > * { grid-area: auto; }
+  .dormant-announcement { order: -1; width: 100%; }
+  .dormant-architecture { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 14px; }
+  .dormant-architecture > * { grid-column: 1 !important; grid-row: auto !important; align-content: start; }
+  .dormant-region { padding-right: 0; padding-left: 0; text-align: left; }
+  .dormant-region::before { right: auto; left: 0; }
+  .dormant-region::after { right: auto; left: 7px; }
+  .dormant-boundary { justify-items: start; padding: 0; }
+  .dormant-plate { text-align: left; justify-items: start; }
+  .dormant-rail { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .control-gate .gate-primary { transition: none; } }
+@media (max-width: 640px) {
+  .dormant-actions { display: grid; }
+  .dormant-announcement .gate-primary, .dormant-announcement .gate-secondary { justify-content: center; }
+  /* Quiet is about visual weight, not about being hard to hit: on touch the tertiary exit
+     keeps a real target while staying the least prominent of the three. */
+  .dormant-announcement .gate-quiet { min-height: 34px; }
+}
+@media (prefers-reduced-motion: reduce) { .dormant-announcement .gate-primary { transition: none; } }

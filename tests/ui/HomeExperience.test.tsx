@@ -114,7 +114,7 @@ describe('Home product entry', () => {
     expect(acquisition).toHaveBeenCalledTimes(2);
     // Learning goes to the walkthrough; the scenario list still goes to the proof.
     fireEvent.click(screen.getByRole('button', { name: 'See it in action' }));
-    fireEvent.click(screen.getByRole('button', { name: /Guided walkthrough/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Interactive demo/ }));
     expect(walkthrough).toHaveBeenCalledTimes(2);
     expect(control).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'View all scenarios' }));

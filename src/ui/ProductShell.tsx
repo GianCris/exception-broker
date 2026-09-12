@@ -52,16 +52,26 @@ export const ThemeControl = () => {
 };
 
 /**
- * The learning entry point. It is an action, so it is a button, and it names the surface it
- * opens: the Guided Walkthrough, which is a real route rather than a promise.
+ * The learning entry point, in the topbar's one contextual slot.
+ *
+ * The internal name stays GuidedWalkthroughAction because the route, the flow module and
+ * the scenario are still the guided walkthrough; what the user is offered is called the
+ * INTERACTIVE DEMO, and that is the only commercial name for the learning mode anywhere in
+ * the product. One component renders it, so Home, Acquisition and the empty Control Gate
+ * cannot drift in label, geometry or material.
  */
 export const GuidedWalkthroughAction = ({ onOpen }: Readonly<{ onOpen: () => void }>) => (
-  <button type="button" className="product-cta" onClick={onOpen}>Guided walkthrough <ShellArrow /></button>
+  <button type="button" className="shell-slot product-cta" onClick={onOpen}>Interactive demo <ShellArrow /></button>
 );
 
-/** A context indicator, never an action: it states which truth the current surface carries. */
+/**
+ * A context indicator, never an action: it states which truth the current surface carries.
+ * It wears the same chassis as the action above — same height, radius, padding rhythm and
+ * trailing-edge position — so the topbar reads as one system whose right-hand state
+ * changes, rather than as four separately designed boxes.
+ */
 export const SurfaceContext = ({ label, detail, ariaLabel }: Readonly<{ label: string; detail: string; ariaLabel?: string }>) => (
-  <span className="proof-mode" {...(ariaLabel === undefined ? {} : { 'aria-label': ariaLabel })}><b>{label}</b><span>{detail}</span></span>
+  <span className="shell-slot proof-mode" {...(ariaLabel === undefined ? {} : { 'aria-label': ariaLabel })}><b>{label}</b><span>{detail}</span></span>
 );
 
 /**

@@ -41,27 +41,53 @@
 .product-nav button:focus-visible { outline: 2px solid var(--shell-plum); outline-offset: 4px; }
 
 .product-topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; min-width: 0; }
-.product-cta {
-  display: inline-flex; align-items: center; justify-content: center; gap: 12px; flex: none;
-  height: 34px; min-width: 108px; padding: 0 15px;
-  color: #fff; border: 1px solid rgb(169 137 255 / 50%); border-radius: 6px;
+
+/* ── The one right-slot chassis ──────────────────────────────────────
+   Every state of the topbar's contextual slot — the Interactive demo action, the
+   Interactive demo context, LIVE CONTROL and DETERMINISTIC PROOF — is the SAME box:
+   one height, one baseline, one corner radius, one padding rhythm, one typographic
+   scale, pinned to the same trailing edge. Only the content and whether it is
+   interactive may differ, so the user perceives one stable topbar system changing
+   state rather than four separately designed components. */
+/* Scoped to the topbar deliberately: Acquisition and Control both reset button
+   typography inside their own shells, and the slot must not inherit either of them. */
+.product-topbar .shell-slot {
+  display: inline-flex; align-items: center; flex: none;
+  box-sizing: border-box; height: 34px; min-width: 108px; padding: 0 13px;
+  border: 1px solid transparent; border-radius: 6px;
+  font: 700 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Interactive: the learning entry point, the only state that is an action. */
+.product-topbar .product-cta {
+  justify-content: center; gap: 12px;
+  color: #fff; border-color: rgb(169 137 255 / 50%);
   background: linear-gradient(135deg, #6335d2, #361c9c);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%), 0 8px 22px rgb(49 25 134 / 20%);
-  font-size: 11px; font-weight: 700; cursor: pointer;
+  cursor: pointer;
   transition: transform 180ms ease, filter 180ms ease;
 }
-.product-cta:hover { transform: translateY(-2px); filter: brightness(1.08); }
-.product-cta:focus-visible { outline: 2px solid var(--shell-plum); outline-offset: 3px; }
+.product-topbar .product-cta:hover { transform: translateY(-2px); filter: brightness(1.08); }
+.product-topbar .product-cta:focus-visible { outline: 2px solid var(--shell-plum); outline-offset: 3px; }
 .shell-icon { width: 14px; height: 14px; flex: none; }
 
-/* Context, never an action: which truth the current surface carries. */
-.product-topbar .proof-mode { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: transparent; }
+/* Non-interactive: which truth the current surface carries. The same chassis in a
+   quieter material, because stating a fact must never look like offering an action. */
+.product-topbar .proof-mode {
+  gap: 9px; min-width: 0;
+  border-color: var(--shell-line);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
 .product-topbar .proof-mode b {
   flex: none; padding: 3px 7px; color: var(--shell-plum);
   border: 1px solid color-mix(in srgb, var(--shell-plum) 40%, transparent); border-radius: 5px;
-  font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
 }
-.product-topbar .proof-mode > span { min-width: 0; overflow-wrap: anywhere; color: var(--shell-muted); font-size: 9px; font-weight: 550; }
+.product-topbar .proof-mode > span {
+  display: -webkit-box; max-width: 172px; min-width: 0; overflow: hidden;
+  color: var(--shell-muted); font-size: 9px; font-weight: 550; line-height: 1.22;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 
 .product-topbar .theme-control {
   position: relative; display: flex; align-items: center; flex: none; gap: 7px;
@@ -101,7 +127,8 @@
   .product-nav button { height: 44px; font-size: 13px; }
   .product-nav button[aria-current="page"]::after { right: auto; bottom: 9px; width: 16px; }
   .product-menu { display: grid; }
-  .product-cta { display: none; }
+  .product-topbar .product-cta { display: none; }
+  .product-topbar .proof-mode { min-width: 0; }
   .product-topbar .proof-mode > span { display: none; }
 }
 @media (max-width: 620px) {
@@ -117,6 +144,6 @@
   .product-topbar .theme-control > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .product-nav button, .product-cta { transition: none; }
-  .product-cta:hover { transform: none; }
+  .product-nav button, .product-topbar .product-cta { transition: none; }
+  .product-topbar .product-cta:hover { transform: none; }
 }

@@ -17,10 +17,11 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); setHash(''); });
 
 const Walkthrough = () => <GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} />;
 const progress = () => screen.getByText(/^Step \d of 6$/).textContent;
-const coach = () => screen.getByLabelText('Guided walkthrough coach');
+const coach = () => screen.getByLabelText('Interactive demo coach');
 const target = (name: string) => document.querySelector(`[data-walkthrough-target="${name}"]`) as HTMLElement;
-const next = () => fireEvent.click(within(coach()).getByRole('button', { name: /^Next/ }));
-const provenance = () => screen.getByLabelText(/Guided walkthrough: simulated conversation and a deterministic scenario/i);
+const beacon = () => screen.getByLabelText('Interactive demo next action');
+const next = () => fireEvent.click(within(beacon()).getByRole('button', { name: /^Continue/ }));
+const provenance = () => screen.getByLabelText(/Interactive demo: simulated conversation and a deterministic scenario/i);
 
 /** Walks the whole six-step flow the way a learner does, with the real controls. */
 const runToOutcome = () => {
@@ -30,7 +31,7 @@ const runToOutcome = () => {
   fireEvent.click(target('apply-reviewed'));
 };
 
-describe('Guided walkthrough architecture', () => {
+describe('Interactive demo architecture', () => {
   it('depends on no acquisition client, no network and no live storage', () => {
     for (const file of ['src/ui/GuidedWalkthroughExperience.tsx', 'src/walkthrough/guidedScenario.ts', 'src/walkthrough/guidedFlow.ts']) {
       const source = readFileSync(file, 'utf8');
@@ -56,7 +57,7 @@ describe('Guided walkthrough architecture', () => {
     const before = JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } });
     render(<Walkthrough />);
     runToOutcome();
-    fireEvent.click(within(coach()).getByRole('button', { name: 'Restart walkthrough' }));
+    fireEvent.click(within(coach()).getByRole('button', { name: 'Restart demo' }));
     expect(JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } })).toBe(before);
   });
 
@@ -71,14 +72,73 @@ describe('Guided walkthrough architecture', () => {
   });
 });
 
-describe('Guided walkthrough flow', () => {
+describe('Interactive demo action discoverability', () => {
+  it('gives the passive steps exactly one progression control, and it is the beacon', () => {
+    render(<Walkthrough />);
+    for (const step of ['Step 1 of 6', 'Step 2 of 6'] as const) {
+      expect(progress()).toBe(step);
+      // The beacon owns progression outright: no second Next hiding in the coach rail.
+      expect(within(beacon()).getByRole('button', { name: /^Continue/ })).toBeVisible();
+      expect(within(coach()).queryByRole('button', { name: /^Continue|^Next/ })).not.toBeInTheDocument();
+      // And the rail keeps only identity, progress, the concept and the quiet exits.
+      expect(within(coach()).getAllByRole('button').map((button) => button.textContent))
+        .toEqual(['Restart demo', 'Skip demo']);
+      next();
+    }
+    expect(progress()).toBe('Step 3 of 6');
+  });
+
+  it('makes the beacon instructional on the real-action steps, never a second button', () => {
+    render(<Walkthrough />);
+    next(); next();
+    // Step 3: the beacon names the real control and offers nothing to press.
+    expect(within(beacon()).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(beacon()).getByText('Your turn')).toBeVisible();
+    expect(beacon().querySelector('strong')).toHaveTextContent('Continue to Control');
+    expect(progress()).toBe('Step 3 of 6');
+    // Clicking the beacon itself advances nothing; only the real product control does.
+    fireEvent.click(beacon());
+    expect(progress()).toBe('Step 3 of 6');
+    fireEvent.click(target('continue-control'));
+    // Step 4 and step 5 keep the same rule, against the real Control surface.
+    expect(progress()).toBe('Step 4 of 6');
+    expect(within(beacon()).queryByRole('button')).not.toBeInTheDocument();
+    expect(beacon().querySelector('strong')).toHaveTextContent('Review exact proposal');
+    fireEvent.click(beacon());
+    expect(progress()).toBe('Step 4 of 6');
+    fireEvent.click(target('review-proposal'));
+    expect(progress()).toBe('Step 5 of 6');
+    expect(within(beacon()).queryByRole('button')).not.toBeInTheDocument();
+    expect(beacon().querySelector('strong')).toHaveTextContent('Apply reviewed decision');
+    fireEvent.click(beacon());
+    expect(progress()).toBe('Step 5 of 6');
+  });
+
+  it('stands down at the outcome so the Broker result is the protagonist', () => {
+    render(<Walkthrough />);
+    runToOutcome();
+    expect(progress()).toBe('Step 6 of 6');
+    expect(screen.queryByLabelText('Interactive demo next action')).not.toBeInTheDocument();
+  });
+
+  it('uses no looping attention animation anywhere in the demo treatment', () => {
+    const walkthroughCss = readFileSync('src/styles/walkthrough.css', 'utf8');
+    expect(walkthroughCss).toMatch(/\.guided-beacon \{/);
+    // A static luminous edge and one entrance settle — never a pulse, blink or bounce.
+    expect(walkthroughCss).not.toMatch(/@keyframes|animation:|infinite/);
+    const source = readFileSync('src/ui/GuidedWalkthroughExperience.tsx', 'utf8');
+    expect(source).not.toMatch(/repeat:\s*Infinity|repeatType/);
+  });
+});
+
+describe('Interactive demo flow', () => {
   it('starts at step one and keeps six instructional moments', () => {
     render(<Walkthrough />);
     expect(progress()).toBe('Step 1 of 6');
     expect(within(coach()).getByRole('heading', { level: 2 })).toHaveTextContent(guidedWalkthroughSteps[0]!.title);
   });
 
-  it('advances the two passive steps with Next and shows the acquired decision', () => {
+  it('advances the two passive steps from the beacon and shows the acquired decision', () => {
     render(<Walkthrough />);
     expect(target('decision')).toBeNull();
     next();
@@ -144,8 +204,8 @@ describe('Guided walkthrough flow', () => {
     const acquisition = vi.fn(); const control = vi.fn();
     render(<GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={acquisition} onNavigateControl={vi.fn()} onNavigateControlProof={control} />);
     runToOutcome();
-    expect(within(coach()).queryByRole('button', { name: /^Next/ })).not.toBeInTheDocument();
-    expect(within(coach()).queryByRole('button', { name: 'Skip walkthrough' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Interactive demo next action')).not.toBeInTheDocument();
+    expect(within(coach()).queryByRole('button', { name: 'Skip demo' })).not.toBeInTheDocument();
     fireEvent.click(within(coach()).getByRole('button', { name: /Try live acquisition/ }));
     expect(acquisition).toHaveBeenCalledTimes(1);
     fireEvent.click(within(coach()).getByRole('button', { name: 'Explore Control proof' }));
@@ -156,7 +216,7 @@ describe('Guided walkthrough flow', () => {
     render(<Walkthrough />);
     runToOutcome();
     expect(progress()).toBe('Step 6 of 6');
-    fireEvent.click(within(coach()).getByRole('button', { name: 'Restart walkthrough' }));
+    fireEvent.click(within(coach()).getByRole('button', { name: 'Restart demo' }));
     expect(progress()).toBe('Step 1 of 6');
     next(); next();
     fireEvent.click(target('continue-control'));
@@ -168,8 +228,8 @@ describe('Guided walkthrough flow', () => {
   it('skips to an honest exit instead of pretending the walkthrough was completed', () => {
     const home = vi.fn();
     render(<GuidedWalkthroughExperience onNavigateHome={home} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} />);
-    fireEvent.click(within(coach()).getByRole('button', { name: 'Skip walkthrough' }));
-    expect(screen.getByRole('heading', { name: 'Walkthrough skipped' })).toBeVisible();
+    fireEvent.click(within(coach()).getByRole('button', { name: 'Skip demo' }));
+    expect(screen.getByRole('heading', { name: 'Demo skipped' })).toBeVisible();
     expect(screen.getByText(/nothing was demonstrated and nothing was recorded/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Return home' }));
     expect(home).toHaveBeenCalledTimes(1);
@@ -187,7 +247,7 @@ describe('Guided walkthrough flow', () => {
   });
 });
 
-describe('Guided walkthrough progressive reveal', () => {
+describe('Interactive demo progressive reveal', () => {
   const stage = () => document.querySelector('.guided-main') as HTMLElement;
 
   it('keeps step 1 on the conversation without giving away the step 2 payoff', () => {
@@ -236,7 +296,7 @@ describe('Guided walkthrough progressive reveal', () => {
   });
 });
 
-describe('Guided walkthrough story continuity', () => {
+describe('Interactive demo story continuity', () => {
   it('carries one teaching idea across the step 3 to step 4 handoff', () => {
     render(<Walkthrough />);
     next(); next();
@@ -252,7 +312,7 @@ describe('Guided walkthrough story continuity', () => {
     render(<Walkthrough />);
     next(); next();
     fireEvent.click(target('continue-control'));
-    const context = screen.getByRole('region', { name: 'Guided walkthrough case context' });
+    const context = screen.getByRole('region', { name: 'Interactive demo case context' });
     // Both truths at once: the acquisition was simulated, the evaluation is the real H02.
     expect(within(context).getByRole('heading', { name: 'The decision you just acquired' })).toBeVisible();
     expect(within(context).getByText(/Guided simulated acquisition.*deterministic H02 evaluation/)).toBeVisible();
@@ -272,11 +332,11 @@ describe('Guided walkthrough story continuity', () => {
     expect(screen.getByRole('region', { name: 'Proof case context' })).toBeVisible();
     expect(screen.getAllByText('Configured decision input').length).toBeGreaterThan(0);
     expect(screen.getByText('Deterministic proof · not a CALL-E acquisition')).toBeVisible();
-    expect(screen.queryByRole('region', { name: 'Guided walkthrough case context' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Interactive demo case context' })).not.toBeInTheDocument();
   });
 });
 
-describe('Guided walkthrough provenance', () => {
+describe('Interactive demo provenance', () => {
   it('keeps the simulated label visible at every one of the six steps', () => {
     render(<Walkthrough />);
     const seen: string[] = [];
@@ -319,7 +379,7 @@ describe('Guided walkthrough provenance', () => {
   });
 });
 
-describe('Guided walkthrough navigation', () => {
+describe('Interactive demo navigation', () => {
   it('opens directly from the walkthrough hash, taking precedence over a stored live session', () => {
     localStorage.setItem(controlSessionStorageKey, 'CONTROL-EXISTING');
     setHash(walkthroughHash);
@@ -333,7 +393,7 @@ describe('Guided walkthrough navigation', () => {
   it('claims the hash on entry and releases it when the learner leaves', () => {
     render(<App />);
     expect(window.location.hash).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: /Guided walkthrough/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Interactive demo/ }));
     expect(window.location.hash).toBe(walkthroughHash);
     expect(screen.getByText('Step 1 of 6')).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Control' }));
@@ -357,7 +417,7 @@ describe('Guided walkthrough navigation', () => {
     expect(screen.getByText('Step 1 of 6')).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Acquisition' }));
     expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /Try the guided walkthrough/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Try the interactive demo/ }));
     expect(screen.getByText('Step 1 of 6')).toBeVisible();
   });
 
@@ -368,13 +428,13 @@ describe('Guided walkthrough navigation', () => {
   });
 });
 
-describe('Guided walkthrough accessibility', () => {
+describe('Interactive demo accessibility', () => {
   it('gives the current step programmatic context and keeps real controls focusable', () => {
     render(<Walkthrough />);
     const step = screen.getByText('Step 1 of 6');
     expect(step).toHaveAttribute('aria-live', 'polite');
-    expect(coach()).toHaveAttribute('aria-label', 'Guided walkthrough coach');
-    const nextButton = within(coach()).getByRole('button', { name: /^Next/ });
+    expect(coach()).toHaveAttribute('aria-label', 'Interactive demo coach');
+    const nextButton = within(beacon()).getByRole('button', { name: /^Continue/ });
     nextButton.focus();
     expect(nextButton).toHaveFocus();
     expect(nextButton).toHaveAttribute('type', 'button');

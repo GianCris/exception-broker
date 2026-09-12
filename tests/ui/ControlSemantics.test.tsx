@@ -55,7 +55,7 @@ describe('Primary Control navigation resolves to the Control workspace', () => {
     expect(proofContext()).not.toBeInTheDocument();
   });
 
-  it('never opens deterministic proof from the Guided Walkthrough', () => {
+  it('never opens deterministic proof from the Interactive Demo', () => {
     setHash(walkthroughHash);
     render(<App />);
     expect(screen.getByText('Step 1 of 6')).toBeVisible();
@@ -109,7 +109,7 @@ describe('Control Gate', () => {
     const gate = screen.getByRole('region', { name: /Control starts with an acquired decision/ });
     // Acquire, then learn, then verify — expressed in the markup, not three equal buttons.
     expect(within(gate).getByRole('button', { name: /Acquire a decision/ })).toHaveClass('gate-primary');
-    expect(within(gate).getByRole('button', { name: /Guided walkthrough/ })).toHaveClass('gate-secondary');
+    expect(within(gate).getByRole('button', { name: /Interactive demo/ })).toHaveClass('gate-secondary');
     expect(within(gate).getByRole('button', { name: /Explore Control proof/ })).toHaveClass('gate-quiet');
   });
 
@@ -120,11 +120,49 @@ describe('Control Gate', () => {
     expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
   });
 
-  it('routes its secondary exit to the Guided Walkthrough', () => {
+  it('routes its secondary exit to the Interactive Demo', () => {
     render(<App />);
     goControl();
-    fireEvent.click(screen.getByRole('button', { name: /Guided walkthrough/ }));
+    const gate = screen.getByRole('region', { name: /Control starts with an acquired decision/ });
+    fireEvent.click(within(gate).getByRole('button', { name: /Interactive demo/ }));
     expect(screen.getByText('Step 1 of 6')).toBeVisible();
+  });
+
+  it('offers the same shared Interactive demo action in the topbar as Home and Acquisition', () => {
+    render(<App />);
+    const topbarAction = () => within(screen.getByRole('navigation', { name: 'Primary navigation' }).closest('header')!)
+      .getByRole('button', { name: /Interactive demo/ });
+    // One component, so one class list and one label on all three surfaces.
+    const home = topbarAction().className;
+    fireEvent.click(nav().getByRole('button', { name: 'Acquisition' }));
+    expect(topbarAction().className).toBe(home);
+    goControl();
+    expect(gateTitle()).toBeVisible();
+    expect(topbarAction().className).toBe(home);
+    expect(topbarAction().className).toContain('shell-slot');
+    fireEvent.click(topbarAction());
+    expect(screen.getByText('Step 1 of 6')).toBeVisible();
+  });
+
+  it('renders the dormant Control architecture instead of a generic empty card', () => {
+    render(<App />);
+    goControl();
+    // Control is visibly the module the user asked for: its architecture is drawn, and
+    // every region of it states that it is unavailable rather than showing a value.
+    const architecture = screen.getByRole('group', { name: 'Control architecture, dormant' });
+    for (const [region, state] of [
+      ['Decision', 'Awaiting acquired decision'], ['Exact review', 'Not available yet'],
+      ['Application boundary', 'NOT AVAILABLE'], ['Operational reality', 'Not evaluated'],
+      ['Broker disposition', 'No disposition'],
+    ] as const) {
+      expect(within(architecture).getByText(region)).toBeVisible();
+      expect(within(architecture).getByText(state)).toBeVisible();
+    }
+    // Dormant means dormant: no quantity, no case, no disposition anywhere on the canvas.
+    expect(architecture.textContent).not.toMatch(/APPROVED|REJECTED|ALLOW|BLOCK|WAIT|H0[123]|CASE-|PLAN-|\d/);
+    // And Control's own environment stays out of an empty workspace.
+    expect(document.querySelector('.rail-scene')).toBeNull();
+    expect(document.querySelector('.control-queue')).toBeNull();
   });
 
   it('routes its quiet exit to Control Proof, not back into the workspace', () => {
@@ -156,6 +194,28 @@ describe('Control workspace resolution', () => {
     expect(screen.getByRole('button', { name: 'Reconnect CALL-E' })).toBeVisible();
     expect(gateTitle()).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
+    expect(localStorage.getItem(controlSessionStorageKey)).toBe('CONTROL-LOCAL-RESUME');
+  });
+
+  it('renders recovery in the same dormant Control canvas while staying recovery, not the Gate', () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    localStorage.setItem(controlSessionStorageKey, 'CONTROL-LOCAL-RESUME');
+    render(<App />);
+    // Same canvas language as the Gate...
+    expect(screen.getByRole('group', { name: 'Control architecture, dormant' })).toBeVisible();
+    expect(document.querySelector('.rail-scene')).toBeNull();
+    // ...and a different, honest truth: a saved session exists and is preserved.
+    const announcement = screen.getByRole('region', { name: 'Live Control recovery locked' });
+    expect(within(announcement).getByText(/A saved Control session exists/)).toBeVisible();
+    expect(within(announcement).getByText(/session pointer is preserved/)).toBeVisible();
+    expect(within(announcement).getByRole('button', { name: /Reconnect CALL-E/ })).toHaveClass('gate-primary');
+    expect(within(announcement).getByRole('button', { name: /Start a new acquisition/ })).toHaveClass('gate-secondary');
+    expect(gateTitle()).not.toBeInTheDocument();
+    expect(announcement.textContent).not.toMatch(/APPROVED|ALLOW|BLOCK|WAIT/);
+    expect(fetch).not.toHaveBeenCalled();
+    // Leaving through either exit never deletes or rewrites the pointer.
+    fireEvent.click(within(announcement).getByRole('button', { name: /Start a new acquisition/ }));
+    expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
     expect(localStorage.getItem(controlSessionStorageKey)).toBe('CONTROL-LOCAL-RESUME');
   });
 

@@ -5,6 +5,7 @@ import { acquisitionAccessKey } from './AcquisitionExperience.js';
 import type { LiveControlPublicRecord } from '../control/contracts.js';
 import { controlQuestion, createLiveControlSurfaceModel } from '../presentation/controlSurfaceViewModel.js';
 import { ControlInstrument } from './ControlInstrument.js';
+import { DormantArrow, DormantControlCanvas } from './DormantControlCanvas.js';
 import { ProductTopbar, SentinelScene, SurfaceContext } from './ProductShell.js';
 import { motionTokens } from './motion.js';
 
@@ -51,6 +52,41 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
   };
   const receipt = record?.receipt;
   const model = record === null ? undefined : createLiveControlSurfaceModel(record);
+
+  /**
+   * No record yet means this Control workspace is dormant, not broken — so it renders the
+   * same dormant Control canvas the empty Gate uses, in the same visual language, while
+   * staying a semantically different state: a saved session exists here, and that is why
+   * this is recovery and not the Gate.
+   *
+   * The persisted pointer is only ever read. Nothing on this path writes, clears or
+   * fabricates a session, and both exits simply open Acquisition, where live access is
+   * re-established or a new acquisition genuinely produces a new one.
+   */
+  if (record === null || model === undefined) {
+    const recovery = access === null
+      ? { title: 'Live Control recovery locked', lede: 'A saved Control session exists, but live access must be re-established before server truth can be restored.' }
+      : message === ''
+        ? { title: 'Restoring Live Control session…', lede: 'Server truth is being recovered from the persisted session pointer. No browser-authored operational state is used.' }
+        : { title: 'Live Control recovery locked', lede: `${message} No browser-authored operational state is used.` };
+    const recovering = access !== null && message === '';
+    return <div className="app-shell proof-shell control-surface live-control-shell control-dormant-shell"><div className="control-chassis">
+      <ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
+        context={<SurfaceContext label="Live control" detail="Saved session · live access required · no external execution" />} />
+      <DormantControlCanvas
+        titleId="live-control-recovery-title"
+        eyebrow="Control"
+        title={recovery.title}
+        lede={recovery.lede}
+        state="The non-sensitive session pointer is preserved. Leaving this workspace does not delete it."
+        {...(recovering ? {} : { actions: <div className="dormant-actions">
+          <button type="button" className="gate-primary" onClick={onNavigateAcquisition}>Reconnect CALL-E <DormantArrow /></button>
+          <button type="button" className="gate-secondary" onClick={onNavigateAcquisition}>Start a new acquisition <DormantArrow /></button>
+        </div> })}
+      />
+    </div></div>;
+  }
+
   return <div className="app-shell proof-shell control-surface live-control-shell"><div className="control-chassis"><ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
       context={<SurfaceContext label="Live control" detail="CALL-E acquisition · controlled local context · no external execution" />} />
     <div className="product-layout">
@@ -59,21 +95,19 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
         <p className="eyebrow">Decision control queue</p>
         <h1 id="live-rail-title">Owned review</h1>
         <p>One persisted CALL-E acquisition, bound to one exact review.</p>
-        {record ? <dl className="rail-facts">
+        <dl className="rail-facts">
           <div><dt>Case</dt><dd>{record.caseId}</dd></div>
           <div><dt>Plan</dt><dd>{record.planId} · v{record.planVersion}</dd></div>
           <div><dt>Actor / role</dt><dd>{record.actorId} / {record.actorRole}</dd></div>
-        </dl> : null}
+        </dl>
         <aside className="queue-history" aria-label="Controlled operational context"><strong>Controlled local context</strong><span>Decision source is live · the operational context is a controlled local snapshot</span></aside>
       </div>
       <SentinelScene />
     </aside>
-    <main className="control-workspace live-control-workspace"><header className="control-head"><p className="eyebrow">Live decision control</p><h1>{controlQuestion}</h1><p>{model?.answer ?? 'The server resolved a versioned controlled context and bound this exact review target to one persisted CALL-E acquisition.'}</p>
+    <main className="control-workspace live-control-workspace"><header className="control-head"><p className="eyebrow">Live decision control</p><h1>{controlQuestion}</h1><p>{model.answer}</p>
         <section className="control-context" aria-label="Live control session context"><b>Live</b><h2>CALL-E · Live acquisition</h2><small>Controlled local operational context</small><strong>No external execution</strong></section>
       </header>
-      {!access ? <section className="access-panel"><h2>Live Control recovery locked</h2><p>The non-sensitive session pointer is preserved. Reconnect CALL-E in Acquisition before restoring server truth.</p><button type="button" onClick={onNavigateAcquisition}>Reconnect CALL-E</button></section> : null}
-      {access && !record ? <section className="access-panel"><h2>{message || 'Restoring Live Control session…'}</h2><p>No browser-authored operational state is used.</p></section> : null}
-      {record && model ? <><ControlInstrument
+      <ControlInstrument
           ariaLabel="Live decision control model"
           model={model}
           reviewAction={record.status === 'AWAITING_REVIEW'
@@ -96,9 +130,8 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
             {receipt ? <section className="action-receipt"><p className="eyebrow">What Changed?</p><h2>{receipt.disposition}</h2><p>{receipt.reason} · {receipt.effects.decisions} decision, {receipt.effects.operations} operation, {receipt.effects.events} event created. Plan status: {receipt.planStatus}. Local controlled effects only; no external execution.{receipt.resolutionScope ? ` Lineage scope: ${receipt.resolutionScope.caseId} / ${receipt.resolutionScope.lineageId} / ${receipt.resolutionScope.planId}.` : ''}</p></section> : null}
           </div>
         </div>
-      </> : null}
     </main></div></div>
-    {reviewOpen && record && model ? <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.42 }} animate={{ opacity: 1 }} transition={motionTokens.settle}><motion.aside className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="live-review-title" initial={{ x: 26, opacity: 0.55 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.settle}>
+    {reviewOpen ? <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.42 }} animate={{ opacity: 1 }} transition={motionTokens.settle}><motion.aside className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="live-review-title" initial={{ x: 26, opacity: 0.55 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.settle}>
       <header className="sheet-head">
         <p className="eyebrow">02 / Exact review · live decision</p>
         <button type="button" className="sheet-close" onClick={() => setReviewOpen(false)} aria-label="Close exact review">×</button>
