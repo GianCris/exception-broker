@@ -12,6 +12,15 @@ export const controlSessionStorageKey = 'exception-broker-control-session-id';
 const read = (storage: Storage, key: string) => { try { return storage.getItem(key); } catch { return null; } };
 const write = (storage: Storage, key: string, value: string) => { try { storage.setItem(key, value); } catch { /* Server truth remains authoritative. */ } };
 
+/** The same decision mark the instrument and the deterministic sheet use. */
+const LiveReviewDiamond = () => (
+  <svg className="sheet-diamond" viewBox="0 0 40 40" aria-hidden="true">
+    <path d="M20 2.5 37.5 20 20 37.5 2.5 20Z" className="control-diamond-body" />
+    <path d="M16.2 13.6h5.6l3.1 3.1v9.7h-8.7Z" className="control-diamond-mark" />
+    <path d="M18.3 21.2h4.2M18.3 24h3" className="control-diamond-rule" />
+  </svg>
+);
+
 export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onNavigateDeterministic, onNavigateHome }: Readonly<{
   api: AcquisitionBrowserApi; initial?: LiveControlPublicRecord; onNavigateAcquisition: () => void; onNavigateDeterministic: () => void;
   onNavigateHome?: () => void;
@@ -83,6 +92,35 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
         </div>
       </> : null}
     </main></div></div>
-    {reviewOpen && record ? <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.6 }} animate={{ opacity: 1 }} transition={motionTokens.reveal}><motion.aside className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="live-review-title" initial={{ x: 18, opacity: 0.7 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.reveal}><button type="button" className="sheet-close" onClick={() => setReviewOpen(false)}>×</button><p className="eyebrow">Exact review · live decision</p><h2 id="live-review-title">Review the {record.actorRole} decision</h2><p>Decision provenance: CALL-E live acquisition.</p><p>Operational context: controlled sandbox context.</p><p>Reviewer: controlled local operator, not authenticated commercial identity.</p><dl><dt>Decision</dt><dd>{record.reviewTarget.decision}</dd><dt>Case / plan</dt><dd>{record.caseId} / {record.planId}</dd><dt>Actor / role</dt><dd>{record.actorId} / {record.actorRole}</dd><dt>Request</dt><dd>{record.reviewTarget.requestId}</dd><dt>Summary</dt><dd>{record.reviewTarget.summary}</dd></dl><pre>{JSON.stringify(record.reviewTarget, null, 2)}</pre><div className="proof-actions"><button type="button" disabled={pending} onClick={() => void submit('APPLY')}>Apply reviewed decision</button><button type="button" className="proof-secondary" disabled={pending} onClick={() => void submit('DISCARD')}>Discard</button></div></motion.aside></motion.div></MotionConfig> : null}
+    {reviewOpen && record && model ? <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.42 }} animate={{ opacity: 1 }} transition={motionTokens.settle}><motion.aside className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="live-review-title" initial={{ x: 26, opacity: 0.55 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.settle}>
+      <header className="sheet-head">
+        <p className="eyebrow">02 / Exact review · live decision</p>
+        <button type="button" className="sheet-close" onClick={() => setReviewOpen(false)} aria-label="Close exact review">×</button>
+        <p className="proof-decision"><LiveReviewDiamond />Acquired decision <strong>{record.reviewTarget.decision}</strong></p>
+        <h2 id="live-review-title">Review the {record.actorRole} decision</h2>
+      </header>
+      <div className="sheet-body">
+        <p className="proof-verbatim">{record.reviewTarget.summary}</p>
+        {model.proposal ? <section className="sheet-block" aria-label="Exact decision">
+          <p className="sheet-block-label">Exact decision</p>
+          <dl className="control-proposal">{model.proposal.lines.map((line) => <div key={line.label}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl>
+        </section> : null}
+        <dl className="sheet-context">
+          <div><dt>Decision provenance</dt><dd>CALL-E live acquisition.</dd></div>
+          <div><dt>Operational context</dt><dd>Controlled sandbox context.</dd></div>
+          <div><dt>Case / plan</dt><dd>{record.caseId} / {record.planId}</dd></div>
+          <div><dt>Actor / role</dt><dd>{record.actorId} / {record.actorRole}</dd></div>
+        </dl>
+        <p className="proof-note">Reviewer: controlled local operator, not authenticated commercial identity.</p>
+        <details className="sheet-binding"><summary>Inspect exact binding</summary><div className="sheet-binding-body"><dl>
+          <dt>Control session</dt><dd>{record.controlSessionId}</dd><dt>Source call</dt><dd>{record.sourceBinding.callId}</dd>
+          <dt>Request</dt><dd>{record.reviewTarget.requestId}</dd><dt>Controlled definition</dt><dd>{record.definitionId} v{record.definitionVersion}</dd>
+        </dl><pre>{JSON.stringify(record.reviewTarget, null, 2)}</pre></div></details>
+      </div>
+      <footer className="sheet-actions">
+        <p>Applying asks the existing Broker to evaluate this exact attempt. It does not execute anything outside this controlled local context.</p>
+        <div className="proof-actions"><button type="button" disabled={pending} onClick={() => void submit('APPLY')}>Apply reviewed decision</button><button type="button" className="proof-secondary" disabled={pending} onClick={() => void submit('DISCARD')}>Discard</button></div>
+      </footer>
+    </motion.aside></motion.div></MotionConfig> : null}
   </div>;
 };

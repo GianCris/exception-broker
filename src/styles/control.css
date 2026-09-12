@@ -449,6 +449,107 @@
 .control-surface .supporting-proof-content { padding: 18px 20px; }
 .control-surface .control-drawer > .provider-depth { padding: 18px 20px; }
 
+/* ── Exact review: an Exception Broker side sheet, not an admin modal ─────
+   Compact by intent (430-500px), so the instrument behind it stays legible and the
+   user keeps seeing Decision -> review -> Application Boundary while reviewing. The
+   head and the action footer are anchored; only the middle scrolls. */
+.control-surface .review-backdrop {
+  position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end;
+  background:
+    radial-gradient(120% 100% at 100% 50%, rgb(30 18 68 / 34%), transparent 58%),
+    color-mix(in srgb, #05070f 62%, transparent);
+}
+.control-surface .review-sheet {
+  position: relative; display: flex; flex-direction: column;
+  width: min(468px, 100%); height: 100%; padding: 0; overflow: hidden;
+  color: var(--text-secondary);
+  border: 0; border-left: 1px solid color-mix(in srgb, var(--ctl-plum) 32%, var(--border-strong));
+  background:
+    radial-gradient(120% 60% at 100% 0%, color-mix(in srgb, var(--ctl-plum) 12%, transparent), transparent 62%),
+    linear-gradient(170deg, color-mix(in srgb, var(--ctl-panel) 99%, transparent), color-mix(in srgb, var(--surface-depth) 97%, transparent));
+  box-shadow: -30px 0 90px rgb(3 7 22 / 58%);
+}
+.control-surface .sheet-head {
+  position: relative; flex: none; display: grid; gap: 6px;
+  padding: clamp(18px, 3vh, 26px) clamp(20px, 2vw, 28px) clamp(14px, 2vh, 20px);
+  padding-right: 62px; border-bottom: 1px solid var(--border-subtle);
+}
+.control-surface .sheet-head .eyebrow { margin: 0; color: color-mix(in srgb, var(--ctl-plum) 82%, var(--text-primary)); font-size: 9px; font-weight: 750; letter-spacing: .2em; }
+.control-surface .sheet-head h2 {
+  margin: 0; color: var(--text-primary); font-family: var(--ctl-serif);
+  font-size: clamp(1.3rem, 1.7vw, 1.6rem); font-weight: 500; letter-spacing: -.03em; line-height: 1.12;
+}
+.control-surface .review-sheet .proof-decision {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px; margin: 2px 0 4px; padding: 0;
+  color: var(--text-muted); font-size: .62rem; font-weight: 750; letter-spacing: .07em; text-transform: uppercase;
+}
+.control-surface .review-sheet .proof-decision strong {
+  display: inline-block; margin: 0; padding: 3px 9px;
+  color: var(--text-primary); border: 1px solid color-mix(in srgb, var(--approved) 46%, var(--border-strong));
+  border-radius: 5px; background: color-mix(in srgb, var(--brand-soft) 72%, transparent);
+  font-size: .68rem; font-weight: 800; letter-spacing: .08em;
+}
+.sheet-diamond { width: 26px; height: 26px; flex: none; }
+.control-surface .sheet-close {
+  position: absolute; top: clamp(16px, 2.6vh, 22px); right: clamp(18px, 1.8vw, 24px);
+  display: grid; width: 30px; height: 30px; place-items: center;
+  color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 50%;
+  background: color-mix(in srgb, var(--surface-base) 70%, transparent); font-size: .95rem; cursor: pointer;
+}
+.control-surface .sheet-close:hover { color: var(--text-primary); border-color: color-mix(in srgb, var(--ctl-plum) 52%, var(--border-strong)); }
+.control-surface .sheet-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: clamp(14px, 2vh, 20px) clamp(20px, 2vw, 28px);
+}
+.control-surface .sheet-body > * { max-width: none; }
+.control-surface .review-sheet .proof-verbatim { margin: 0 0 14px; color: var(--text-primary); font-size: .84rem; line-height: 1.5; }
+.control-surface .sheet-block {
+  margin: 0 0 13px; padding: 12px 15px;
+  border: 1px solid var(--border-subtle); border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-base) 52%, transparent);
+}
+.control-surface .sheet-block-label { margin: 0 0 4px; color: var(--text-muted); font-size: .56rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.control-surface .sheet-context { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 16px; margin: 0 0 13px; }
+.control-surface .sheet-context div { min-width: 0; }
+.control-surface .sheet-context dt { color: var(--text-muted); font-size: .55rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.control-surface .sheet-context dd { margin: 2px 0 0; overflow-wrap: anywhere; color: var(--text-primary); font-size: .74rem; font-weight: 650; }
+.control-surface .review-sheet .proof-note { margin: 0 0 9px; color: var(--text-muted); font-size: .64rem; line-height: 1.5; }
+.control-surface .sheet-binding { margin: 4px 0 0; border: 1px solid var(--border-subtle); border-radius: 10px; background: transparent; }
+.control-surface .sheet-binding > summary { padding: 9px 14px; color: var(--text-secondary); font-size: .66rem; font-weight: 750; cursor: pointer; }
+.control-surface .sheet-binding[open] > summary { border-bottom: 1px solid var(--border-subtle); }
+.control-surface .sheet-binding-body { padding: 12px 14px; }
+.control-surface .sheet-binding-body dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; margin: 0; }
+.control-surface .sheet-binding-body dt { color: var(--text-muted); font-size: .58rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.control-surface .sheet-binding-body dd { margin: 0; overflow-wrap: anywhere; color: var(--text-secondary); font-size: .64rem; }
+.control-surface .sheet-binding-body ul { margin: 10px 0 0; padding-left: 16px; color: var(--text-muted); font-size: .63rem; }
+.control-surface .sheet-binding-body pre { margin: 10px 0 0; max-height: 240px; padding: 11px; overflow: auto; border-radius: 8px; font-size: .6rem; }
+.control-surface .sheet-actions {
+  flex: none; display: grid; gap: 10px;
+  padding: clamp(13px, 2vh, 18px) clamp(20px, 2vw, 28px) clamp(16px, 2.4vh, 22px);
+  border-top: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface-depth) 62%, transparent));
+}
+.control-surface .sheet-actions > p { margin: 0; color: var(--text-muted); font-size: .63rem; line-height: 1.5; }
+.control-surface .review-sheet .proof-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin: 0; }
+.control-surface .review-sheet .proof-actions button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 46px; padding: 0 18px;
+  color: #fff; border: 1px solid var(--ctl-action-edge); border-radius: 9px; background: var(--ctl-action);
+  font-size: .82rem; font-weight: 750; cursor: pointer;
+  box-shadow: 0 14px 30px rgb(60 34 150 / 34%);
+  transition: filter 140ms ease;
+}
+.control-surface .review-sheet .proof-actions button:hover:not(:disabled) { filter: brightness(1.1); }
+.control-surface .review-sheet .proof-actions .proof-secondary {
+  color: var(--text-secondary); border-color: var(--border-strong); background: transparent; box-shadow: none; font-weight: 700;
+}
+.control-surface .review-sheet .proof-actions .proof-secondary:hover:not(:disabled) { color: var(--text-primary); border-color: var(--text-muted); filter: none; }
+.control-surface .review-sheet .proof-actions button:disabled { color: var(--text-muted); border-color: var(--border-strong); background: var(--surface-control); box-shadow: none; cursor: not-allowed; }
+@media (max-width: 560px) {
+  .control-surface .review-sheet { width: 100%; border-left: 0; }
+  .control-surface .review-sheet .proof-actions { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ── Key takeaway: pedagogical, and deliberately secondary ────────── */
 .control-takeaway {
   display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; gap: 4px 15px;
@@ -562,5 +663,16 @@
 :root[data-theme="light"] .control-surface { --ctl-rail: #ebe8e2; }
 :root[data-theme="light"] .control-surface .queue-list button[aria-pressed="true"] { background: linear-gradient(140deg, #ece5f5, #f7f4ee); box-shadow: inset 2px 0 var(--ctl-plum), 0 10px 22px rgb(72 44 160 / 9%); }
 :root[data-theme="light"] .boundary-plate { box-shadow: 0 14px 30px rgb(72 44 160 / 10%); }
+/* In daylight the scrim stays gentle: the instrument behind the sheet must remain
+   readable, so the user never loses Decision -> review -> boundary while reviewing. */
+:root[data-theme="light"] .control-surface .review-backdrop {
+  background:
+    radial-gradient(120% 100% at 100% 50%, rgb(112 72 191 / 16%), transparent 58%),
+    rgb(39 32 54 / 24%);
+}
+:root[data-theme="light"] .control-surface .review-sheet {
+  border-left-color: color-mix(in srgb, var(--ctl-plum) 30%, var(--border-strong));
+  box-shadow: -26px 0 70px rgb(72 44 160 / 22%);
+}
 :root[data-theme="light"] .control-drawer,
 :root[data-theme="light"] .control-surface .action-receipt details[open] .receipt-depth { box-shadow: 0 -18px 54px rgb(72 44 160 / 18%); }

@@ -3,7 +3,7 @@ import { motion, MotionConfig } from 'motion/react';
 import type { ProofScenario, ProofSession } from '../demo/proofDemo.js';
 import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, createDecisionTransitionView, historicalCallProof, type DecisionTraceView, type DecisionTransitionView } from '../presentation/decisionTraceViewModel.js';
-import { controlQuestion, createControlQueueItem, createControlSurfaceModel } from '../presentation/controlSurfaceViewModel.js';
+import { controlQuestion, createControlQueueItem, createControlSurfaceModel, type ControlProposal } from '../presentation/controlSurfaceViewModel.js';
 import { AttentionQueue, ControlInstrument, ControlKeyTakeaway } from './ControlInstrument.js';
 import { ProductTopbar, SurfaceContext } from './ProductShell.js';
 import { motionTokens } from './motion.js';
@@ -22,7 +22,16 @@ const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section c
   {view.assemblyIssues.length > 0 ? <ul className="proof-issues">{view.assemblyIssues.map((issue, index) => <li key={index}>{issue.code}: {issue.message} {issue.factKind}</li>)}</ul> : null}
 </section>;
 
-const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView; onReview: (action: 'APPLY' | 'DISCARD') => void; onClose: () => void }>) => {
+/** The same diamond the instrument uses: one decision object, one mark, never a check. */
+const ReviewDiamond = () => (
+  <svg className="sheet-diamond" viewBox="0 0 40 40" aria-hidden="true">
+    <path d="M20 2.5 37.5 20 20 37.5 2.5 20Z" className="control-diamond-body" />
+    <path d="M16.2 13.6h5.6l3.1 3.1v9.7h-8.7Z" className="control-diamond-mark" />
+    <path d="M18.3 21.2h4.2M18.3 24h3" className="control-diamond-rule" />
+  </svg>
+);
+
+const Review = ({ view, proposal: exact, onReview, onClose }: Readonly<{ view: DecisionTraceView; proposal?: ControlProposal | undefined; onReview: (action: 'APPLY' | 'DISCARD') => void; onClose: () => void }>) => {
   const proposal = view.proposal;
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -37,23 +46,39 @@ const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView;
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
-  return <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.6 }} animate={{ opacity: 1 }} transition={motionTokens.reveal}><motion.aside ref={dialogRef} className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title" onKeyDown={onDialogKeyDown} initial={{ x: 18, opacity: 0.7 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.reveal}>
-    <button ref={closeRef} type="button" className="sheet-close" onClick={onClose} aria-label="Close exact review">×</button>
-    <p className="eyebrow">02 / Explicit review</p><h2 id="review-title">{proposal ? `Review the ${proposal.actorRole} decision` : 'Review not reached'}</h2>
+  return <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.42 }} animate={{ opacity: 1 }} transition={motionTokens.settle}><motion.aside ref={dialogRef} className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title" onKeyDown={onDialogKeyDown} initial={{ x: 26, opacity: 0.55 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.settle}>
+    <header className="sheet-head">
+      <p className="eyebrow">02 / Exact review</p>
+      <button ref={closeRef} type="button" className="sheet-close" onClick={onClose} aria-label="Close exact review">×</button>
+      {proposal ? <p className="proof-decision"><ReviewDiamond />Represented external decision <strong>{proposal.decision}</strong></p> : null}
+      <h2 id="review-title">{proposal ? `Review the ${proposal.actorRole} decision` : 'Review not reached'}</h2>
+    </header>
     {proposal ? <>
-      <p className="proof-decision">Represented external decision <strong>{proposal.decision}</strong></p>
-      <p className="proof-verbatim">{proposal.summary}</p>
-      <p>Plan version {view.plan.version} · {proposal.actorRole} · {view.canReview ? 'Awaiting your review' : 'Review interaction closed'}</p>
-      <p>Proposed authorization changes: {proposal.proposedAuthorizationChanges.length === 0 ? 'none' : proposal.proposedAuthorizationChanges.length}</p>
-      <p className="proof-note">Synthetic decision input, not a live CALL-E response. Review applies to this exact proposal. Applying it asks the broker; it does not bypass safety checks.</p>
-      <details><summary>Exact proposal &amp; bound review details</summary><dl>
-        <dt>Case</dt><dd>{proposal.caseId}</dd><dt>Plan</dt><dd>{proposal.operationType === 'PLAN_DECISION' ? proposal.planId : 'Case authorization'}</dd>
-        <dt>Actor / role</dt><dd>{proposal.actorId} / {proposal.actorRole}</dd><dt>Request</dt><dd>{proposal.requestId}</dd><dt>Received at</dt><dd>{proposal.receivedAt}</dd><dt>Review state</dt><dd>{proposal.reviewState}</dd>
-        <dt>Local demo reviewer</dt><dd>{view.reviewer}</dd><dt>Deterministic review timestamp</dt><dd>{view.reviewedAt}</dd>
-      </dl><p>Demo metadata, not authenticated reviewer identity or the current wall clock.</p><ul>{proposal.evidence.map((value, index) => <li className="proof-verbatim" key={index}>{value}</li>)}</ul><pre>{JSON.stringify(view.reviewTarget, null, 2)}</pre></details>
-      <div className="proof-actions"><button type="button" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
-      {view.canReview && view.attempts.length > 0 ? <p>Previous role recorded. This is a new, separate role review; it has not been applied.</p> : null}
-    </> : <p>No reviewable proposal. No decision application was attempted.</p>}
+      <div className="sheet-body">
+        <p className="proof-verbatim">{proposal.summary}</p>
+        {exact ? <section className="sheet-block" aria-label="Exact proposal">
+          <p className="sheet-block-label">Exact proposal</p>
+          <dl className="control-proposal">{exact.lines.map((line) => <div key={line.label} {...(line.total ? { className: 'proposal-total' } : {})}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl>
+        </section> : null}
+        <dl className="sheet-context">
+          <div><dt>Actor / role</dt><dd>{proposal.actorRole}</dd></div>
+          <div><dt>Plan version</dt><dd>{view.plan.version}</dd></div>
+          <div><dt>Authorization changes</dt><dd>{proposal.proposedAuthorizationChanges.length === 0 ? 'none' : proposal.proposedAuthorizationChanges.length}</dd></div>
+          <div><dt>Review state</dt><dd>{view.canReview ? 'Awaiting your review' : 'Review interaction closed'}</dd></div>
+        </dl>
+        <p className="proof-note">Synthetic decision input, not a live CALL-E response. Review applies to this exact proposal.</p>
+        {view.canReview && view.attempts.length > 0 ? <p className="proof-note">Previous role recorded. This is a new, separate role review; it has not been applied.</p> : null}
+        <details className="sheet-binding"><summary>Inspect exact binding</summary><div className="sheet-binding-body"><dl>
+          <dt>Case</dt><dd>{proposal.caseId}</dd><dt>Plan</dt><dd>{proposal.operationType === 'PLAN_DECISION' ? proposal.planId : 'Case authorization'}</dd>
+          <dt>Actor / role</dt><dd>{proposal.actorId} / {proposal.actorRole}</dd><dt>Request</dt><dd>{proposal.requestId}</dd><dt>Received at</dt><dd>{proposal.receivedAt}</dd><dt>Review state</dt><dd>{proposal.reviewState}</dd>
+          <dt>Local demo reviewer</dt><dd>{view.reviewer}</dd><dt>Deterministic review timestamp</dt><dd>{view.reviewedAt}</dd>
+        </dl><p>Demo metadata, not authenticated reviewer identity or the current wall clock.</p><ul>{proposal.evidence.map((value, index) => <li className="proof-verbatim" key={index}>{value}</li>)}</ul><pre>{JSON.stringify(view.reviewTarget, null, 2)}</pre></div></details>
+      </div>
+      <footer className="sheet-actions">
+        <p>Applying asks the Broker to evaluate this exact attempt. It does not execute externally.</p>
+        <div className="proof-actions"><button type="button" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
+      </footer>
+    </> : <div className="sheet-body"><p>No reviewable proposal. No decision application was attempted.</p></div>}
   </motion.aside></motion.div></MotionConfig>;
 };
 
@@ -208,5 +233,5 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
         {receipt ? <ActionReceipt receipt={receipt} /> : null}
       </div>
     </div>
-  </main></div></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={closeReview} /> : null}</div>;
+  </main></div></div>{reviewOpen ? <Review view={view} proposal={model.proposal} onReview={onReview} onClose={closeReview} /> : null}</div>;
 };
