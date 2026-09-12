@@ -4,8 +4,8 @@ import type { ProofScenario, ProofSession } from '../demo/proofDemo.js';
 import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, createDecisionTransitionView, historicalCallProof, type DecisionTraceView, type DecisionTransitionView } from '../presentation/decisionTraceViewModel.js';
 import { controlQuestion, createControlQueueItem, createControlSurfaceModel } from '../presentation/controlSurfaceViewModel.js';
-import { BrokerMark } from './CaseHeader.js';
 import { AttentionQueue, ControlInstrument, ControlKeyTakeaway } from './ControlInstrument.js';
+import { ProductBrand } from './ProductShell.js';
 import { motionTokens } from './motion.js';
 
 type ThemeMode = 'system' | 'light' | 'dark';
@@ -197,7 +197,7 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
-  return <div className="app-shell proof-shell control-surface"><div ref={backgroundRef}><header className="product-topbar"><button type="button" className="brand-row product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><BrokerMark /><span>Exception Broker</span></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page">Control</button></nav><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></header>
+  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><header className="product-topbar"><button type="button" className="product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><ProductBrand /></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page">Control</button></nav><div className="product-topbar-actions"><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></div></header>
     <div className="product-layout">
     <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic demo cases.">
       <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>
@@ -217,15 +217,25 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
           : null}
     />
     <p className="resolved-announcement" aria-live="polite" aria-atomic="true">{resolvedAnnouncement}</p>
-    {model.takeaway ? <ControlKeyTakeaway takeaway={model.takeaway} tone={model.disposition.tone} /> : null}
-    {view.canReview ? null : <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{model.nextAction}</h2><p>Applying asks the broker; it never bypasses controls.</p></div></section>}
-    <div className="proof-reset"><p>Each demo case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p><button type="button" onClick={() => focusScenario(view.scenario)}>Reset demo case</button></div>
-    {receipt ? <ActionReceipt receipt={receipt} /> : null}
-    <details className="supporting-proof"><summary>Verify current decision</summary><div className="supporting-proof-content">
-      <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
-      <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><ReviewApplicationProof view={view} /></section>
-      <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /><section className="proof-card proof-plan-identity" aria-label="Plan identity and cost"><h3>Plan identity &amp; cost</h3><p>{view.plan.caseId} / {view.plan.id} · version {view.plan.version}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></section></section>
-    </div></details>
-    <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic demo case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></details>
-  </main></div><footer>Exception Broker · Decision acquisition ≠ authority to execute</footer></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={closeReview} /> : null}</div>;
+    {/* The dock holds guidance and proof. Level 1 keeps its height; depth opens as a local drawer. */}
+    <div className="control-dock">
+      <div className="control-dock-top">
+        {model.takeaway ? <ControlKeyTakeaway takeaway={model.takeaway} tone={model.disposition.tone} /> : null}
+        <div className="control-dock-tools">
+          <button type="button" className="dock-reset" onClick={() => focusScenario(view.scenario)}>Reset demo case</button>
+          <details className="supporting-proof"><summary>Verify current decision</summary><div className="control-drawer"><div className="supporting-proof-content">
+            <p className="drawer-note">Each demo case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p>
+            <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
+            <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><ReviewApplicationProof view={view} /></section>
+            <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /><section className="proof-card proof-plan-identity" aria-label="Plan identity and cost"><h3>Plan identity &amp; cost</h3><p>{view.plan.caseId} / {view.plan.id} · version {view.plan.version}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></section></section>
+          </div></div></details>
+          <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><div className="control-drawer"><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic demo case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></div></details>
+        </div>
+      </div>
+      <div className="control-dock-bar">
+        {view.canReview ? null : <section className="control-next"><p className="eyebrow">Next action</p><h2>{model.nextAction}</h2></section>}
+        {receipt ? <ActionReceipt receipt={receipt} /> : null}
+      </div>
+    </div>
+  </main></div></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={closeReview} /> : null}</div>;
 };

@@ -6,6 +6,7 @@ import type {
   ControlQueueItem, ControlReality, ControlReview, ControlSurfaceModel, ControlTakeaway,
 } from '../presentation/controlSurfaceViewModel.js';
 import { motionTokens } from './motion.js';
+import { SentinelScene } from './ProductShell.js';
 
 // Quiet → one consequential activation → quiet. Each stage is revealed only after the
 // stage that caused it, so the choreography teaches causality rather than decorating it.
@@ -107,8 +108,8 @@ const OperationalReality = ({ reality }: Readonly<{ reality: ControlReality }>) 
 );
 
 const BrokerDisposition = ({ disposition }: Readonly<{ disposition: ControlDisposition }>) => (
-  <motion.section className="control-object control-disposition" aria-label="Broker disposition"
-    initial={false} animate={{ opacity: disposition.resolved ? 1 : 0.82 }} transition={stage(3)}>
+  <motion.section className={`control-object control-disposition ${disposition.resolved ? 'disposition-resolved' : 'disposition-quiet'}`}
+    aria-label="Broker disposition" initial={false} animate={{ opacity: 1 }} transition={stage(3)}>
     <p className="control-label">Broker disposition</p>
     <strong className="disposition-label">{disposition.label}</strong>
     <p className="disposition-headline">{disposition.headline}</p>
@@ -148,6 +149,7 @@ export const AttentionQueue = ({ items, selectedId, onSelect, title, description
   title: string; description: string; children?: ReactNode;
 }>) => (
   <aside className="control-queue" aria-labelledby="queue-title">
+    <div className="queue-top">
     <p className="eyebrow">Decision control queue</p>
     <h1 id="queue-title">{title}</h1>
     <p>{description}</p>
@@ -161,5 +163,7 @@ export const AttentionQueue = ({ items, selectedId, onSelect, title, description
       </button>
     ))}</div>
     {children}
+    </div>
+    <SentinelScene />
   </aside>
 );

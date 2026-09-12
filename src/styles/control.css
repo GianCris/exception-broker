@@ -1,27 +1,132 @@
-/* Control: a premium operational instrument, not a dashboard.
-   Few strong objects — Decision, Reality, Disposition — separated by one
-   architectural Application Boundary. Scoped to .control-surface so Acquisition,
-   Home and the retained legacy demo keep their own styling untouched. */
+/* Control: one operating instrument in the Exception Broker product family.
 
-.control-surface { --control-gutter: 26px; }
+   The shell here is deliberately the same shell Acquisition established — the real
+   product mark, a 74px topbar, a ~264px branded rail closed by Sentinel Ridge, and a
+   workspace that fills the viewport instead of scrolling like a page. Inside it, few
+   strong objects — Decision, Reality, Disposition — are separated by one architectural
+   Application Boundary. Everything is scoped to .control-surface so Acquisition, Home
+   and the retained legacy demo keep their own styling untouched. */
 
-/* ── Attention queue ─────────────────────────────────────────────── */
-.control-surface .queue-list button {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 10px;
-  padding: 13px 14px;
+.control-surface {
+  /* Same material vocabulary as the Acquisition shell: one product, two modes. */
+  --ctl-plum: #9b78ef;
+  --ctl-panel: color-mix(in srgb, var(--surface-control) 82%, #071a35);
+  --ctl-material: linear-gradient(145deg, color-mix(in srgb, var(--ctl-panel) 94%, transparent), color-mix(in srgb, var(--surface-depth) 88%, transparent));
+  --ctl-action: linear-gradient(135deg, #7040df, #3e1aaf);
+  --ctl-action-edge: rgb(169 137 255 / 58%);
+  --ctl-lift: 0 18px 44px rgb(3 7 22 / 16%);
+  --ctl-serif: Georgia, "Times New Roman", serif;
+  --control-gutter: clamp(14px, 1.35vw, 21px);
+  --control-pad: clamp(13px, 2.1vh, 21px);
+  color: var(--text-primary);
+  background:
+    radial-gradient(850px 420px at 78% 0%, rgb(87 65 155 / 14%), transparent 68%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-base) 80%, #071329), color-mix(in srgb, var(--surface-depth) 75%, #081326));
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
-.control-surface .queue-heading { display: grid; gap: 2px; min-width: 0; grid-column: 1; grid-row: 1; }
-.control-surface .queue-heading strong { color: var(--text-primary); font-size: .82rem; font-weight: 700; line-height: 1.2; }
-.control-surface .queue-heading small { color: var(--text-muted); font-size: .58rem; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+.control-chassis { display: flex; flex-direction: column; min-height: 100dvh; }
+
+/* ── Product shell: identical identity, height and nav language to Acquisition ── */
+.control-surface .product-topbar {
+  position: relative; z-index: 20; display: flex; align-items: center; gap: 0;
+  min-height: 74px; padding: 0 clamp(18px, 2.4vw, 34px);
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-base) 94%, transparent);
+}
+.control-surface .product-home-link { flex: none; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.product-brand { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; }
+.product-brand img { display: block; width: 55px; height: 39px; object-fit: contain; }
+.product-brand > span { display: grid; gap: 3px; text-align: left; }
+.product-brand strong { color: var(--text-primary); font: 600 18px/1 var(--ctl-serif); letter-spacing: -.04em; }
+.product-brand small { color: var(--ctl-plum); font-size: 7px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase; }
+.control-surface .product-nav { display: flex; align-items: center; align-self: stretch; gap: clamp(20px, 2.4vw, 34px); margin-left: clamp(30px, 5.4vw, 77px); }
+.control-surface .product-nav button {
+  position: relative; padding: 0; border: 0; border-radius: 0; box-shadow: none;
+  color: var(--text-muted); background: transparent; font-size: 11px; font-weight: 700;
+}
+.control-surface .product-nav button:hover, .control-surface .product-nav button[aria-current="page"] { color: var(--text-primary); background: transparent; }
+.control-surface .product-nav button[aria-current="page"]::after { position: absolute; right: 0; bottom: -19px; left: 0; height: 2px; background: var(--ctl-plum); content: ""; }
+.product-topbar-actions { display: flex; align-items: center; gap: 14px; margin-left: auto; min-width: 0; }
+.control-surface .product-topbar-actions .proof-mode { order: 0; margin: 0; }
+.control-surface .product-topbar-actions .theme-control { order: 1; margin-left: 0; }
+.control-surface .product-topbar .proof-mode { display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; }
+.control-surface .product-topbar .proof-mode b {
+  padding: 3px 7px; color: var(--ctl-plum); border: 1px solid color-mix(in srgb, var(--ctl-plum) 38%, var(--border-subtle));
+  border-radius: 5px; font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+}
+.control-surface .product-topbar .proof-mode span { color: var(--text-muted); font-size: 9px; font-weight: 550; letter-spacing: .01em; }
+.control-surface .theme-control { font-size: 9px; letter-spacing: .04em; }
+.control-surface .theme-control select { min-height: 30px; font-size: 10px; }
+
+/* ── Workspace geometry: an instrument, not a page ──────────────────── */
+.control-surface .product-layout {
+  display: grid; grid-template-columns: 264px minmax(0, 1fr);
+  height: calc(100dvh - 74px); min-height: 0; overflow: hidden;
+}
+.control-surface .control-workspace {
+  display: flex; flex-direction: column; width: auto; max-width: none; min-width: 0;
+  height: 100%; min-height: 0; margin: 0;
+  padding: clamp(13px, 1.9vh, 21px) clamp(16px, 1.9vw, 30px) clamp(11px, 1.5vh, 17px);
+}
+
+/* ── Branded attention rail ─────────────────────────────────────────── */
+.control-surface .control-queue {
+  display: flex; flex-direction: column; min-width: 0; height: 100%; overflow: hidden;
+  padding: clamp(14px, 2vh, 21px) 15px 0;
+  border-right: 1px solid var(--border-subtle); border-bottom: 0;
+  background: color-mix(in srgb, var(--surface-depth) 72%, #09172c);
+}
+.control-surface .queue-top { position: relative; z-index: 2; flex: none; min-width: 0; }
+.control-surface .control-queue .eyebrow { margin: 0 0 5px; color: color-mix(in srgb, var(--ctl-plum) 78%, var(--text-primary)); font-size: 9px; letter-spacing: .2em; }
+.control-surface .control-queue h1 { margin: 0; color: var(--text-primary); font-family: var(--ctl-serif); font-size: 1.42rem; font-weight: 500; letter-spacing: -.03em; line-height: 1.1; }
+.control-surface .control-queue > .queue-top > p:not(.eyebrow) { margin: 5px 0 0; color: var(--text-muted); font-size: .68rem; line-height: 1.45; }
+.control-surface .queue-list { display: grid; gap: 6px; margin-top: 14px; }
+.control-surface .queue-list button {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px;
+  width: 100%; padding: 10px 12px; text-align: left; cursor: pointer;
+  color: var(--text-secondary); border: 1px solid transparent; border-radius: 9px; background: transparent;
+  transition: border-color 130ms ease, background-color 130ms ease, box-shadow 130ms ease;
+}
+.control-surface .queue-list button:not([aria-pressed="true"]) { opacity: .78; }
+.control-surface .queue-list button:not([aria-pressed="true"]):hover,
+.control-surface .queue-list button:not([aria-pressed="true"]):focus-visible { opacity: 1; border-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-control) 62%, transparent); }
+.control-surface .queue-list button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--ctl-plum) 46%, var(--border-strong));
+  background: linear-gradient(140deg, color-mix(in srgb, #2b2350 72%, transparent), color-mix(in srgb, var(--surface-control) 70%, transparent));
+  box-shadow: inset 2px 0 var(--ctl-plum), 0 12px 26px rgb(3 7 22 / 26%);
+}
+.control-surface .queue-heading { display: grid; gap: 1px; min-width: 0; grid-column: 1; grid-row: 1; }
+.control-surface .queue-heading strong { color: var(--text-primary); font-size: .8rem; font-weight: 700; line-height: 1.2; }
+.control-surface .queue-heading small { color: var(--text-muted); font-size: .54rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
 .control-surface .queue-state {
   grid-column: 2; grid-row: 1; align-self: start;
-  padding: 3px 7px; border: 1px solid currentColor; border-radius: 4px;
-  font-size: .56rem; font-weight: 850; letter-spacing: .07em; white-space: nowrap;
+  padding: 2px 6px; border: 1px solid currentColor; border-radius: 4px;
+  font-size: .53rem; font-weight: 850; letter-spacing: .08em; white-space: nowrap;
 }
-.control-surface .queue-attention { grid-column: 1 / -1; color: var(--text-secondary); font-size: .69rem; }
-.control-surface .queue-fact { grid-column: 1 / -1; color: var(--text-muted); font-size: .65rem; font-variant-numeric: tabular-nums; }
+.control-surface .queue-attention { grid-column: 1 / -1; color: var(--text-secondary); font-size: .66rem; line-height: 1.35; }
+.control-surface .queue-fact { grid-column: 1 / -1; color: var(--text-muted); font-size: .62rem; font-variant-numeric: tabular-nums; }
+.control-surface .rail-facts { display: grid; gap: 5px; margin: 13px 0 0; padding-top: 11px; border-top: 1px solid var(--border-subtle); }
+.control-surface .rail-facts div { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 8px; }
+.control-surface .rail-facts dt { color: var(--text-muted); font-size: .58rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.control-surface .rail-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--text-secondary); font-size: .62rem; }
+.control-surface .queue-history {
+  display: grid; gap: 3px; margin-top: 13px; padding: 10px 11px;
+  border: 1px solid var(--border-subtle); border-radius: 8px; background: color-mix(in srgb, var(--surface-base) 46%, transparent);
+  color: var(--text-muted); font-size: .6rem; line-height: 1.4;
+}
+.control-surface .queue-history strong { color: var(--text-secondary); font-size: .66rem; }
+
+/* Sentinel Ridge closes the rail as environment, never as another card. */
+.control-surface .rail-scene {
+  position: relative; z-index: 1; flex: 1 1 auto; min-height: 132px; margin: 16px -15px 0;
+  background:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--surface-depth) 40%, transparent) 55%, color-mix(in srgb, var(--surface-depth) 82%, transparent) 100%),
+    url("/images/home/sentinel-ridge.png") 50% 78% / cover no-repeat;
+}
+.control-surface .rail-scene::before { position: absolute; inset: 0 0 auto; height: 56px; background: linear-gradient(180deg, color-mix(in srgb, var(--surface-depth) 72%, #09172c), transparent); content: ""; }
+.control-surface .rail-motif { position: absolute; right: 15px; bottom: 15px; left: 15px; display: grid; gap: 6px; }
+.control-surface .rail-motif q { color: var(--text-primary); font: italic 16px/1.25 var(--ctl-serif); }
+.control-surface .rail-motif span { color: var(--text-muted); font-size: 9px; }
 
 .disposition-approved, .disposition-rejected, .disposition-discarded,
 .disposition-not-resolved, .disposition-technical-stop { color: var(--neutral); }
@@ -34,256 +139,423 @@
 /* ── Workspace header: one question, one answer ──────────────────── */
 .control-head {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;
-  gap: 5px 26px; padding: 0 0 15px;
+  flex: none; gap: 2px 24px; padding: 0 0 clamp(10px, 1.5vh, 16px);
 }
-.control-head .eyebrow { grid-column: 1; margin-bottom: 4px; }
+.control-surface .control-head .eyebrow { grid-column: 1; margin: 0 0 4px; color: color-mix(in srgb, var(--ctl-plum) 82%, var(--text-primary)); font-size: 9px; font-weight: 750; letter-spacing: .2em; }
 .control-head h1 {
-  grid-column: 1; max-width: 20ch; margin: 0; color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.5rem, 2.6vw, 2.05rem);
-  font-weight: 500; line-height: 1.1; letter-spacing: -.03em;
+  grid-column: 1; max-width: 22ch; margin: 0; color: var(--text-primary);
+  font-family: var(--ctl-serif); font-size: clamp(1.85rem, 2.75vw, 2.6rem);
+  font-weight: 500; line-height: 1.04; letter-spacing: -.032em;
 }
-.control-head > p:last-of-type { grid-column: 1; max-width: 76ch; margin: 5px 0 0; color: var(--text-muted); font-size: .76rem; }
+.control-head > p:last-of-type { grid-column: 1; max-width: 86ch; margin: 7px 0 0; color: var(--text-muted); font-size: .76rem; line-height: 1.5; }
 .control-context {
-  grid-column: 2; grid-row: 1 / span 3; align-self: start; display: grid; gap: 2px; max-width: 290px;
-  padding: 9px 13px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-base);
+  grid-column: 2; grid-row: 1 / span 3; align-self: start; display: grid; gap: 2px; max-width: 260px;
+  padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-base) 62%, transparent);
 }
 .control-context b {
-  justify-self: start; padding: 2px 6px; color: var(--brand); border: 1px solid var(--border-subtle);
-  border-radius: 4px; font-size: .55rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  justify-self: start; padding: 2px 6px; color: var(--ctl-plum); border: 1px solid color-mix(in srgb, var(--ctl-plum) 34%, var(--border-subtle));
+  border-radius: 4px; font-size: .52rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
 }
-.control-context strong { color: var(--text-secondary); font-size: .72rem; font-weight: 650; }
-.control-context small { color: var(--text-muted); font-size: .65rem; }
+.control-context h2 { margin: 3px 0 0; color: var(--text-primary); font-size: .8rem; font-weight: 650; letter-spacing: -.01em; }
+.control-context strong { color: var(--text-secondary); font-size: .62rem; font-weight: 650; }
+.control-context small { color: var(--text-muted); font-size: .6rem; }
 
 /* ── The instrument ─────────────────────────────────────────────── */
 .control-instrument {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(122px, 9.6vw, 148px) minmax(0, 1fr);
   align-items: stretch;
-  margin: 0 0 16px;
+  flex: 1 1 auto; min-height: 0; margin: 0;
+  /* A safety valve only: at the supported desktop sizes every Level-1 state fits. */
+  overflow-y: auto; overscroll-behavior: contain;
 }
-.control-instrument:focus-visible { outline: 3px solid var(--brand); outline-offset: 6px; }
-.control-column { display: grid; align-content: start; gap: 10px; min-width: 0; }
-.control-label {
-  margin: 0; color: var(--text-muted);
-  font-size: .6rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
-}
+.control-instrument:focus-visible { outline: 2px solid var(--ctl-plum); outline-offset: 4px; }
+.control-column { display: grid; align-content: start; gap: clamp(8px, 1.5vh, 15px); min-width: 0; }
+.control-label { margin: 0; color: var(--text-muted); font-size: .57rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .control-object {
-  min-width: 0; padding: 15px var(--control-gutter);
-  border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-control);
+  min-width: 0; padding: var(--control-pad) var(--control-gutter);
+  border: 1px solid var(--border-subtle); border-radius: 12px;
+  background: var(--ctl-material); box-shadow: var(--ctl-lift);
 }
 
-/* Decision — the object that never moves. */
-.control-decision { border-color: var(--border-strong); }
-.control-decision-head { display: flex; align-items: center; gap: 14px; margin: 8px 0 0; }
-.control-diamond { flex: 0 0 auto; width: 38px; height: 38px; }
-.control-diamond-body { fill: var(--brand-soft); stroke: var(--approved); stroke-width: 1.6; }
-.control-diamond-mark { fill: none; stroke: var(--approved); stroke-width: 1.5; stroke-linejoin: round; }
-.control-diamond-rule { fill: none; stroke: var(--approved); stroke-width: 1.3; stroke-linecap: round; }
+/* Decision — the object that never moves, and the first thing read. */
+.control-decision { border-color: color-mix(in srgb, var(--ctl-plum) 24%, var(--border-strong)); }
+.control-decision-head { display: flex; align-items: center; gap: 15px; margin: 7px 0 0; }
+.control-diamond { flex: 0 0 auto; width: clamp(36px, 3vw, 44px); height: clamp(36px, 3vw, 44px); }
+.control-diamond-body { fill: var(--brand-soft); stroke: var(--approved); stroke-width: 1.5; }
+.control-diamond-mark { fill: none; stroke: var(--approved); stroke-width: 1.4; stroke-linejoin: round; }
+.control-diamond-rule { fill: none; stroke: var(--approved); stroke-width: 1.2; stroke-linecap: round; }
 .control-decision h2 {
-  margin: 0; color: var(--text-primary); font-size: clamp(1.6rem, 2.9vw, 2.15rem);
-  font-weight: 650; letter-spacing: -.04em; line-height: 1;
+  margin: 0; color: var(--text-primary); font-size: clamp(1.8rem, 3.1vw, 2.55rem);
+  font-weight: 600; letter-spacing: -.045em; line-height: 1;
 }
-.control-decision-note { margin: 8px 0 0; color: var(--text-secondary); font-size: .74rem; }
-.control-decision-source { display: grid; gap: 1px; margin: 11px 0 0; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
-.control-decision-source strong { color: var(--text-primary); font-size: .74rem; font-weight: 700; }
-.control-decision-source small { color: var(--text-muted); font-size: .66rem; }
+.control-decision-note { margin: 7px 0 0; color: var(--text-secondary); font-size: .72rem; }
+.control-decision-source {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px;
+  margin: 9px 0 0; padding-top: 8px; border-top: 1px solid var(--border-subtle);
+}
+.control-decision-source strong { color: var(--text-primary); font-size: .7rem; font-weight: 700; }
+.control-decision-source small { color: var(--text-muted); font-size: .62rem; }
 .decision-unavailable { border-color: var(--border-subtle); }
-.decision-unavailable h2 { color: var(--text-secondary); font-size: clamp(1.25rem, 2.1vw, 1.6rem); }
+.decision-unavailable h2 { color: var(--text-secondary); font-size: clamp(1.2rem, 2vw, 1.55rem); }
 .decision-unavailable .control-diamond-body { fill: none; stroke: var(--border-strong); }
 .decision-unavailable .control-diamond-mark, .decision-unavailable .control-diamond-rule { stroke: var(--border-strong); }
 
-/* Exact review — prominent before the attempt, demoted after it. */
+/* Exact review — the strongest actionable object before an attempt, demoted after it. */
 .control-review .control-label { color: var(--approved); }
-.control-proposal { display: grid; margin: 10px 0 0; }
-.control-proposal > div {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px;
-  padding: 5px 0; border-bottom: 1px solid var(--border-subtle);
+.review-required {
+  border-color: color-mix(in srgb, var(--ctl-plum) 42%, var(--border-subtle));
+  box-shadow: 0 22px 54px rgb(60 34 150 / 22%);
 }
+.control-proposal { display: grid; margin: 8px 0 0; }
+.control-proposal > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: clamp(3px, .5vh, 6px) 0; border-bottom: 1px solid var(--border-subtle); }
 .control-proposal > div:last-child { border-bottom: 0; }
-.control-proposal dt { color: var(--text-secondary); font-size: .73rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
-.control-proposal dd { margin: 0; color: var(--text-primary); font-size: .73rem; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
+.control-proposal dt { color: var(--text-secondary); font-size: .71rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.control-proposal dd { margin: 0; color: var(--text-primary); font-size: .71rem; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
 .control-proposal .proposal-total { border-top: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); }
-.control-proposal .proposal-total dt, .control-proposal .proposal-total dd { font-size: .8rem; font-weight: 750; }
-.control-proposal-note { margin: 8px 0 0; overflow-wrap: anywhere; color: var(--text-muted); font-size: .62rem; }
-.control-review-detail { margin: 9px 0 0; color: var(--text-muted); font-size: .68rem; }
-.control-review .control-review-action { display: grid; gap: 6px; margin-top: 12px; }
+.control-proposal .proposal-total dt, .control-proposal .proposal-total dd { font-size: .78rem; font-weight: 750; }
+.control-proposal-note { margin: 7px 0 0; overflow-wrap: anywhere; color: var(--text-muted); font-size: .6rem; }
+.control-review-detail { margin: 8px 0 0; color: var(--text-muted); font-size: .66rem; }
+.control-review .control-review-action { display: grid; gap: 5px; margin-top: 10px; }
 .control-review .control-review-action button {
-  justify-self: stretch; padding: 11px 16px; color: var(--surface-control);
-  border: 1px solid var(--brand); border-radius: 7px; background: var(--brand);
-  font-size: .82rem; font-weight: 800; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  justify-self: stretch; min-height: clamp(40px, 5.4vh, 50px); padding: 0 18px;
+  color: #fff; border: 1px solid var(--ctl-action-edge); border-radius: 9px; background: var(--ctl-action);
+  font-size: .84rem; font-weight: 750; letter-spacing: .005em; cursor: pointer;
+  box-shadow: 0 14px 30px rgb(60 34 150 / 34%);
+  transition: filter 130ms ease, box-shadow 130ms ease;
 }
-.control-review .control-review-action button:hover { background: color-mix(in srgb, var(--brand) 88%, var(--text-primary)); }
-.control-review .control-review-action small { color: var(--text-muted); font-size: .65rem; line-height: 1.45; }
+.control-review .control-review-action button:hover { filter: brightness(1.1); box-shadow: 0 16px 36px rgb(60 34 150 / 44%); }
+.control-review .control-review-action button:disabled { color: var(--text-muted); border-color: var(--border-strong); background: var(--surface-control); box-shadow: none; cursor: not-allowed; }
+.control-review .control-review-action small { color: var(--text-muted); font-size: .61rem; line-height: 1.4; }
 .control-review-done {
-  display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 11px; margin: 12px 0 0;
-  padding: 10px 13px; border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-base);
+  display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 10px; margin: 10px 0 0;
+  padding: 8px 11px; border: 1px solid var(--border-subtle); border-radius: 8px; background: color-mix(in srgb, var(--surface-base) 60%, transparent);
 }
-.control-review-done i { color: var(--approved); font-style: normal; font-size: 1rem; }
-.control-review-done small { color: var(--text-secondary); font-size: .69rem; }
-.review-completed, .review-discarded, .review-unavailable { background: var(--surface-base); }
+.control-review-done i { color: var(--approved); font-style: normal; font-size: .95rem; }
+.control-review-done small { color: var(--text-secondary); font-size: .66rem; }
+.review-completed, .review-discarded, .review-unavailable { box-shadow: none; background: color-mix(in srgb, var(--surface-base) 58%, transparent); }
 .review-completed .control-proposal dd, .review-discarded .control-proposal dd { color: var(--text-secondary); font-weight: 600; }
 
 /* Application attempt — the object that is evaluated, never the Decision. */
 .control-attempt {
-  display: grid; gap: 2px; padding: 11px var(--control-gutter);
-  border: 1px solid var(--border-strong); border-left: 3px solid var(--neutral);
-  border-radius: 8px; background: var(--surface-action);
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 2px 12px;
+  padding: 8px var(--control-gutter);
+  border: 1px solid var(--border-subtle); border-left: 3px solid var(--neutral);
+  border-radius: 9px; background: color-mix(in srgb, var(--surface-base) 62%, transparent);
 }
-.control-attempt strong { color: var(--text-primary); font-size: .76rem; }
-.control-attempt small { color: var(--text-muted); font-size: .66rem; }
+.control-attempt .control-label { grid-column: 1; font-size: .53rem; }
+.control-attempt strong { grid-column: 2; color: var(--text-primary); font-size: .72rem; }
+.control-attempt small { grid-column: 1 / -1; color: var(--text-muted); font-size: .62rem; }
 .attempt-complete { border-left-color: var(--allow); }
 .attempt-interrupted { border-left-color: var(--block); }
 .attempt-suspended { border-left-color: var(--wait); }
 .attempt-neutral-stopped { border-left-color: var(--technical); }
 
 /* ── Application boundary: the product signature ─────────────────── */
-.control-boundary { position: relative; display: grid; place-items: center; min-width: 0; padding: 0 14px; }
+.control-boundary { position: relative; display: grid; place-items: center; min-width: 0; padding: 0 clamp(7px, .75vw, 14px); }
 .boundary-rail {
-  position: absolute; top: 6px; bottom: 6px; left: 50%; width: 2px;
-  background: linear-gradient(180deg, transparent, var(--border-strong) 12%, var(--border-strong) 88%, transparent);
+  position: absolute; top: 3px; bottom: 3px; left: 50%; width: 2px;
+  background: linear-gradient(180deg, transparent, var(--border-strong) 9%, var(--border-strong) 91%, transparent);
   transform: translateX(-50%); transform-origin: center;
 }
+/* Visible endpoints: the boundary is an architectural element, not a floating label. */
+.control-boundary::before, .control-boundary::after {
+  position: absolute; left: 50%; z-index: 1; width: 7px; height: 7px; margin-left: -3.5px;
+  border: 1px solid var(--border-strong); border-radius: 50%;
+  background: color-mix(in srgb, var(--surface-depth) 90%, transparent); content: "";
+}
+.control-boundary::before { top: 0; }
+.control-boundary::after { bottom: 0; }
 .boundary-plate {
   position: relative; z-index: 2; display: grid; gap: 4px; justify-items: center; width: 100%;
-  padding: 15px 8px; border: 1px solid var(--border-strong); border-radius: 9px;
-  background: var(--surface-base); text-align: center;
+  padding: 13px 8px; border: 1px solid var(--border-strong); border-radius: 11px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ctl-panel) 99%, transparent), color-mix(in srgb, var(--surface-depth) 97%, transparent));
+  box-shadow: 0 16px 34px rgb(3 7 22 / 38%); text-align: center;
 }
-.boundary-plate .control-label { font-size: .53rem; letter-spacing: .1em; line-height: 1.35; }
-.boundary-plate strong + small, .boundary-attempt + small { margin-top: 3px; }
-.boundary-plate strong { color: var(--text-secondary); font-size: .66rem; font-weight: 800; letter-spacing: .07em; }
-.boundary-plate small { color: var(--text-muted); font-size: .57rem; line-height: 1.4; }
+.boundary-plate .control-label { font-size: .5rem; letter-spacing: .14em; line-height: 1.4; }
+.boundary-plate strong + small, .boundary-attempt + small { margin-top: 2px; }
+.boundary-plate strong { color: var(--text-secondary); font-size: .63rem; font-weight: 850; letter-spacing: .1em; }
+.boundary-plate small { color: var(--text-muted); font-size: .53rem; line-height: 1.38; }
 .boundary-attempt {
   padding: 2px 7px; color: var(--text-primary); border: 1px solid var(--border-strong);
-  border-radius: 999px; font-size: .56rem; font-weight: 750; letter-spacing: .04em;
+  border-radius: 999px; font-size: .54rem; font-weight: 750; letter-spacing: .04em;
 }
+/* One restrained activation, only once the boundary has actually been engaged. */
 .boundary-evaluated .boundary-rail {
-  background: linear-gradient(180deg, transparent, var(--brand) 14%, var(--brand) 86%, transparent);
-  box-shadow: 0 0 16px 1px color-mix(in srgb, var(--brand) 45%, transparent);
+  width: 3px;
+  background: linear-gradient(180deg, transparent, var(--ctl-plum) 8%, var(--ctl-plum) 92%, transparent);
+  box-shadow: 0 0 22px 2px color-mix(in srgb, var(--ctl-plum) 50%, transparent);
 }
-.boundary-evaluated .boundary-plate { border-color: var(--brand); box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 24%, transparent); }
-.boundary-evaluated .boundary-plate strong { color: var(--brand); }
-.boundary-not-available .boundary-rail { background: repeating-linear-gradient(180deg, var(--border-strong) 0 5px, transparent 5px 11px); }
+.boundary-evaluated::before, .boundary-evaluated::after { border-color: var(--ctl-plum); background: color-mix(in srgb, var(--ctl-plum) 55%, var(--surface-depth)); }
+.boundary-evaluated .boundary-plate { border-color: color-mix(in srgb, var(--ctl-plum) 60%, var(--border-strong)); box-shadow: 0 16px 36px rgb(3 7 22 / 40%), 0 0 0 1px color-mix(in srgb, var(--ctl-plum) 22%, transparent); }
+.boundary-evaluated .boundary-plate strong { color: var(--ctl-plum); }
+.boundary-not-available .boundary-rail { background: repeating-linear-gradient(180deg, var(--border-strong) 0 4px, transparent 4px 10px); opacity: .8; }
+.boundary-not-available .boundary-plate { border-color: var(--border-subtle); }
 
 /* ── Operational reality ─────────────────────────────────────────── */
-.control-reality h3 { margin: 7px 0 0; color: var(--text-primary); font-size: .86rem; font-weight: 650; line-height: 1.4; }
-.reality-measure { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 13px; margin-top: 13px; }
-.reality-measure article { min-width: 0; padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-base); }
-.reality-measure span { display: block; color: var(--text-muted); font-size: .58rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.control-reality h3 { margin: 6px 0 0; color: var(--text-primary); font-size: .84rem; font-weight: 650; line-height: 1.35; }
+.reality-measure { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; margin-top: 11px; }
+.reality-measure article { min-width: 0; padding: 10px 13px; border: 1px solid var(--border-subtle); border-radius: 9px; background: color-mix(in srgb, var(--surface-base) 66%, transparent); }
+.reality-measure span { display: block; color: var(--text-muted); font-size: .55rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
 .reality-measure strong {
-  display: block; margin: 4px 0 1px; color: var(--text-primary);
-  font-size: clamp(1.8rem, 3.3vw, 2.5rem); font-weight: 600; line-height: 1; letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+  display: block; margin: 3px 0 0; color: var(--text-primary);
+  font-size: clamp(1.7rem, 3.2vw, 2.4rem); font-weight: 600; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums;
 }
-.reality-measure small { color: var(--text-muted); font-size: .63rem; }
+.reality-measure small { color: var(--text-muted); font-size: .6rem; }
 .reality-measure > b { color: var(--text-muted); font-size: 1rem; }
 .reality-authorization {
-  display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 10px; margin: 12px 0 0;
-  padding-top: 12px; border-top: 1px solid var(--border-subtle);
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; margin: 10px 0 0;
+  padding-top: 9px; border-top: 1px solid var(--border-subtle);
 }
-.reality-authorization span { color: var(--text-muted); font-size: .58rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.reality-authorization strong { color: var(--text-primary); font-size: .78rem; font-weight: 700; }
-.reality-causal { margin: 13px 0 0; font-size: .8rem; font-weight: 650; line-height: 1.45; }
+.reality-authorization span { color: var(--text-muted); font-size: .55rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.reality-authorization strong { color: var(--text-primary); font-size: .74rem; font-weight: 700; }
+.reality-causal { margin: 10px 0 0; font-size: .78rem; font-weight: 650; line-height: 1.4; }
 .causal-unsupported { color: var(--block); }
 .causal-supported { color: var(--text-primary); }
-.causal-neutral { color: var(--text-muted); font-size: .68rem; font-weight: 500; }
+.causal-neutral { color: var(--text-muted); font-size: .65rem; font-weight: 500; }
 .reality-conflicted .causal-unsupported { color: var(--wait); }
-.reality-pending { margin: 12px 0 0; color: var(--text-muted); font-size: .72rem; line-height: 1.55; }
-.reality-claims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; margin-top: 16px; }
-.reality-claims article { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-base); }
-.reality-claims span { display: block; color: var(--text-muted); font-size: .58rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+/* Pending reality is intentionally quiet: it must never outweigh the review action. */
+.reality-not-evaluated { background: color-mix(in srgb, var(--surface-base) 44%, transparent); box-shadow: none; }
+.reality-not-evaluated h3 { color: var(--text-secondary); font-size: .78rem; font-weight: 600; }
+.reality-pending { margin: 8px 0 0; color: var(--text-muted); font-size: .68rem; line-height: 1.5; }
+/* Conflicting claims carry the weight; the configured source ID stays secondary. */
+.reality-claims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px; margin-top: 13px; }
+.reality-claims article { position: relative; min-width: 0; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--wait) 26%, var(--border-subtle)); border-radius: 9px; background: color-mix(in srgb, var(--surface-base) 66%, transparent); }
+.reality-claims span { display: block; color: color-mix(in srgb, var(--wait) 72%, var(--text-muted)); font-size: .55rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
 .reality-claims strong {
-  display: block; margin: 4px 0 1px; color: var(--text-primary);
-  font-size: clamp(1.7rem, 3.4vw, 2.4rem); font-weight: 600; line-height: 1; letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+  display: block; margin: 3px 0 0; color: var(--text-primary);
+  font-size: clamp(1.7rem, 3.3vw, 2.4rem); font-weight: 600; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums;
 }
-.reality-claims small { display: block; color: var(--text-muted); font-size: .63rem; }
-.reality-claims em { display: block; margin-top: 6px; overflow-wrap: anywhere; color: var(--text-muted); font-size: .59rem; font-style: normal; }
+.reality-claims small { display: block; color: var(--text-muted); font-size: .6rem; }
+.reality-claims em { display: block; margin-top: 5px; overflow-wrap: anywhere; color: var(--text-muted); font-size: .54rem; font-style: normal; letter-spacing: .04em; }
 .claims-conflict {
-  position: absolute; top: 50%; left: -22px; z-index: 2; display: grid; width: 22px; height: 22px;
+  position: absolute; top: 50%; left: -13px; z-index: 2; display: grid; width: 24px; height: 24px;
   place-items: center; color: var(--wait); border: 1px solid var(--wait); border-radius: 50%;
-  background: var(--surface-control); font-size: .7rem; transform: translate(-50%, -50%);
+  background: color-mix(in srgb, var(--surface-depth) 92%, transparent); font-size: .72rem; font-weight: 700;
+  transform: translate(-50%, -50%); box-shadow: 0 0 0 4px color-mix(in srgb, var(--wait) 10%, transparent);
 }
-.reality-context { display: grid; gap: 12px; margin-top: 15px; }
-.reality-context article { display: grid; gap: 2px; padding: 11px 13px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-base); }
-.reality-context span { color: var(--text-muted); font-size: .58rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.reality-context strong { overflow-wrap: anywhere; color: var(--text-primary); font-size: .95rem; font-weight: 650; }
-.reality-context small { overflow-wrap: anywhere; color: var(--text-muted); font-size: .63rem; }
-.reality-context .reality-causal { margin: 0; }
+/* Controlled-context facts are a reference list, not measured quantities: they read as
+   compact rows so the decisive objects keep the screen height. */
+.reality-context { display: grid; margin-top: 10px; }
+.reality-context article {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 1px 12px;
+  padding: 6px 0; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 0; background: transparent;
+}
+.reality-context span { grid-column: 1; color: var(--text-muted); font-size: .55rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.reality-context strong { grid-column: 2; grid-row: 1; overflow-wrap: anywhere; color: var(--text-primary); font-size: .76rem; font-weight: 700; text-align: right; }
+.reality-context small { grid-column: 1 / -1; overflow-wrap: anywhere; color: var(--text-muted); font-size: .58rem; }
+.reality-context .reality-causal { margin: 9px 0 0; }
 
 /* ── Broker disposition ──────────────────────────────────────────── */
-.control-disposition { border-color: var(--border-strong); }
-.disposition-label {
-  display: block; margin: 7px 0 0; color: var(--neutral);
-  font-size: clamp(1.8rem, 3.2vw, 2.45rem); font-weight: 700; line-height: 1; letter-spacing: -.045em;
+.disposition-label { display: block; margin: 6px 0 0; color: var(--neutral); font-size: clamp(1.75rem, 3.1vw, 2.4rem); font-weight: 700; line-height: 1; letter-spacing: -.048em; }
+.disposition-headline { margin: 8px 0 0; color: var(--text-primary); font-size: .81rem; font-weight: 600; line-height: 1.45; }
+.disposition-code { margin: 7px 0 0; overflow-wrap: anywhere; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .62rem; letter-spacing: .03em; }
+.disposition-effects { margin: 8px 0 0; color: var(--text-secondary); font-size: .66rem; line-height: 1.45; }
+.disposition-supporting { margin: 8px 0 0; padding-top: 7px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: .63rem; }
+/* Before an attempt the Broker has nothing consequential to say, and looks like it. */
+.disposition-quiet { border-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-base) 38%, transparent); box-shadow: none; }
+.disposition-quiet .disposition-label { margin-top: 4px; color: var(--text-muted); font-size: .95rem; font-weight: 800; letter-spacing: .06em; }
+.disposition-quiet .disposition-headline { color: var(--text-muted); font-size: .7rem; font-weight: 500; }
+.disposition-quiet .disposition-code { font-size: .58rem; }
+.disposition-quiet .disposition-supporting { font-size: .6rem; }
+.disposition-resolved { border-color: var(--border-strong); }
+.instrument-block .disposition-resolved { border-color: color-mix(in srgb, var(--block) 58%, var(--border-strong)); box-shadow: var(--ctl-lift), inset 0 0 0 1px color-mix(in srgb, var(--block) 12%, transparent); }
+.instrument-block .disposition-resolved .disposition-label { color: var(--block); }
+.instrument-allow .disposition-resolved { border-color: color-mix(in srgb, var(--allow) 55%, var(--border-strong)); }
+.instrument-allow .disposition-resolved .disposition-label { color: var(--allow); }
+.instrument-wait .disposition-resolved { border-color: color-mix(in srgb, var(--wait) 55%, var(--border-strong)); }
+.instrument-wait .disposition-resolved .disposition-label { color: var(--wait); }
+.instrument-technical .disposition-resolved .disposition-label { color: var(--technical); }
+
+/* ── The dock: guidance and proof, never the protagonist ──────────── */
+.control-dock { position: relative; z-index: 10; flex: none; display: grid; gap: 7px; padding-top: clamp(8px, 1.2vh, 13px); }
+.control-dock-top { display: flex; align-items: center; gap: 8px 16px; min-width: 0; }
+.control-dock-top .control-takeaway { flex: 1 1 auto; min-width: 0; }
+.control-dock-bar { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 20px; min-width: 0; }
+.control-dock-bar:empty { display: none; }
+.control-dock-tools { display: flex; align-items: center; flex: none; flex-wrap: nowrap; gap: 8px; margin-left: auto; }
+.control-surface .control-dock .control-next {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 11px;
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
 }
-.disposition-headline { margin: 9px 0 0; color: var(--text-primary); font-size: .84rem; font-weight: 600; line-height: 1.5; }
-.disposition-code {
-  margin: 8px 0 0; overflow-wrap: anywhere; color: var(--text-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .66rem; letter-spacing: .03em;
+.control-surface .control-dock .control-next { flex: 0 1 auto; min-width: 0; }
+.control-surface .control-dock .control-next .eyebrow { margin: 0; color: var(--text-muted); font-size: .55rem; letter-spacing: .13em; }
+.control-surface .control-dock .control-next h2 { margin: 0; color: var(--text-primary); font-size: .84rem; font-weight: 650; letter-spacing: -.01em; }
+.control-surface .control-dock .action-receipt {
+  display: flex; align-items: baseline; flex: 1 1 280px; flex-wrap: wrap; gap: 2px 10px;
+  min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
 }
-.disposition-effects { margin: 10px 0 0; color: var(--text-secondary); font-size: .69rem; line-height: 1.5; }
-.disposition-supporting { margin: 10px 0 0; padding-top: 9px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: .67rem; }
-.instrument-block .disposition-label { color: var(--block); }
-.instrument-block .control-disposition { border-color: color-mix(in srgb, var(--block) 55%, var(--border-strong)); }
-.instrument-allow .disposition-label { color: var(--allow); }
-.instrument-allow .control-disposition { border-color: color-mix(in srgb, var(--allow) 55%, var(--border-strong)); }
-.instrument-wait .disposition-label { color: var(--wait); }
-.instrument-wait .control-disposition { border-color: color-mix(in srgb, var(--wait) 55%, var(--border-strong)); }
-.instrument-technical .disposition-label { color: var(--technical); }
-.instrument-pending .disposition-label { color: var(--neutral); font-size: clamp(1.1rem, 1.6vw, 1.35rem); letter-spacing: -.02em; }
+.control-surface .control-dock .action-receipt .eyebrow { margin: 0; color: var(--text-muted); font-size: .55rem; letter-spacing: .13em; }
+.control-surface .control-dock .action-receipt h2 { margin: 0; color: var(--text-primary); font-size: .78rem; font-weight: 700; }
+.control-surface .control-dock .action-receipt > p:not(.eyebrow) {
+  display: -webkit-box; flex: 1 1 160px; min-width: 0; margin: 0; overflow: hidden;
+  color: var(--text-muted); font-size: .65rem; line-height: 1.4;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+}
+.control-surface .control-dock .action-receipt details { margin: 0; border: 0; border-radius: 0; }
+.control-surface .control-dock .action-receipt summary { padding: 0; color: var(--ctl-plum); font-size: .62rem; font-weight: 700; white-space: nowrap; }
+.control-surface .dock-reset,
+.control-surface .control-dock-tools > details > summary {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 11px;
+  color: var(--text-secondary); border: 1px solid var(--border-subtle); border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-control) 58%, transparent);
+  font-size: .62rem; font-weight: 700; white-space: nowrap; cursor: pointer;
+  list-style: none; transition: color 120ms ease, border-color 120ms ease;
+}
+.control-surface .control-dock-tools > details > summary::-webkit-details-marker { display: none; }
+.control-surface .dock-reset:hover,
+.control-surface .control-dock-tools > details > summary:hover { color: var(--text-primary); border-color: color-mix(in srgb, var(--ctl-plum) 42%, var(--border-strong)); }
+.control-surface .control-dock-tools > details[open] > summary { color: var(--text-primary); border-color: color-mix(in srgb, var(--ctl-plum) 55%, var(--border-strong)); background: color-mix(in srgb, #2b2350 60%, transparent); }
+/* The disclosure meta stays available where there is room, and is demoted where there is not. */
+.control-surface .control-dock-tools > details > summary span { display: none; color: var(--text-muted); font-size: .56rem; font-weight: 550; }
+@media (min-width: 1520px) { .control-surface .control-dock-tools > details > summary span { display: inline; } }
+.control-surface .control-dock-tools > details { position: static; margin: 0; border: 0; border-radius: 0; background: transparent; }
+
+/* Level 2 / Level 3 proof opens as a local drawer. It never owns primary screen height. */
+.control-drawer,
+.control-surface .action-receipt details[open] .receipt-depth {
+  position: absolute; right: 0; bottom: calc(100% + 10px); left: 0; z-index: 40;
+  max-height: min(58vh, 520px); overflow: auto; overscroll-behavior: contain;
+  border: 1px solid color-mix(in srgb, var(--ctl-plum) 26%, var(--border-strong)); border-radius: 13px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--ctl-panel) 99%, transparent), color-mix(in srgb, var(--surface-depth) 98%, transparent));
+  box-shadow: 0 -22px 70px rgb(3 7 22 / 55%);
+}
+.control-surface .supporting-proof, .control-surface .observed-live { margin: 0; background: transparent; }
+.control-surface .supporting-proof[open] > summary { border-bottom: 0; }
+.control-surface .drawer-note { margin: 0 0 14px; color: var(--text-muted); font-size: .66rem; line-height: 1.5; }
+.control-surface .observed-live .proof-historical { margin: 0; border: 0; border-radius: 0; background: transparent; }
+.control-surface .supporting-proof-content { padding: 18px 20px; }
+.control-surface .control-drawer > .provider-depth { padding: 18px 20px; }
 
 /* ── Key takeaway: pedagogical, and deliberately secondary ────────── */
 .control-takeaway {
-  display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; gap: 5px 16px;
-  margin: 0 0 14px; padding: 12px 18px;
-  border: 1px solid var(--border-subtle); border-left: 3px solid var(--neutral); border-radius: 8px; background: var(--surface-base);
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; gap: 4px 15px;
+  margin: 0; padding: 9px 15px;
+  border: 1px solid var(--border-subtle); border-left: 3px solid var(--neutral); border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-base) 58%, transparent);
 }
-.control-takeaway span { color: var(--text-muted); font-size: .58rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.control-takeaway strong { color: var(--text-primary); font-size: .84rem; font-weight: 700; }
-.control-takeaway p { margin: 0; color: var(--text-muted); font-size: .72rem; }
+.control-takeaway span { color: var(--text-muted); font-size: .55rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.control-takeaway strong { color: var(--text-primary); font-size: .8rem; font-weight: 700; }
+.control-takeaway p { margin: 0; min-width: 0; color: var(--text-muted); font-size: .69rem; }
 .takeaway-block { border-left-color: var(--block); }.takeaway-block strong { color: var(--block); }
 .takeaway-wait { border-left-color: var(--wait); }.takeaway-wait strong { color: var(--wait); }
 .takeaway-allow { border-left-color: var(--allow); }.takeaway-allow strong { color: var(--allow); }
 .takeaway-pending, .takeaway-neutral { border-left-color: var(--approved); }
 .takeaway-technical { border-left-color: var(--technical); }
 
+/* Live Control keeps the same chassis; the access panel stays inside the workspace. */
+.live-control-shell .access-panel { margin: 0; }
+.live-control-workspace { min-height: 0; }
+
 /* ── Responsive: the camera keeps its bounds; only the grid folds ── */
-@media (max-width: 1180px) {
-  .control-instrument { grid-template-columns: minmax(0, 1fr) 124px minmax(0, 1fr); }
-  .control-surface { --control-gutter: 20px; }
-  .reality-claims { gap: 26px; }
+@media (max-width: 1240px) {
+  .control-surface .product-layout { grid-template-columns: 234px minmax(0, 1fr); }
+  .control-surface { --control-gutter: 15px; }
+  .reality-claims { gap: 22px; }
 }
 @media (max-width: 980px) {
+  .control-surface .product-layout { height: auto; overflow: visible; }
+  .control-surface .control-workspace { height: auto; }
   .control-instrument { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .control-instrument { overflow: visible; }
   .control-boundary { padding: 0; }
+  .control-boundary::before, .control-boundary::after { display: none; }
   .boundary-rail { top: 50%; right: 6px; bottom: auto; left: 6px; width: auto; height: 2px; transform: translateY(-50%); }
-  .boundary-evaluated .boundary-rail, .boundary-not-available .boundary-rail { background-image: linear-gradient(90deg, transparent, var(--brand) 14%, var(--brand) 86%, transparent); }
-  .boundary-not-available .boundary-rail { background-image: repeating-linear-gradient(90deg, var(--border-strong) 0 5px, transparent 5px 11px); }
-  .boundary-plate { grid-template-columns: repeat(2, auto); justify-content: center; align-items: center; gap: 4px 12px; width: auto; padding: 11px 18px; }
+  .boundary-evaluated .boundary-rail { background-image: linear-gradient(90deg, transparent, var(--ctl-plum) 12%, var(--ctl-plum) 88%, transparent); }
+  .boundary-not-available .boundary-rail { background-image: repeating-linear-gradient(90deg, var(--border-strong) 0 4px, transparent 4px 10px); }
+  .boundary-plate { grid-template-columns: repeat(2, auto); justify-content: center; align-items: center; gap: 4px 12px; width: auto; padding: 10px 18px; }
   .boundary-plate small { grid-column: 1 / -1; }
   .control-head { grid-template-columns: minmax(0, 1fr); }
-  .control-context { grid-column: 1; grid-row: auto; max-width: none; }
+  .control-context { grid-column: 1; grid-row: auto; max-width: none; margin-top: 8px; }
 }
-@media (max-width: 760px) {
-  .control-head h1 { max-width: none; }
-  /* The queue becomes a horizontal rail here: give the badge its own row so the case name stays readable. */
-  .control-surface .queue-list button { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 860px) {
+  /* Mobile keeps a natural vertical flow: no fixed-height instrument, no horizontal overflow. */
+  .control-chassis { min-height: 0; }
+  .control-surface .product-topbar { flex-wrap: wrap; gap: 8px 14px; padding: 10px 15px; }
+  .control-surface .product-nav { order: 3; width: 100%; margin: 0; }
+  .control-surface .product-nav button[aria-current="page"]::after { bottom: -7px; }
+  .product-topbar-actions { margin-left: auto; }
+  .control-surface .product-layout { display: block; height: auto; }
+  .control-surface .control-queue { display: block; height: auto; padding: 14px 15px; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  .control-surface .rail-scene { display: none; }
+  .control-surface .queue-list { grid-auto-flow: column; grid-auto-columns: minmax(228px, 82vw); overflow-x: auto; padding-bottom: 6px; overscroll-behavior-inline: contain; scroll-snap-type: inline proximity; }
+  .control-surface .queue-list button { scroll-snap-align: start; grid-template-columns: minmax(0, 1fr); }
   .control-surface .queue-state { grid-column: 1; grid-row: 2; justify-self: start; }
   .control-surface .queue-attention, .control-surface .queue-fact { grid-column: 1; }
-  .control-surface .product-topbar .proof-mode b { white-space: nowrap; }
-  .reality-measure { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .control-surface .control-workspace { height: auto; padding: 15px 14px 26px; }
+  .control-head h1 { max-width: none; }
+  .control-dock { position: static; }
+  .control-drawer, .control-surface .action-receipt details[open] .receipt-depth { position: static; max-height: none; margin-top: 9px; box-shadow: none; }
+  .control-dock-tools { flex: 1 1 auto; flex-wrap: wrap; min-width: 0; margin-left: 0; }
+  .control-dock-top { flex-wrap: wrap; }
+  .reality-measure { grid-template-columns: minmax(0, 1fr); gap: 9px; }
   .reality-measure > b { justify-self: center; transform: rotate(90deg); }
-  .reality-claims { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  .claims-conflict { top: -14px; left: 50%; }
-  .control-takeaway { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .reality-claims { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .claims-conflict { top: -13px; left: 50%; }
+  .control-takeaway { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .control-surface .product-topbar .proof-mode span { display: none; }
+}
+@media (max-width: 560px) {
+  .product-brand img { width: 40px; height: 30px; }
+  .product-brand strong { font-size: 15px; }
+  .product-brand small { display: none; }
+  .control-surface .theme-control > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+
+/* Short desktop viewports (1366x768 and similar): compress spacing and demote
+   secondary copy rather than shrinking the decisive typography into unreadability. */
+@media (min-width: 981px) and (max-height: 840px) {
+  .control-surface { --control-pad: clamp(10px, 1.55vh, 21px); }
+  .control-head { padding-bottom: 9px; }
+  .control-head h1 { font-size: clamp(1.55rem, 2.25vw, 2.1rem); }
+  .control-head > p:last-of-type { margin-top: 5px; font-size: .72rem; }
+  .control-column { gap: clamp(6px, 1.05vh, 15px); }
+  .control-decision h2 { font-size: clamp(1.5rem, 2.4vw, 2.05rem); }
+  .control-diamond { width: 34px; height: 34px; }
+  .control-decision-head { gap: 12px; }
+  .control-decision-note { margin-top: 5px; font-size: .69rem; }
+  .control-decision-source { margin-top: 7px; padding-top: 6px; }
+  .disposition-label, .reality-measure strong, .reality-claims strong { font-size: clamp(1.5rem, 2.5vw, 2.05rem); }
+  .reality-measure article, .reality-claims article, .reality-context article { padding: 8px 12px; }
+  .control-review .control-review-action { margin-top: 8px; }
+  .control-takeaway { padding: 7px 14px; }
+  .control-dock { gap: 5px; padding-top: 8px; }
+  .control-proposal > div { padding: 3px 0; }
+  .control-attempt { padding: 5px var(--control-gutter); }
+  .control-proposal-note { margin-top: 6px; }
+  .control-review-done { margin-top: 8px; padding: 6px 11px; }
+  .control-reality h3 { font-size: .8rem; }
+  .disposition-headline { margin-top: 6px; font-size: .78rem; }
+  .disposition-supporting, .disposition-effects { margin-top: 6px; }
+  .disposition-supporting { padding-top: 6px; }
+  .reality-authorization { margin-top: 8px; padding-top: 7px; }
+  .reality-causal { margin-top: 8px; }
+  .reality-measure, .reality-claims, .reality-context { margin-top: 9px; }
+  .reality-context article { padding: 5px 0; }
+  .reality-context .reality-causal { margin-top: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .control-review .control-review-action button, .control-surface .queue-list button { transition: none; }
 }
 
-/* Live Control has no queue column, so the workspace itself holds the chassis height. */
-.live-control-workspace { min-height: calc(100vh - 116px); }
-
-/* Next action is guidance after resolution, never the protagonist object. */
-.control-surface .control-next { align-items: center; margin-bottom: 14px; padding: 15px 20px; border-radius: 9px; }
-.control-surface .control-next h2 { font-size: 1.02rem; font-weight: 650; letter-spacing: -.02em; }
-.control-surface .control-next p:last-child { margin-top: 6px; font-size: .72rem; }
+/* ── Light theme: the same instrument in daylight ─────────────────── */
+:root[data-theme="light"] .control-surface {
+  --ctl-plum: #6a45b0;
+  --ctl-panel: #fbf9f5;
+  --ctl-lift: 0 16px 38px rgb(72 44 160 / 8%);
+  background: radial-gradient(850px 420px at 78% 0%, rgb(112 72 191 / 11%), transparent 68%), linear-gradient(180deg, #f5f1ea, #e8e4dc);
+}
+:root[data-theme="light"] .control-surface .control-queue { background: #ebe8e2; }
+:root[data-theme="light"] .control-surface .rail-scene {
+  background:
+    linear-gradient(180deg, transparent 0%, rgb(235 232 226 / 55%) 55%, rgb(235 232 226 / 92%) 100%),
+    url("/images/home/sentinel-ridge.png") 50% 78% / cover no-repeat;
+}
+:root[data-theme="light"] .control-surface .rail-scene::before { background: linear-gradient(180deg, #ebe8e2, transparent); }
+:root[data-theme="light"] .control-surface .queue-list button[aria-pressed="true"] { background: linear-gradient(140deg, #ece5f5, #f7f4ee); box-shadow: inset 2px 0 var(--ctl-plum), 0 10px 22px rgb(72 44 160 / 9%); }
+:root[data-theme="light"] .boundary-plate { box-shadow: 0 14px 30px rgb(72 44 160 / 10%); }
+:root[data-theme="light"] .control-drawer,
+:root[data-theme="light"] .control-surface .action-receipt details[open] .receipt-depth { box-shadow: 0 -18px 54px rgb(72 44 160 / 18%); }
