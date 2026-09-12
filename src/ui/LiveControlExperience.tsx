@@ -3,8 +3,9 @@ import { motion, MotionConfig } from 'motion/react';
 import type { AcquisitionBrowserApi } from '../acquisition/browserClient.js';
 import { acquisitionAccessKey } from './AcquisitionExperience.js';
 import type { LiveControlPublicRecord } from '../control/contracts.js';
+import { controlQuestion, createLiveControlSurfaceModel } from '../presentation/controlSurfaceViewModel.js';
 import { BrokerMark } from './CaseHeader.js';
-import { CentralInstrument } from './CentralInstrument.js';
+import { ControlInstrument } from './ControlInstrument.js';
 import { motionTokens } from './motion.js';
 import { ThemeControl } from './ProofExperience.js';
 
@@ -35,33 +36,25 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
     finally { setPending(false); }
   };
   const receipt = record?.receipt;
-  const authority = record?.status === 'AWAITING_REVIEW' ? 'EXACT REVIEW REQUIRED'
-    : record?.status === 'REVIEWING' ? resumableAction === undefined ? 'REVIEW INCOMPLETE' : 'REVIEW RESUME REQUIRED'
-    : record?.review?.action === 'APPLY' ? 'REVIEWED' : 'DISCARDED';
-  const liveAttempt = record?.review?.action === 'APPLY' && receipt ? {
-    key: record.review.operationId,
-    review: `${record.actorRole} review APPLIED`,
-    proposal: `Exact review bound · plan version ${record.planVersion}`,
-  } : undefined;
-  return <div className="app-shell proof-shell live-control-shell"><header className="product-topbar"><button type="button" className="brand-row product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><BrokerMark /><span>Exception Broker</span></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page" onClick={onNavigateDeterministic}>Control</button></nav><span className="proof-mode"><b>Live control</b><span>CALL-E decision · controlled local context · no external execution</span></span><ThemeControl /></header>
-    <main className="acquisition-workspace live-control-workspace"><header className="acquisition-hero"><p className="eyebrow">Live control session</p><h1>Decision acquired. Authority still required.</h1><p>The server resolved a versioned controlled context and bound this exact review target to one persisted CALL-E acquisition.</p></header>
+  const model = record === null ? undefined : createLiveControlSurfaceModel(record);
+  return <div className="app-shell proof-shell control-surface live-control-shell"><header className="product-topbar"><button type="button" className="brand-row product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><BrokerMark /><span>Exception Broker</span></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page" onClick={onNavigateDeterministic}>Control</button></nav><span className="proof-mode"><b>Live control</b><span>CALL-E decision · controlled local context · no external execution</span></span><ThemeControl /></header>
+    <main className="control-workspace live-control-workspace"><header className="control-head"><p className="eyebrow">Live decision control</p><h1>{controlQuestion}</h1><p>{model?.answer ?? 'The server resolved a versioned controlled context and bound this exact review target to one persisted CALL-E acquisition.'}</p>
+        <section className="control-context" aria-label="Live control session context"><b>Live</b><h2>CALL-E · Live acquisition</h2><small>Controlled local operational context</small><strong>No external execution</strong></section>
+      </header>
       {!access ? <section className="access-panel"><h2>Live Control recovery locked</h2><p>The non-sensitive session pointer is preserved. Reconnect CALL-E in Acquisition before restoring server truth.</p><button type="button" onClick={onNavigateAcquisition}>Reconnect CALL-E</button></section> : null}
       {access && !record ? <section className="access-panel"><h2>{message || 'Restoring Live Control session…'}</h2><p>No browser-authored operational state is used.</p></section> : null}
-      {record ? <><CentralInstrument
+      {record && model ? <><ControlInstrument
           ariaLabel="Live decision control model"
-          decision={record.reviewTarget.decision}
-          decisionContext="CALL-E · Live acquisition"
-          authority={authority}
-          authorityContext="Controlled local operator · not authenticated"
-          operationalTruthSummary="CONTROLLED LOCAL SNAPSHOT"
-          operationalTruth={<div className="instrument-truth-facts"><article><span>Controlled definition</span><strong>v{record.definitionVersion}</strong><small>{record.definitionId}</small></article><article><span>External operational truth</span><strong>NOT CLAIMED</strong><small>No live ERP/WMS truth</small></article></div>}
-          disposition={receipt?.disposition ?? 'NOT RESOLVED'}
-          why={receipt?.reason ?? (record.status === 'REVIEWING' ? 'Owned review did not publish a terminal result' : 'No application attempt yet')}
-          {...(receipt === undefined ? {} : { effects: `${receipt.effects.decisions} decision, ${receipt.effects.operations} operation, ${receipt.effects.events} event record created locally. No external execution.` })}
-          {...(liveAttempt === undefined ? {} : { attempt: liveAttempt })}
+          model={model}
+          reviewAction={record.status === 'AWAITING_REVIEW'
+            ? <div className="control-review-action"><button type="button" onClick={() => setReviewOpen(true)}>Review exact decision <span aria-hidden="true">→</span></button><small>{model.nextActionNote}</small></div>
+            : resumableAction !== undefined
+              ? <div className="control-review-action"><button type="button" disabled={pending} onClick={() => void submit(resumableAction)}>Resume {resumableAction} review</button><small>Server truth remains authoritative until the review publishes a terminal result.</small></div>
+              : model.review.state === 'COMPLETED'
+                ? <p className="control-review-done"><i aria-hidden="true">✓</i><small>{model.review.detail}</small></p>
+                : null}
         />
-        <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{record.status === 'AWAITING_REVIEW' ? 'Review exact decision' : resumableAction !== undefined ? `Resume owned ${resumableAction} review` : record.status === 'REVIEWING' ? 'Review stopped safely' : receipt?.disposition === 'DISCARDED' ? 'Review opportunity closed' : 'Inspect the local result'}</h2><p>Applying asks the existing Broker; it does not guarantee ALLOW.</p></div>{record.status === 'AWAITING_REVIEW' ? <button type="button" onClick={() => setReviewOpen(true)}>Review exact decision</button> : resumableAction !== undefined ? <button type="button" disabled={pending} onClick={() => void submit(resumableAction)}>Resume {resumableAction} review</button> : null}</section>
-        <section className="acquisition-provenance"><div><span>Decision source</span><strong>CALL-E · Live acquisition</strong><p>Bound to acquisition {record.acquisitionId}.</p></div><div><span>Operational context</span><strong>Controlled local snapshot</strong><p>{record.definitionId} v{record.definitionVersion} · no live ERP/WMS truth.</p></div></section>
+        {record.status === 'AWAITING_REVIEW' || resumableAction !== undefined ? null : <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{model.nextAction}</h2><p>Applying asks the existing Broker; it does not guarantee ALLOW.</p></div></section>}
         {receipt ? <section className="action-receipt"><p className="eyebrow">What Changed?</p><h2>{receipt.disposition}</h2><p>{receipt.reason}</p><dl className="proof-effects"><div><dt>New decisions</dt><dd>{receipt.effects.decisions}</dd></div><div><dt>New operations</dt><dd>{receipt.effects.operations}</dd></div><div><dt>New events</dt><dd>{receipt.effects.events}</dd></div></dl><p>Plan status: {receipt.planStatus}. Local controlled effects only; no external execution.</p>{receipt.resolutionScope ? <p>Lineage scope: {receipt.resolutionScope.caseId} / {receipt.resolutionScope.lineageId} / {receipt.resolutionScope.planId}</p> : null}</section> : null}
         <details className="supporting-proof"><summary>Inspect exact source and review binding</summary><div className="provider-depth"><dl><dt>Control session</dt><dd>{record.controlSessionId}</dd><dt>Source call</dt><dd>{record.sourceBinding.callId}</dd><dt>Request</dt><dd>{record.sourceBinding.requestId}</dd><dt>Case / plan</dt><dd>{record.caseId} / {record.planId} v{record.planVersion}</dd><dt>Actor / role</dt><dd>{record.actorId} / {record.actorRole}</dd><dt>Controlled definition</dt><dd>{record.definitionId} v{record.definitionVersion}</dd></dl><pre>{JSON.stringify(record.reviewTarget, null, 2)}</pre></div></details>
         <p className="acquisition-announcement" aria-live="polite">{message}</p>

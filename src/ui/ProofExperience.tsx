@@ -3,8 +3,9 @@ import { motion, MotionConfig } from 'motion/react';
 import type { ProofScenario, ProofSession } from '../demo/proofDemo.js';
 import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, createDecisionTransitionView, historicalCallProof, type DecisionTraceView, type DecisionTransitionView } from '../presentation/decisionTraceViewModel.js';
+import { controlQuestion, createControlQueueItem, createControlSurfaceModel } from '../presentation/controlSurfaceViewModel.js';
 import { BrokerMark } from './CaseHeader.js';
-import { CentralInstrument } from './CentralInstrument.js';
+import { AttentionQueue, ControlInstrument, ControlKeyTakeaway } from './ControlInstrument.js';
 import { motionTokens } from './motion.js';
 
 type ThemeMode = 'system' | 'light' | 'dark';
@@ -36,21 +37,6 @@ export const ThemeControl = () => {
   return <label className="theme-control"><span>Theme</span><select aria-label="Theme" value={mode} onChange={(event) => changeMode(event.target.value as ThemeMode)}>
     <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
   </select></label>;
-};
-
-const ProofOperationalTruth = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
-  const supplyClaims = view.facts.filter((fact) => fact.factKind === 'PHYSICAL_SUPPLY');
-  const trustedSupply = supplyClaims.find((fact) => fact.trusted);
-  const authorizedSubstitutes = view.assessments?.substituteAuthorized ?? view.facts.find((fact) => fact.factKind === 'CLIENT_AUTHORIZATION')?.payload.authorization.maxSubstituteQuantity ?? '—';
-  if (!view.trustedCaseProduced) return <div className="instrument-truth-claims">
-    {supplyClaims.map((claim) => <article key={claim.evidenceId}><span>Unaccepted supply claim</span><strong>{claim.value}</strong><small>{claim.sourceId}</small></article>)}
-    <p>Conflicting claims remain unresolved. No trusted state or Application Attempt exists.</p>
-  </div>;
-  return <div className="instrument-truth-facts instrument-truth-comparison">
-    <article className="truth-required"><span>Required</span><strong>{view.plan.substituteQuantityTomorrow}</strong><small>substitute units</small></article>
-    {trustedSupply?.payload.supplies.map((supply, index) => <article className="truth-available" key={`${trustedSupply.evidenceId}-${index}`}><span>Available</span><strong>{supply.substituteQuantity}</strong><small>substitute units</small></article>)}
-    <article className="truth-supporting"><span>Client authorization</span><strong>{`Up to ${authorizedSubstitutes} substitutes`}</strong><small>Authorization is distinct from physical availability.</small></article>
-  </div>;
 };
 
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
@@ -175,10 +161,11 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
   const reviewWasOpen = useRef(false);
   const reviewCloseDestination = useRef<'trigger' | 'surface'>('trigger');
   const view = createDecisionTraceView(session);
-  const control = createDecisionControlView(session);
-  const queue = proofScenarios.map((scenario) => ({ scenario, control: createDecisionControlView(
+  const model = createControlSurfaceModel(session);
+  const queue = proofScenarios.map((scenario) => createControlQueueItem(
     scenario.id === session.inputs.scenario ? session : prepare(scenario.id),
-  ) }));
+    scenario.id, scenario.title, `Demo case ${scenario.id}`,
+  ));
   useEffect(() => { applicationLock.current = false; }, [session]);
   const onReview = (action: 'APPLY' | 'DISCARD') => {
     // Use the rendered snapshot, not a functional updater that might consume the next
@@ -200,7 +187,8 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     if (reviewOpen) reviewWasOpen.current = true;
     else if (reviewWasOpen.current) {
       reviewWasOpen.current = false;
-      (reviewCloseDestination.current === 'trigger' ? reviewButtonRef.current : controlSummaryRef.current)?.focus();
+      // Focus the stable instrument without moving the camera between states.
+      (reviewCloseDestination.current === 'trigger' ? reviewButtonRef.current : controlSummaryRef.current)?.focus({ preventScroll: true });
     }
   }, [reviewOpen]);
   const openReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(true); };
@@ -209,46 +197,34 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
-  const latestApply = view.latest?.review.action === 'APPLY' ? view.latest : undefined;
-  const instrumentAttempt = latestApply ? {
-    key: latestApply.review.operationId,
-    review: `${latestApply.review.reviewTarget.actorRole} review APPLIED`,
-    proposal: `Exact review bound · plan version ${view.plan.version}`,
-  } : undefined;
-  return <div className="app-shell proof-shell"><div ref={backgroundRef}><header className="product-topbar"><button type="button" className="brand-row product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><BrokerMark /><span>Exception Broker</span></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page">Control</button></nav><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></header>
-    <div className="product-layout"><aside className="control-queue" aria-labelledby="queue-title"><p className="eyebrow">Decision control queue</p><h1 id="queue-title">Needs attention</h1><p>Three independent deterministic demo cases.</p>
-      <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} aria-label={`${scenario.id} / ${scenario.title} · ${item.disposition}`} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
-        <span className="queue-heading"><span><strong>{scenario.title}</strong><small>Demo case {scenario.id}</small></span><b className={`disposition disposition-${item.disposition.toLowerCase().replace(' ', '-')}`}>{item.disposition}</b></span>
-        <span className="queue-state"><b>{item.decision}</b><i aria-hidden="true">·</i><b>{item.authority}</b></span>
-        <span className="queue-reason">{item.why}</span><span className="queue-action"><small>Next</small>{item.nextAction}</span>
-      </button>)}</div>
+  return <div className="app-shell proof-shell control-surface"><div ref={backgroundRef}><header className="product-topbar"><button type="button" className="brand-row product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><BrokerMark /><span>Exception Broker</span></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page">Control</button></nav><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></header>
+    <div className="product-layout">
+    <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic demo cases.">
       <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>
-    </aside><main className="control-workspace">
-    <header className="proof-header"><p>Decision control</p><h1>Decision is not authority.</h1><p>The broker evaluates the application attempt—not the word APPROVED.</p></header>
-    <section className="case-context" aria-label="Demo case context"><div><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><p>Supply exception <span aria-hidden="true">·</span> Demo case {view.scenario}</p></div><strong>Deterministic workspace</strong></section>
-    <CentralInstrument
+    </AttentionQueue>
+    <main className="control-workspace">
+    <header className="control-head"><p className="eyebrow">Decision control</p><h1>{controlQuestion}</h1><p>{model.answer}</p>
+      <section className="control-context" aria-label="Demo case context"><b>Demo</b><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><small>Supply exception <span aria-hidden="true">·</span> Demo case {view.scenario}</small><strong>Deterministic workspace</strong></section>
+    </header>
+    <ControlInstrument
       ref={controlSummaryRef}
       ariaLabel="Decision control model"
-      decision={control.decision}
-      decisionContext="Normalized synthetic input"
-      authority={control.authority}
-      authorityContext={view.canReview ? 'Exact proposal review is still required.' : 'Derived from the current review state.'}
-      operationalTruthSummary={control.operationalTruth}
-      operationalTruth={<ProofOperationalTruth view={view} />}
-      disposition={control.disposition}
-      why={control.why}
-      {...(control.effectSummary === undefined ? {} : { effects: control.effectSummary })}
-      {...(instrumentAttempt === undefined ? {} : { attempt: instrumentAttempt })}
+      model={model}
+      reviewAction={view.canReview
+        ? <div className="control-review-action"><button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal <span aria-hidden="true">→</span></button><small>{model.nextActionNote}</small></div>
+        : model.review.state === 'COMPLETED'
+          ? <p className="control-review-done"><i aria-hidden="true">✓</i><small>{model.review.detail}</small></p>
+          : null}
     />
     <p className="resolved-announcement" aria-live="polite" aria-atomic="true">{resolvedAnnouncement}</p>
-    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>Applying asks the broker; it never bypasses controls.</p></div>{view.canReview ? <button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal</button> : null}</section>
-    <div className="proof-reset"><p>Each demo case starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" onClick={() => focusScenario(view.scenario)}>Reset demo case</button></div>
-    <section className="proof-intent" aria-label="Proposed recovery"><div><p className="eyebrow">Explicit planner proposal / version {view.plan.version}</p><h2>{view.plan.originalQuantityTomorrow} original + {view.plan.substituteQuantityTomorrow} substitute</h2><p>One recovery proposal. No plan generation or autonomous execution.</p></div><details><summary>Plan identity &amp; cost</summary><p>{view.plan.caseId} / {view.plan.id}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></details></section>
+    {model.takeaway ? <ControlKeyTakeaway takeaway={model.takeaway} tone={model.disposition.tone} /> : null}
+    {view.canReview ? null : <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{model.nextAction}</h2><p>Applying asks the broker; it never bypasses controls.</p></div></section>}
+    <div className="proof-reset"><p>Each demo case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p><button type="button" onClick={() => focusScenario(view.scenario)}>Reset demo case</button></div>
     {receipt ? <ActionReceipt receipt={receipt} /> : null}
     <details className="supporting-proof"><summary>Verify current decision</summary><div className="supporting-proof-content">
       <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
       <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><ReviewApplicationProof view={view} /></section>
-      <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /></section>
+      <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /><section className="proof-card proof-plan-identity" aria-label="Plan identity and cost"><h3>Plan identity &amp; cost</h3><p>{view.plan.caseId} / {view.plan.id} · version {view.plan.version}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></section></section>
     </div></details>
     <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic demo case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></details>
   </main></div><footer>Exception Broker · Decision acquisition ≠ authority to execute</footer></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={closeReview} /> : null}</div>;

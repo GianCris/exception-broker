@@ -23,8 +23,10 @@ describe('Live Control browser experience', () => {
   it('shows live decision, controlled context and NOT RESOLVED before exact review', () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); render(<LiveControlExperience api={api()} initial={awaiting()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
     const model = screen.getByRole('region', { name: 'Live decision control model' });
-    expect(within(model).getByText('APPROVED')).toBeVisible(); expect(within(model).getByText('EXACT REVIEW REQUIRED')).toBeVisible(); expect(within(model).getByText('CONTROLLED LOCAL SNAPSHOT')).toBeVisible(); expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
-    expect(screen.getAllByText(/CALL-E · Live acquisition/).length).toBeGreaterThan(0); expect(screen.getByText(/no live ERP\/WMS truth/)).toBeVisible();
+    expect(within(model).getByText('APPROVED')).toBeVisible(); expect(within(model).getByText('Exact review required')).toBeVisible(); expect(within(model).getByText('Controlled local snapshot.')).toBeVisible(); expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
+    expect(within(model).getByText('NOT ENGAGED')).toBeVisible(); expect(within(model).getByText('NOT CLAIMED')).toBeVisible();
+    expect(screen.getAllByText(/CALL-E · Live acquisition/).length).toBeGreaterThan(0); expect(screen.getByText(/no live ERP\/WMS truth/i)).toBeVisible();
+    expect(screen.getByText(/operational context is a controlled local snapshot; live ERP\/WMS truth is not claimed/i)).toBeVisible();
   });
 
   it('renders the immutable server target and sends only review intent through the API client', async () => {
@@ -35,6 +37,7 @@ describe('Live Control browser experience', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Apply reviewed decision' }));
     await waitFor(() => expect(client.review).toHaveBeenCalledWith('CONTROL-ACQ-LIVE-1', 'ACCESS', 'APPLY'));
     expect((await screen.findAllByText('PLAN_APPROVED')).length).toBeGreaterThan(0); expect(screen.getByText(/Local controlled effects only; no external execution/)).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'Live decision control model' })).getByText('EVALUATED')).toBeVisible();
   });
 
   it('shows only truthful submission feedback while HTTP is pending and reveals no anticipated result', async () => {
@@ -79,7 +82,7 @@ describe('Live Control browser experience', () => {
     const reviewing = { ...awaiting(), status: 'REVIEWING' as const, review: terminal().review! }; vi.mocked(client.getControl).mockResolvedValue({ accepted: true, record: reviewing, existing: true });
     vi.mocked(client.review).mockResolvedValue({ accepted: true, record: terminal(), existing: true });
     render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
-    expect(await screen.findByText('REVIEW RESUME REQUIRED')).toBeVisible(); fireEvent.click(screen.getByRole('button', { name: 'Resume APPLY review' }));
+    expect(await screen.findByText('Review resume required')).toBeVisible(); fireEvent.click(screen.getByRole('button', { name: 'Resume APPLY review' }));
     await waitFor(() => expect(client.review).toHaveBeenCalledWith('CONTROL-ACQ-LIVE-1', 'ACCESS', 'APPLY'));
   });
 
@@ -87,6 +90,49 @@ describe('Live Control browser experience', () => {
     localStorage.setItem(controlSessionStorageKey, 'CONTROL-ACQ-LIVE-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); const client = api();
     vi.mocked(client.getControl).mockResolvedValue({ accepted: true, record: { ...awaiting(), status: 'REVIEWING' }, existing: true });
     render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
-    expect(await screen.findByText('REVIEW INCOMPLETE')).toBeVisible(); expect(screen.getByText('Review stopped safely')).toBeVisible(); expect(client.review).not.toHaveBeenCalled();
+    expect(await screen.findByText('Review incomplete')).toBeVisible(); expect(screen.getByText('Review stopped safely')).toBeVisible(); expect(client.review).not.toHaveBeenCalled();
+  });
+
+  it('separates the live acquisition source from the controlled local operational context', () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    render(<LiveControlExperience api={api()} initial={awaiting()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    const model = screen.getByRole('region', { name: 'Live decision control model' });
+    const decision = within(model).getByRole('region', { name: 'Decision fixed' });
+    expect(within(decision).getByText('CALL-E · Live acquisition')).toBeVisible();
+    expect(within(decision).getByText('Bound to acquisition ACQ-LIVE-1')).toBeVisible();
+    const reality = within(model).getByRole('region', { name: 'Operational reality' });
+    expect(within(reality).getByText('Controlled local snapshot.')).toBeVisible();
+    expect(within(reality).getByText('NOT CLAIMED')).toBeVisible();
+    expect(within(reality).getByText('OPERATOR_SANDBOX')).toBeVisible();
+    // The source is live; the operational environment is not, and nothing executes outside it.
+    expect(document.body.textContent).not.toMatch(/live (ERP|WMS|inventory) (sync|truth|connection)/i);
+    expect(within(model).getByText('No external execution occurred.')).toBeVisible();
+  });
+
+  it('uses the same Control grammar as the deterministic surface', () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    render(<LiveControlExperience api={api()} initial={awaiting()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    const model = screen.getByRole('region', { name: 'Live decision control model' });
+    expect(model).toHaveClass('control-instrument');
+    expect(within(model).getByRole('region', { name: 'Decision fixed' })).toBeVisible();
+    expect(within(model).getByRole('region', { name: 'Exact review' })).toBeVisible();
+    expect(within(model).getByLabelText('Application boundary')).toBeVisible();
+    expect(within(model).getByRole('region', { name: 'Operational reality' })).toBeVisible();
+    expect(within(model).getByRole('region', { name: 'Broker disposition' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Can this decision be applied safely now?' })).toBeVisible();
+  });
+
+  it('records a live DISCARD without an Application Attempt or an engaged boundary', async () => {
+    sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
+    const client = api(); vi.mocked(client.review).mockResolvedValue({ accepted: true, record: terminal('DISCARD'), existing: true });
+    render(<LiveControlExperience api={client} initial={awaiting()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review exact decision' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(client.review).toHaveBeenCalledWith('CONTROL-ACQ-LIVE-1', 'ACCESS', 'DISCARD'));
+    const model = screen.getByRole('region', { name: 'Live decision control model' });
+    expect(await within(model).findByText('DISCARDED', { exact: true })).toBeVisible();
+    expect(within(model).queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(within(model).getByLabelText('Application boundary')).getByText('NOT ENGAGED')).toBeVisible();
+    expect(within(model).queryByText('ALLOW', { exact: true })).not.toBeInTheDocument();
   });
 });

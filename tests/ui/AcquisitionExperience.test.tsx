@@ -165,7 +165,7 @@ describe('Acquisition V1 experience', () => {
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Acquisition' }));
     expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Control' }));
-    expect(screen.getByRole('heading', { name: 'Decision is not authority.' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Can this decision be applied safely now?' })).toBeVisible();
   });
 
   it('offers hosted and own-account connection paths without exposing demo-token UX', () => {
