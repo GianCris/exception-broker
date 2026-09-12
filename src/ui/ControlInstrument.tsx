@@ -60,7 +60,7 @@ const ApplicationBoundary = ({ boundary, attempt }: Readonly<{ boundary: Control
       <span className="control-label">Application boundary</span>
       <strong>{boundary.state}</strong>
       {attempt ? <motion.span className="boundary-attempt" key={attempt.key}
-        initial={{ opacity: 0.5, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={stage(1)}>
+        initial={{ opacity: 0.5, y: -3 }} animate={{ opacity: 1, y: 0 }} transition={stage(1)}>
         Attempt #{attempt.ordinal}
       </motion.span> : null}
       <small>{boundary.note}</small>
@@ -70,7 +70,7 @@ const ApplicationBoundary = ({ boundary, attempt }: Readonly<{ boundary: Control
 
 const ApplicationAttempt = ({ attempt }: Readonly<{ attempt: ControlAttempt }>) => (
   <motion.section className={`control-attempt attempt-${attempt.treatment}`} aria-label="Application Attempt"
-    key={attempt.key} initial={{ opacity: 0.55, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={stage(0)}>
+    key={attempt.key} initial={{ opacity: 0.55, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={stage(0)}>
     <span className="control-label">Application attempt #{attempt.ordinal}</span>
     <strong>{attempt.label}</strong><small>{attempt.detail}</small>
   </motion.section>
@@ -103,7 +103,16 @@ const OperationalReality = ({ reality }: Readonly<{ reality: ControlReality }>) 
       {reality.facts.map((fact) => <article key={fact.key}><span>{fact.label}</span><strong>{fact.value}</strong><small>{fact.note}</small></article>)}
       <p className="reality-causal causal-neutral">{reality.note}</p>
     </div> : null}
-    {reality.kind === 'NOT_EVALUATED' ? <p className="reality-pending">{reality.note}</p> : null}
+    {reality.kind === 'NOT_EVALUATED' ? <>
+      {/* A dormant instrument, not an empty panel: the two slots reality will occupy are
+          drawn unfilled and boundary-facing. Decorative only — it states no quantity. */}
+      <div className="reality-dormant" aria-hidden="true">
+        <span className="dormant-slot"><i /></span>
+        <span className="dormant-link" />
+        <span className="dormant-slot"><i /></span>
+      </div>
+      <p className="reality-pending">{reality.note}</p>
+    </> : null}
   </motion.section>
 );
 

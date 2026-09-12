@@ -16,6 +16,7 @@
   --ctl-action-edge: rgb(169 137 255 / 58%);
   --ctl-lift: 0 18px 44px rgb(3 7 22 / 16%);
   --ctl-serif: Georgia, "Times New Roman", serif;
+  --ctl-rail: color-mix(in srgb, var(--surface-depth) 72%, #09172c);
   /* The shared topbar's mobile navigation panel adopts this shell's own ground. */
   --shell-drop: color-mix(in srgb, var(--surface-base) 80%, #071329);
   --control-gutter: clamp(14px, 1.35vw, 21px);
@@ -40,11 +41,24 @@
 }
 
 /* ── Branded attention rail ─────────────────────────────────────────── */
+/* The rail is ONE environment, not a list with a picture under it: Sentinel Ridge is a
+   background layer of the rail itself, anchored to the bottom and dissolved upward by a
+   pixel-anchored fade, so the queue always sits on solid ground and there is no seam.
+   Acquisition shows the path toward a decision; Control shows the Sentinel watching
+   before anything crosses the boundary — the same world, a different vantage. */
 .control-surface .control-queue {
   display: flex; flex-direction: column; min-width: 0; height: 100%; overflow: hidden;
   padding: clamp(14px, 2vh, 21px) 15px 0;
   border-right: 1px solid var(--border-subtle); border-bottom: 0;
-  background: color-mix(in srgb, var(--surface-depth) 72%, #09172c);
+  background:
+    linear-gradient(180deg,
+      var(--ctl-rail) 0, var(--ctl-rail) calc(100% - 330px),
+      color-mix(in srgb, var(--ctl-rail) 72%, transparent) calc(100% - 252px),
+      color-mix(in srgb, var(--ctl-rail) 20%, transparent) calc(100% - 168px),
+      color-mix(in srgb, var(--ctl-rail) 14%, transparent) calc(100% - 104px),
+      color-mix(in srgb, var(--ctl-rail) 62%, transparent) 100%),
+    url("/images/home/sentinel-ridge.png") 13% 100% / auto 318px no-repeat,
+    var(--ctl-rail);
 }
 .control-surface .queue-top { position: relative; z-index: 2; flex: none; min-width: 0; }
 .control-surface .control-queue .eyebrow { margin: 0 0 5px; color: color-mix(in srgb, var(--ctl-plum) 78%, var(--text-primary)); font-size: 9px; letter-spacing: .2em; }
@@ -86,15 +100,14 @@
 }
 .control-surface .queue-history strong { color: var(--text-secondary); font-size: .66rem; }
 
-/* Sentinel Ridge closes the rail as environment, never as another card. */
-.control-surface .rail-scene {
-  position: relative; z-index: 1; flex: 1 1 auto; min-height: 132px; margin: 16px -15px 0;
-  background:
-    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--surface-depth) 40%, transparent) 55%, color-mix(in srgb, var(--surface-depth) 82%, transparent) 100%),
-    url("/images/home/sentinel-ridge.png") 50% 78% / cover no-repeat;
+/* The scene element carries no image of its own any more: it is the flexible part of the
+   rail that lets the environment breathe, plus the legibility scrim for the motif. */
+.control-surface .rail-scene { position: relative; z-index: 1; flex: 1 1 auto; min-height: 150px; margin: 14px -15px 0; }
+.control-surface .rail-scene::before {
+  position: absolute; inset: auto 0 0; height: 108px; content: "";
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ctl-rail) 82%, transparent) 62%, color-mix(in srgb, var(--ctl-rail) 94%, transparent));
 }
-.control-surface .rail-scene::before { position: absolute; inset: 0 0 auto; height: 56px; background: linear-gradient(180deg, color-mix(in srgb, var(--surface-depth) 72%, #09172c), transparent); content: ""; }
-.control-surface .rail-motif { position: absolute; right: 15px; bottom: 15px; left: 15px; display: grid; gap: 6px; }
+.control-surface .rail-motif { position: absolute; right: 15px; bottom: 14px; left: 15px; display: grid; gap: 6px; }
 .control-surface .rail-motif q { color: var(--text-primary); font: italic 16px/1.25 var(--ctl-serif); }
 .control-surface .rail-motif span { color: var(--text-muted); font-size: 9px; }
 
@@ -142,6 +155,19 @@
 }
 .control-instrument:focus-visible { outline: 2px solid var(--ctl-plum); outline-offset: 4px; }
 .control-column { display: grid; align-content: start; gap: clamp(8px, 1.5vh, 15px); min-width: 0; }
+.control-column-decision { align-content: stretch; grid-template-rows: auto minmax(min-content, 1fr); }
+.control-column-reality { align-content: stretch; grid-template-rows: minmax(min-content, 1fr) auto; }
+/* With no reviewable decision there is nothing to grow: the column stays compact at the
+   top and the asymmetry says the problem is on the reality side, not here. */
+.control-column-decision:has(.review-unavailable) { align-content: start; grid-template-rows: none; }
+/* Evaluated and conflicted reality centre their measurement in the column's free height
+   instead of leaving a void under it. */
+.control-reality { display: flex; flex-direction: column; }
+.reality-conflicted .reality-claims, .reality-measured .reality-measure { margin-top: auto; }
+.reality-conflicted .reality-causal:last-child, .reality-measured .reality-causal:last-child { margin-bottom: auto; }
+.control-review { display: flex; flex-direction: column; }
+.control-review .control-proposal-note { margin-bottom: 0; }
+.control-review .control-review-action, .control-review .control-review-done, .control-review .control-review-detail { margin-top: auto; }
 .control-label { margin: 0; color: var(--text-muted); font-size: .57rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .control-object {
   min-width: 0; padding: var(--control-pad) var(--control-gutter);
@@ -286,10 +312,34 @@
 .causal-supported { color: var(--text-primary); }
 .causal-neutral { color: var(--text-muted); font-size: .65rem; font-weight: 500; }
 .reality-conflicted .causal-unsupported { color: var(--wait); }
-/* Pending reality is intentionally quiet: it must never outweigh the review action. */
-.reality-not-evaluated { background: color-mix(in srgb, var(--surface-base) 44%, transparent); box-shadow: none; }
+/* Pending reality is quiet but never unfinished: a dormant instrument facing the
+   boundary, holding the shape the measurement will take without claiming a value. */
+.reality-not-evaluated {
+  display: flex; flex-direction: column;
+  border-color: color-mix(in srgb, var(--ctl-plum) 13%, var(--border-subtle));
+  background:
+    radial-gradient(120% 90% at 100% 50%, color-mix(in srgb, var(--ctl-plum) 7%, transparent), transparent 62%),
+    color-mix(in srgb, var(--surface-base) 40%, transparent);
+  box-shadow: none;
+}
 .reality-not-evaluated h3 { color: var(--text-secondary); font-size: .78rem; font-weight: 600; }
-.reality-pending { margin: 8px 0 0; color: var(--text-muted); font-size: .68rem; line-height: 1.5; }
+.reality-dormant {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center;
+  gap: 12px; margin: auto 0; padding: clamp(10px, 1.6vh, 22px) 0;
+}
+.dormant-slot {
+  display: grid; min-width: 0; height: clamp(46px, 7vh, 66px); place-items: center;
+  border: 1px dashed color-mix(in srgb, var(--border-strong) 92%, transparent); border-radius: 9px;
+  background: radial-gradient(120% 120% at 50% 120%, color-mix(in srgb, var(--surface-base) 52%, transparent), transparent 74%);
+}
+.dormant-slot i { width: 18px; height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--text-muted) 78%, transparent); }
+/* The same ringed node the Application Boundary uses: reality is waiting on the boundary. */
+.dormant-link {
+  display: grid; width: 15px; height: 15px; place-items: center;
+  border: 1px dashed color-mix(in srgb, var(--border-strong) 92%, transparent); border-radius: 50%;
+}
+.dormant-link::after { width: 3px; height: 3px; border-radius: 50%; background: color-mix(in srgb, var(--text-muted) 80%, transparent); content: ""; }
+.reality-pending { margin: 0; color: var(--text-muted); font-size: .68rem; line-height: 1.5; }
 /* Conflicting claims carry the weight; the configured source ID stays secondary. */
 .reality-claims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px; margin-top: 13px; }
 .reality-claims article { position: relative; min-width: 0; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--wait) 26%, var(--border-subtle)); border-radius: 9px; background: color-mix(in srgb, var(--surface-base) 66%, transparent); }
@@ -430,6 +480,9 @@
   .control-surface .control-workspace { height: auto; }
   .control-instrument { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .control-instrument { overflow: visible; }
+  .control-column-decision, .control-column-reality { align-content: start; grid-template-rows: none; }
+  .control-review .control-review-action, .control-review .control-review-done, .control-review .control-review-detail { margin-top: 10px; }
+  .reality-dormant { margin: 10px 0 0; padding: 0; }
   .control-boundary { padding: 0; }
   .control-boundary::before, .control-boundary::after { display: none; }
   .boundary-rail { top: 50%; right: 6px; bottom: auto; left: 6px; width: auto; height: 2px; transform: translateY(-50%); }
@@ -506,13 +559,7 @@
   --ctl-lift: 0 16px 38px rgb(72 44 160 / 8%);
   background: radial-gradient(850px 420px at 78% 0%, rgb(112 72 191 / 11%), transparent 68%), linear-gradient(180deg, #f5f1ea, #e8e4dc);
 }
-:root[data-theme="light"] .control-surface .control-queue { background: #ebe8e2; }
-:root[data-theme="light"] .control-surface .rail-scene {
-  background:
-    linear-gradient(180deg, transparent 0%, rgb(235 232 226 / 55%) 55%, rgb(235 232 226 / 92%) 100%),
-    url("/images/home/sentinel-ridge.png") 50% 78% / cover no-repeat;
-}
-:root[data-theme="light"] .control-surface .rail-scene::before { background: linear-gradient(180deg, #ebe8e2, transparent); }
+:root[data-theme="light"] .control-surface { --ctl-rail: #ebe8e2; }
 :root[data-theme="light"] .control-surface .queue-list button[aria-pressed="true"] { background: linear-gradient(140deg, #ece5f5, #f7f4ee); box-shadow: inset 2px 0 var(--ctl-plum), 0 10px 22px rgb(72 44 160 / 9%); }
 :root[data-theme="light"] .boundary-plate { box-shadow: 0 14px 30px rgb(72 44 160 / 10%); }
 :root[data-theme="light"] .control-drawer,
