@@ -324,7 +324,7 @@ button[data-walkthrough-active="true"] {
   .guided-shell .guided-main { padding-bottom: 150px; }
   /* The coach is shorter here, so Control gives back the strip it no longer needs and the
      instrument keeps as much of its own camera as the screen allows. */
-  .guided-control:has(.guided-story) .control-surface .control-workspace { padding-bottom: 112px; }
+  .guided-control:has(.guided-story) .control-surface .control-workspace { padding-bottom: 90px; }
   .guided-coach-dock { inset: auto 0 9px; }
   .guided-main .acq-transcript-scroll { height: clamp(180px, 34vh, 270px); }
   .guided-main .acq-evidence-block ol { gap: 3px; padding: 6px; }

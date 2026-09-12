@@ -221,7 +221,12 @@ describe('Control workspace resolution', () => {
     localStorage.setItem(controlSessionStorageKey, 'CONTROL-LOCAL-RESUME');
     render(<App />);
     // Same canvas language as the Gate...
-    expect(screen.getByRole('group', { name: 'Control architecture, dormant' })).toBeVisible();
+    const architecture = screen.getByRole('group', { name: 'Control architecture, dormant' });
+    expect(architecture).toBeVisible();
+    expect(within(architecture).getByText('Saved state unavailable')).toBeVisible();
+    expect(within(architecture).getAllByText('Restore to inspect')).toHaveLength(3);
+    expect(within(architecture).queryByText('Awaiting acquired decision')).not.toBeInTheDocument();
+    expect(within(architecture).queryByText('No disposition')).not.toBeInTheDocument();
     expect(document.querySelector('.rail-scene')).toBeNull();
     // ...and a different, honest truth: a saved session exists and is preserved.
     const announcement = screen.getByRole('region', { name: 'Live Control recovery locked' });

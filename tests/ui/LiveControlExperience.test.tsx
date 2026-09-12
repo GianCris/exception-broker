@@ -63,6 +63,36 @@ describe('Live Control browser experience', () => {
     localStorage.setItem(controlSessionStorageKey, 'CONTROL-ACQ-LIVE-1'); const client = api();
     render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
     expect(screen.getByText('Live Control recovery locked')).toBeVisible(); expect(client.getControl).not.toHaveBeenCalled(); expect(localStorage.getItem(controlSessionStorageKey)).toBe('CONTROL-ACQ-LIVE-1');
+    const architecture = screen.getByRole('group', { name: 'Control architecture, dormant' });
+    expect(within(architecture).getByText('Saved state unavailable')).toBeVisible();
+    expect(within(architecture).getAllByText('Restore to inspect')).toHaveLength(3);
+    expect(within(architecture).queryByText('Awaiting acquired decision')).not.toBeInTheDocument();
+    expect(screen.getByText('Saved session · live access required · no external execution')).toBeVisible();
+  });
+
+  it('labels persisted recovery as unknown while server truth is loading', () => {
+    localStorage.setItem(controlSessionStorageKey, 'CONTROL-ACQ-LIVE-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); const client = api();
+    vi.mocked(client.getControl).mockReturnValue(new Promise(() => undefined));
+    render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
+    expect(screen.getByText('Restoring Live Control session…')).toBeVisible();
+    expect(screen.getByText('Saved session · restoring server truth · no external execution')).toBeVisible();
+    const architecture = screen.getByRole('group', { name: 'Control architecture, dormant' });
+    expect(within(architecture).getByText('Saved state unavailable')).toBeVisible();
+    expect(within(architecture).queryByText('Awaiting acquired decision')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reconnect CALL-E|Review CALL-E access/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps failed restoration unknown and offers truthful recovery actions', async () => {
+    localStorage.setItem(controlSessionStorageKey, 'CONTROL-ACQ-LIVE-1'); sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); const client = api();
+    vi.mocked(client.getControl).mockRejectedValue(new Error('unavailable'));
+    render(<LiveControlExperience api={client} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
+    expect(await screen.findByText('Control session could not be restored with the current live-access session. No browser-authored operational state is used.')).toBeVisible();
+    expect(screen.getByText('Saved session · server truth unavailable · no external execution')).toBeVisible();
+    expect(screen.getByRole('button', { name: /Review CALL-E access/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Start a new acquisition/ })).toBeVisible();
+    const architecture = screen.getByRole('group', { name: 'Control architecture, dormant' });
+    expect(within(architecture).getByText('Saved state unavailable')).toBeVisible();
+    expect(within(architecture).queryByText('No disposition')).not.toBeInTheDocument();
   });
 
   it('recovers awaiting server truth with the exact same ReviewTarget', async () => {

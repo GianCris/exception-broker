@@ -70,17 +70,23 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
         ? { title: 'Restoring Live Control session…', lede: 'Server truth is being recovered from the persisted session pointer. No browser-authored operational state is used.' }
         : { title: 'Live Control recovery locked', lede: `${message} No browser-authored operational state is used.` };
     const recovering = access !== null && message === '';
+    const recoveryDetail = access === null
+      ? 'Saved session · live access required · no external execution'
+      : recovering
+        ? 'Saved session · restoring server truth · no external execution'
+        : 'Saved session · server truth unavailable · no external execution';
     return <div className="app-shell proof-shell control-surface live-control-shell control-dormant-shell"><div className="control-chassis">
       <ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
-        context={<SurfaceContext label="Live control" detail="Saved session · live access required · no external execution" />} />
+        context={<SurfaceContext label="Live control" detail={recoveryDetail} />} />
       <DormantControlCanvas
+        mode="recovery"
         titleId="live-control-recovery-title"
         eyebrow="Control"
         title={recovery.title}
         lede={recovery.lede}
         state="The non-sensitive session pointer is preserved. Leaving this workspace does not delete it."
         {...(recovering ? {} : { actions: <div className="dormant-actions">
-          <button type="button" className="gate-primary" onClick={onNavigateAcquisition}>Reconnect CALL-E <DormantArrow /></button>
+          <button type="button" className="gate-primary" onClick={onNavigateAcquisition}>{access === null ? 'Reconnect CALL-E' : 'Review CALL-E access'} <DormantArrow /></button>
           <button type="button" className="gate-secondary" onClick={onNavigateAcquisition}>Start a new acquisition <DormantArrow /></button>
         </div> })}
       />

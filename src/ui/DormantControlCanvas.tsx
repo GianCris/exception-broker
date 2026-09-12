@@ -8,14 +8,15 @@ import type { ReactNode } from 'react';
  * draws is the real Control instrument — Decision and Exact Review on the left, the
  * Application Boundary on the spine, Operational Reality and Broker Disposition on the
  * right — in its own geometry and spacing, as a ghost. The user should read "the whole
- * Control system is here, and there is nothing to activate it with", never "this is an
- * empty card" or "this is an error page".
+ * Control system is here, but its current state cannot be shown", never "this is an empty
+ * card" or "this is an error page".
  *
  * The ghost is ATMOSPHERE AND STRUCTURE, never fictional operational state. Every ghost row
  * is an abstract bar with no glyphs in it: there is no decision, no quantity, no case, no
  * attempt and no disposition anywhere on this surface, because inventing one to make an
  * empty state look busy is exactly the lie this product exists to refuse. The only words
- * are the region names and the one true thing about each — that it is unavailable.
+ * are the region names and the one true thing about each — either that it has not been
+ * reached in an empty workspace or that recovery is required before it can be inspected.
  *
  * This canvas belongs to the EMPTY and RECOVERY states only. An acquired decision, live or
  * deterministic, renders the real instrument and never this.
@@ -97,22 +98,21 @@ const DormantRegion = ({ place, label, state, ghost }: Readonly<{ place: string;
 
 /**
  * The instrument in its dormant state. It is exposed to assistive technology rather than
- * hidden, because "Operational reality — not evaluated" is a true statement about this
- * workspace and not decoration.
+ * hidden, because each mode's explicit state labels are product truth, not decoration.
  */
-const DormantArchitecture = () => (
+const DormantArchitecture = ({ mode }: Readonly<{ mode: 'empty' | 'recovery' }>) => (
   <div className="dormant-architecture" role="group" aria-label="Control architecture, dormant">
-    <DormantRegion place="decision" label="Decision" state="Awaiting acquired decision" ghost={<GhostDecision />} />
-    <DormantRegion place="review" label="Exact review" state="Not available yet" ghost={<GhostReview />} />
+    <DormantRegion place="decision" label="Decision" state={mode === 'empty' ? 'Awaiting acquired decision' : 'Saved state unavailable'} ghost={<GhostDecision />} />
+    <DormantRegion place="review" label="Exact review" state={mode === 'empty' ? 'Not available yet' : 'Restore to inspect'} ghost={<GhostReview />} />
     <div className="dormant-boundary">
       <i className="dormant-rail" aria-hidden="true" />
       <div className="dormant-plate">
         <span className="control-label">Application boundary</span>
-        <strong>NOT AVAILABLE</strong>
+        <strong>{mode === 'empty' ? 'NOT AVAILABLE' : 'RESTORE TO INSPECT'}</strong>
       </div>
     </div>
-    <DormantRegion place="reality" label="Operational reality" state="Not evaluated" ghost={<GhostReality />} />
-    <DormantRegion place="disposition" label="Broker disposition" state="No disposition" ghost={<GhostDisposition />} />
+    <DormantRegion place="reality" label="Operational reality" state={mode === 'empty' ? 'Not evaluated' : 'Restore to inspect'} ghost={<GhostReality />} />
+    <DormantRegion place="disposition" label="Broker disposition" state={mode === 'empty' ? 'No disposition' : 'Restore to inspect'} ghost={<GhostDisposition />} />
   </div>
 );
 
@@ -122,7 +122,8 @@ const DormantArchitecture = () => (
  * which recedes behind it rather than competing with it. Callers supply the actions because
  * the Gate and recovery lead to different places for different reasons.
  */
-export const DormantControlCanvas = ({ titleId, eyebrow, title, lede, state, actions }: Readonly<{
+export const DormantControlCanvas = ({ mode, titleId, eyebrow, title, lede, state, actions }: Readonly<{
+  mode: 'empty' | 'recovery';
   titleId: string;
   eyebrow: string;
   title: string;
@@ -132,7 +133,7 @@ export const DormantControlCanvas = ({ titleId, eyebrow, title, lede, state, act
 }>) => (
   <main className="control-dormant-page">
     <div className="control-dormant-canvas">
-      <DormantArchitecture />
+      <DormantArchitecture mode={mode} />
       <section className="dormant-announcement" aria-labelledby={titleId}>
         <p className="eyebrow">{eyebrow}</p>
         <div className="dormant-announcement-head">

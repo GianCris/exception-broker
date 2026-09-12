@@ -29,6 +29,7 @@ export const ControlGateExperience = ({ onNavigateHome, onNavigateAcquisition, o
     <ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={() => undefined}
       context={<GuidedWalkthroughAction onOpen={onNavigateWalkthrough} />} />
     <DormantControlCanvas
+      mode="empty"
       titleId="control-gate-title"
       eyebrow="Control"
       title="Control starts with an acquired decision."
