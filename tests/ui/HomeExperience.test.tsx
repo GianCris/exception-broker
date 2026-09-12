@@ -35,7 +35,7 @@ describe('Home product entry', () => {
   it.each(proofScenarios)('opens the actual $id Control scenario without applying it', ({ id, title }) => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: new RegExp(title) }));
-    expect(screen.getByRole('region', { name: 'Demo case context' })).toHaveTextContent(`Demo case ${id}`);
+    expect(screen.getByRole('region', { name: 'Proof case context' })).toHaveTextContent(`Proof case ${id}`);
     expect(screen.getByRole('button', { name: new RegExp(`^${id} /`) })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
@@ -49,8 +49,11 @@ describe('Home product entry', () => {
     fireEvent.click(nav().getByRole('button', { name: 'Acquisition' }));
     expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Exception Broker home' }));
+    // With nothing acquired, Control is the Control workspace in its honest empty state —
+    // never a deterministic proof case standing in for a decision the user does not have.
     fireEvent.click(nav().getByRole('button', { name: 'Control' }));
-    expect(screen.getByRole('region', { name: 'Decision control model' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Control starts with an acquired decision.' })).toBeVisible();
+    expect(nav().getByRole('button', { name: 'Control' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(screen.getByRole('button', { name: 'Exception Broker home' }));
     expect(nav().getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
   });
@@ -80,7 +83,7 @@ describe('Home product entry', () => {
   });
 
   it('exposes keyboard controls and closes the mobile menu on Escape with focus restored', () => {
-    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateWalkthrough={vi.fn()} />);
+    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} onNavigateWalkthrough={vi.fn()} />);
     const button = screen.getByRole('button', { name: 'Open navigation' });
     fireEvent.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
@@ -92,7 +95,7 @@ describe('Home product entry', () => {
 
   it('keeps the reduced-motion scene static without losing the HTML journey', () => {
     motionPreference.reduced = true;
-    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateWalkthrough={vi.fn()} />);
+    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} onNavigateWalkthrough={vi.fn()} />);
     const image = screen.getByAltText(/Sentinel Ridge:/);
     const transform = image.style.transform;
     fireEvent(screen.getByLabelText('Sentinel Ridge decision path'), new MouseEvent('pointermove', { bubbles: true, clientX: 100, clientY: 100 }));
@@ -105,7 +108,7 @@ describe('Home product entry', () => {
   it('sends acquisition, walkthrough and proof CTA intent only, without a network request', () => {
     const acquisition = vi.fn(); const control = vi.fn(); const walkthrough = vi.fn(); const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
-    render(<HomeExperience onNavigateAcquisition={acquisition} onNavigateControl={control} onNavigateWalkthrough={walkthrough} />);
+    render(<HomeExperience onNavigateAcquisition={acquisition} onNavigateControl={vi.fn()} onNavigateControlProof={control} onNavigateWalkthrough={walkthrough} />);
     fireEvent.click(screen.getByRole('button', { name: 'Acquire a decision' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start acquisition' }));
     expect(acquisition).toHaveBeenCalledTimes(2);

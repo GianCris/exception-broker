@@ -86,7 +86,7 @@ describe('Exact review sheet', () => {
 
   it('gives Live Control the same sheet structure and its own truthful source', () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
-    render(<LiveControlExperience api={noopApi()} initial={liveRecord()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    render(<LiveControlExperience api={noopApi()} initial={liveRecord()} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
     fireEvent.click(screen.getByRole('button', { name: 'Review exact decision' }));
     const dialog = sheet();
     expect(within(dialog).getByText('02 / Exact review · live decision')).toBeVisible();

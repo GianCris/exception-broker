@@ -12,7 +12,7 @@ import { motionTokens } from './motion.js';
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
   <p className="eyebrow">01 / Operational evidence</p>
   <h2 id="evidence-title">{view.trustedCaseProduced ? 'Trusted snapshot facts' : 'Input claims — not a trusted snapshot'}</h2>
-  <p>Deterministic demo evidence. Configured ERP / WMS sources are not live connections.</p>
+  <p>Deterministic proof evidence. Configured ERP / WMS sources are not live connections.</p>
   <div className="proof-table-scroll"><table className="proof-table"><caption>Assembly: {view.assemblyStatus}</caption><thead><tr><th>Fact / value</th><th>Configured source</th><th>Trust status</th></tr></thead><tbody>
     {view.facts.map((fact) => <tr key={fact.evidenceId}><td><strong>{fact.label}</strong><span>{fact.value}</span></td><td>{fact.sourceId}<small>Authority configured for {fact.label.toLowerCase()}</small></td><td>{fact.trusted ? 'Accepted evidence' : 'Unaccepted input claim'}
       <details><summary>Evidence details</summary><dl><dt>Evidence ID</dt><dd>{fact.evidenceId}</dd><dt>Observed at</dt><dd>{fact.observedAt}</dd><dt>Effective at</dt><dd>{fact.effectiveAt}</dd><dt>Authoritative source</dt><dd>{fact.authority}</dd></dl></details>
@@ -72,8 +72,8 @@ const Review = ({ view, proposal: exact, onReview, onClose }: Readonly<{ view: D
         <details className="sheet-binding"><summary>Inspect exact binding</summary><div className="sheet-binding-body"><dl>
           <dt>Case</dt><dd>{proposal.caseId}</dd><dt>Plan</dt><dd>{proposal.operationType === 'PLAN_DECISION' ? proposal.planId : 'Case authorization'}</dd>
           <dt>Actor / role</dt><dd>{proposal.actorId} / {proposal.actorRole}</dd><dt>Request</dt><dd>{proposal.requestId}</dd><dt>Received at</dt><dd>{proposal.receivedAt}</dd><dt>Review state</dt><dd>{proposal.reviewState}</dd>
-          <dt>Local demo reviewer</dt><dd>{view.reviewer}</dd><dt>Deterministic review timestamp</dt><dd>{view.reviewedAt}</dd>
-        </dl><p>Demo metadata, not authenticated reviewer identity or the current wall clock.</p><ul>{proposal.evidence.map((value, index) => <li className="proof-verbatim" key={index}>{value}</li>)}</ul><pre>{JSON.stringify(view.reviewTarget, null, 2)}</pre></div></details>
+          <dt>Local proof reviewer</dt><dd>{view.reviewer}</dd><dt>Deterministic review timestamp</dt><dd>{view.reviewedAt}</dd>
+        </dl><p>Proof metadata, not authenticated reviewer identity or the current wall clock.</p><ul>{proposal.evidence.map((value, index) => <li className="proof-verbatim" key={index}>{value}</li>)}</ul><pre>{JSON.stringify(view.reviewTarget, null, 2)}</pre></div></details>
       </div>
       <footer className="sheet-actions">
         <p>Applying asks the Broker to evaluate this exact attempt. It does not execute externally.</p>
@@ -148,15 +148,32 @@ export type ControlWalkthrough = Readonly<{
   context: ReactNode;
   /** Replaces the H01/H02/H03 attention queue; the walkthrough never mixes into it. */
   rail: ReactNode;
+  /**
+   * Replaces the proof-case context block in the workspace header. Outside a walkthrough
+   * the decision genuinely IS a configured proof input; inside one it is the decision the
+   * learner just watched being acquired, so the story has to stay causal while both truths
+   * stay stated — the acquisition was simulated, the evaluation is the real H02 path.
+   */
+  caseContext: ReactNode;
+  /** Same reason, for the Decision object's own provenance line. */
+  decisionSource: Readonly<{ label: string; detail: string }>;
   onReviewOpen?: () => void;
   /** Reports the action taken and the disposition the Broker actually produced for it. */
   onReviewResolved?: (action: 'APPLY' | 'DISCARD', disposition: string) => void;
 }>;
 
-export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavigateHome, initialScenario = 'H02', walkthrough }: Readonly<{
+/**
+ * CONTROL PROOF: the independent surface for verifying deterministic ALLOW / BLOCK / WAIT
+ * behaviour against configured evidence. It is NOT the Control workspace for an acquired
+ * user decision, so it is reached only by explicit proof entry points — Home's scenario
+ * cards, the Control Gate, and walkthrough completion — and its primary Control navigation
+ * leads OUT of here, to the Control workspace.
+ */
+export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavigateControl, onNavigateHome, initialScenario = 'H02', walkthrough }: Readonly<{
   prepare: (scenario: ProofScenario) => ProofSession;
   review: (session: ProofSession, action: 'APPLY' | 'DISCARD') => ProofSession;
   onNavigateAcquisition?: () => void;
+  onNavigateControl?: () => void;
   onNavigateHome?: () => void;
   initialScenario?: ProofScenario;
   walkthrough?: ControlWalkthrough;
@@ -172,10 +189,16 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
   const reviewWasOpen = useRef(false);
   const reviewCloseDestination = useRef<'trigger' | 'surface'>('trigger');
   const view = createDecisionTraceView(session);
-  const model = createControlSurfaceModel(session);
+  const baseModel = createControlSurfaceModel(session);
+  // Only the Decision's provenance LINE is contextualized for the walkthrough; every
+  // evaluated value in the model stays exactly what the deterministic Broker produced.
+  const model = walkthrough === undefined ? baseModel : {
+    ...baseModel,
+    decision: { ...baseModel.decision, sourceLabel: walkthrough.decisionSource.label, sourceDetail: walkthrough.decisionSource.detail },
+  };
   const queue = proofScenarios.map((scenario) => createControlQueueItem(
     scenario.id === session.inputs.scenario ? session : prepare(scenario.id),
-    scenario.id, scenario.title, `Demo case ${scenario.id}`,
+    scenario.id, scenario.title, `Proof case ${scenario.id}`,
   ));
   useEffect(() => { applicationLock.current = false; }, [session]);
   const onReview = (action: 'APPLY' | 'DISCARD') => {
@@ -207,16 +230,16 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
-  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><ProductTopbar surface={walkthrough === undefined ? 'control' : 'walkthrough'} onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition}
+  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><ProductTopbar surface={walkthrough === undefined ? 'control-proof' : 'walkthrough'} onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
       context={walkthrough?.context ?? <SurfaceContext label="Deterministic proof" detail="Configured evidence · local only · no external execution"
-        ariaLabel="Demo environment: deterministic local proof with configured evidence. No external execution." />} />
+        ariaLabel="Proof environment: deterministic local proof with configured evidence. No external execution." />} />
     <div className="product-layout">
-    {walkthrough?.rail ?? <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic demo cases.">
+    {walkthrough?.rail ?? <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic proof cases.">
       <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>
     </AttentionQueue>}
     <main className="control-workspace">
     <header className="control-head"><p className="eyebrow">Decision control</p><h1>{controlQuestion}</h1><p>{model.answer}</p>
-      <section className="control-context" aria-label="Demo case context"><b>Demo</b><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><small>Supply exception <span aria-hidden="true">·</span> Demo case {view.scenario}</small><strong>Deterministic workspace</strong></section>
+      {walkthrough?.caseContext ?? <section className="control-context" aria-label="Proof case context"><b>Proof</b><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><small>Supply exception <span aria-hidden="true">·</span> Proof case {view.scenario}</small><strong>Deterministic workspace</strong></section>}
     </header>
     <ControlInstrument
       ref={controlSummaryRef}
@@ -234,16 +257,16 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     <div className="control-dock">
       <div className="control-dock-top">
         {model.takeaway ? <ControlKeyTakeaway takeaway={model.takeaway} tone={model.disposition.tone} /> : null}
-        {/* Verification before demo utilities: Reset is a demo affordance, not a product action. */}
+        {/* Verification before proof utilities: Reset is a proof affordance, not a product action. */}
         {walkthrough === undefined ? <div className="control-dock-tools">
           <details className="supporting-proof"><summary>Verify current decision</summary><div className="control-drawer"><div className="supporting-proof-content">
-            <p className="drawer-note">Each demo case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p>
+            <p className="drawer-note">Each proof case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p>
             <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
             <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><ReviewApplicationProof view={view} /></section>
             <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /><section className="proof-card proof-plan-identity" aria-label="Plan identity and cost"><h3>Plan identity &amp; cost</h3><p>{view.plan.caseId} / {view.plan.id} · version {view.plan.version}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></section></section>
           </div></div></details>
-          <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><div className="control-drawer"><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic demo case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></div></details>
-          <button type="button" className="dock-reset" onClick={() => focusScenario(view.scenario)}>Reset demo case</button>
+          <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><div className="control-drawer"><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic proof case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></div></details>
+          <button type="button" className="dock-reset" onClick={() => focusScenario(view.scenario)}>Reset proof case</button>
         </div> : null}
       </div>
       <div className="control-dock-bar">

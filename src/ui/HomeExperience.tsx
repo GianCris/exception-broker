@@ -45,15 +45,22 @@ function SentinelScene() {
   </div>;
 }
 
-export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl, onNavigateWalkthrough }: Readonly<{
+/**
+ * Home routes three different intents, and they are three different props: Acquire opens
+ * Acquisition, See it in action opens the Guided Walkthrough, and the scenario cards open
+ * Control PROOF. Primary nav Control is its own intent and resolves to the Control
+ * WORKSPACE — Home never sends anyone to H01/H02/H03 by clicking Control.
+ */
+export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl, onNavigateControlProof, onNavigateWalkthrough }: Readonly<{
   onNavigateAcquisition: () => void;
-  onNavigateControl: (scenario?: ProofScenario) => void;
+  onNavigateControl: () => void;
+  onNavigateControlProof: (scenario?: ProofScenario) => void;
   onNavigateWalkthrough: () => void;
 }>) => {
   const homeTitle = useRef<HTMLHeadingElement>(null);
   const goHome = () => { homeTitle.current?.focus(); homeTitle.current?.scrollIntoView?.({ block: 'start' }); };
   return <MotionConfig reducedMotion="user"><div className="eb-page">
-    <ProductTopbar surface="home" onNavigateHome={goHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={() => onNavigateControl()}
+    <ProductTopbar surface="home" onNavigateHome={goHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
       context={<GuidedWalkthroughAction onOpen={onNavigateWalkthrough} />} />
     <main>
       <section className="eb-hero" aria-labelledby="home-title">
@@ -67,9 +74,9 @@ export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl, onNav
             <div className="eb-values" aria-label="Product values"><span><b>Higher ground</b><small>A better perspective</small></span><span><b>Clearer paths</b><small>Guided decisions</small></span><span><b>Stronger outcomes</b><small>Possible together</small></span></div>
           </div>
           <aside className="eb-scenarios" aria-labelledby="scenario-heading">
-            <div className="eb-scenario-head"><div><h2 id="scenario-heading">See the control boundary in action</h2><p>Deterministic scenarios · configured evidence · local effects only.</p></div><button type="button" className="eb-scenario-link" onClick={() => onNavigateControl()}>View all scenarios <Arrow /></button></div>
-            <div className="eb-scenario-list">{proofScenarios.map((scenario) => <button type="button" className="eb-scenario" key={scenario.id} onClick={() => onNavigateControl(scenario.id)}>
-              <span className="eb-scenario-mark" aria-hidden="true">◇</span><span className="eb-scenario-copy"><strong>{scenario.title}</strong><span>{scenario.description}</span></span><span className="eb-outcome">Open demo <i>→</i> <b>{scenario.id}</b></span><Arrow />
+            <div className="eb-scenario-head"><div><h2 id="scenario-heading">See the control boundary in action</h2><p>Deterministic scenarios · configured evidence · local effects only.</p></div><button type="button" className="eb-scenario-link" onClick={() => onNavigateControlProof()}>View all scenarios <Arrow /></button></div>
+            <div className="eb-scenario-list">{proofScenarios.map((scenario) => <button type="button" className="eb-scenario" key={scenario.id} onClick={() => onNavigateControlProof(scenario.id)}>
+              <span className="eb-scenario-mark" aria-hidden="true">◇</span><span className="eb-scenario-copy"><strong>{scenario.title}</strong><span>{scenario.description}</span></span><span className="eb-outcome">Open proof <i>→</i> <b>{scenario.id}</b></span><Arrow />
             </button>)}</div>
           </aside>
         </div>
@@ -86,8 +93,8 @@ export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl, onNav
     </main>
     <footer className="eb-footer"><div className="eb-footer-main">
       <button type="button" className="eb-footer-brand" onClick={goHome} aria-label="Exception Broker home"><Brand compact /></button>
-      <div className="eb-footer-column"><b>Product</b><button type="button" onClick={goHome}>Home</button><button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" onClick={() => onNavigateControl()}>Control</button></div>
-      <div className="eb-footer-column"><b>Explore</b>{proofScenarios.map((scenario) => <button type="button" key={scenario.id} onClick={() => onNavigateControl(scenario.id)}>Demo {scenario.id}</button>)}</div>
+      <div className="eb-footer-column"><b>Product</b><button type="button" onClick={goHome}>Home</button><button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" onClick={onNavigateControl}>Control</button></div>
+      <div className="eb-footer-column"><b>Explore</b>{proofScenarios.map((scenario) => <button type="button" key={scenario.id} onClick={() => onNavigateControlProof(scenario.id)}>Proof {scenario.id}</button>)}</div>
       <div className="eb-footer-column"><b>Proof boundary</b><span>Configured evidence</span><span>Exact review</span><span>Local application</span></div>
       <div className="eb-footer-motto">Exceptional<br />thinking in practice</div>
     </div><div className="eb-footer-bottom"><span>Exception Broker · Decision acquisition ≠ authority to execute</span><span>Controlled local proof · no external execution</span></div></footer>

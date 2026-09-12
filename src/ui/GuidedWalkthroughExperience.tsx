@@ -50,6 +50,32 @@ const guidedContext = (
 );
 
 /**
+ * The guided Control stage's own context, replacing the proof-case block.
+ *
+ * Steps 4-6 run the real deterministic H02 evaluation, and outside the walkthrough Control
+ * correctly describes that input as a configured proof case. Inside the walkthrough that
+ * same sentence would read as though the acquired decision had been thrown away and an
+ * unrelated case loaded instead — so here the surface states both truths at once: the
+ * acquisition the learner just watched was simulated, and the evaluation it is being put
+ * through is the real deterministic one. The decision moved forward; what can be done with
+ * it is established somewhere else.
+ */
+const guidedCaseContext = (
+  <section className="control-context guided-case-context" aria-label="Guided walkthrough case context">
+    <b>Guided</b>
+    <h2>The decision you just acquired</h2>
+    <small>Guided simulated acquisition <span aria-hidden="true">·</span> deterministic H02 evaluation</small>
+    <strong>Operational truth is checked independently</strong>
+  </section>
+);
+
+/** The Decision object's provenance line, for the same reason. */
+const guidedDecisionSource = {
+  label: 'Guided simulated acquisition',
+  detail: 'Deterministic H02 evaluation · not a live CALL-E acquisition',
+} as const;
+
+/**
  * Points the coach at a real control without replacing it: the target element is marked so
  * CSS can draw one restrained ring. Re-runs per step, and retries for a few frames because
  * some targets (the review sheet's action) mount with the step that spotlights them.
@@ -101,12 +127,15 @@ const GuidedCoach = ({ step, discarded, disposition, onNext, onSkip, onRestart, 
           : step.requiredAction.kind === 'REAL_ACTION'
             ? <p className="guided-required"><b>Your turn</b><span>{step.requiredAction.hint}</span></p>
             : null}
+        {discarded || step.teachingNote === undefined ? null : <p className="guided-teaching">{step.teachingNote}</p>}
         {complete ? <div className="guided-summary">
           {/* The decision and the disposition are read back from what Control rendered; the
-              walkthrough never states an outcome of its own. */}
+              walkthrough never states an outcome of its own. The middle row names the
+              Broker's disposition, because it is the Broker that answered — the application
+              is the thing that was blocked, it is not itself a BLOCK. */}
           <dl>
             <div><dt>Decision</dt><dd>{scenario.normalizedDecision}</dd></div>
-            <div><dt>Application</dt><dd>{disposition ?? 'NOT EVALUATED'}</dd></div>
+            <div><dt>Broker disposition</dt><dd>{disposition ?? 'NOT EVALUATED'}</dd></div>
             <div><dt>External execution</dt><dd>NONE</dd></div>
           </dl>
           <button type="button" className="guided-next" onClick={onTryLive}>{guidedCompletionActions.live.label} <Arrow /></button>
@@ -129,7 +158,11 @@ const GuidedAcquisitionStage = ({ step, coach, onContinue }: Readonly<{ step: Gu
         <div className="acq-rail-top">{coach}</div>
         <div className="acq-rail-scene" aria-hidden="true"><div className="acq-rail-motif"><q>Higher ground is a choice.</q><span>— The Sentinel</span></div></div>
       </aside>
-      <div className="acq-main guided-main">
+      {/* Step 1 is about the conversation, so everything the conversation has not caused
+          yet stays truthfully dormant rather than pre-announcing step 2's payoff. Nothing
+          is hidden and no fact is altered: the panels keep their place and their real
+          status, and only their visual weight waits its turn. */}
+      <div className="acq-main guided-main" data-guided-reveal={step.index >= 2 ? 'decision' : 'conversation'}>
         <header className="acq-interaction-band">
           <div>
             <p className="acq-eyebrow">Simulated interaction <span className="acq-inline-status is-active">● SIMULATED</span></p>
@@ -216,10 +249,17 @@ const GuidedExit = ({ onTryLive, onExploreProof, onHome, onRestart }: Readonly<{
   </main>
 );
 
-export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisition, onNavigateControl }: Readonly<{
+/**
+ * Primary Control navigation leaves the walkthrough for the real Control WORKSPACE, while
+ * "Explore Control proof" opens the deterministic verification surface. They are different
+ * destinations, so they are different props: the walkthrough must never turn its own exit
+ * into the other one.
+ */
+export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisition, onNavigateControl, onNavigateControlProof }: Readonly<{
   onNavigateHome: () => void;
   onNavigateAcquisition: () => void;
   onNavigateControl: () => void;
+  onNavigateControlProof: () => void;
 }>) => {
   const [stepId, setStepId] = useState<GuidedStepId>(guidedFirstStepId);
   const [runId, setRunId] = useState(0);
@@ -236,12 +276,12 @@ export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisit
   const restart = () => { setStepId(guidedFirstStepId); setDiscarded(false); setDisposition(null); setSkipped(false); setRunId((value) => value + 1); };
   const coach = <GuidedCoach step={step} discarded={discarded} disposition={disposition}
     onNext={() => advance(stepId)} onSkip={() => setSkipped(true)} onRestart={restart}
-    onTryLive={onNavigateAcquisition} onExploreProof={onNavigateControl} />;
+    onTryLive={onNavigateAcquisition} onExploreProof={onNavigateControlProof} />;
 
   if (skipped) {
     return <div className="acquisition-shell guided-shell">
       <ProductTopbar surface="walkthrough" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl} context={guidedContext} />
-      <GuidedExit onTryLive={onNavigateAcquisition} onExploreProof={onNavigateControl} onHome={onNavigateHome} onRestart={restart} />
+      <GuidedExit onTryLive={onNavigateAcquisition} onExploreProof={onNavigateControlProof} onHome={onNavigateHome} onRestart={restart} />
     </div>;
   }
 
@@ -259,9 +299,11 @@ export const GuidedWalkthroughExperience = ({ onNavigateHome, onNavigateAcquisit
   return <div className="guided-control" key={runId}>
     <ProofExperience
       prepare={prepareProof} review={reviewProof} initialScenario={scenario.operationalContext.controlScenario}
-      onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition}
+      onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
       walkthrough={{
         context: guidedContext,
+        caseContext: guidedCaseContext,
+        decisionSource: guidedDecisionSource,
         rail: <aside className="control-queue guided-rail" aria-label="Guided walkthrough">
           <div className="queue-top">{coach}</div>
           <SentinelScene />

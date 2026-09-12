@@ -56,15 +56,26 @@
 .guided-required b { color: color-mix(in srgb, var(--guided-plum) 76%, var(--text-primary)); font-size: .56rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .guided-required span { color: var(--text-secondary); font-size: .68rem; line-height: 1.5; }
 
+/* The teaching idea carried across the handoff: quieter than the step, louder than a
+   caption, and identical on both sides of step 3 -> step 4 so it reads as one thought. */
+.guided-teaching {
+  margin: 2px 0 0; padding-left: 9px;
+  border-left: 1px solid color-mix(in srgb, var(--guided-plum) 46%, transparent);
+  color: var(--text-muted); font-size: .66rem; font-style: italic; line-height: 1.5;
+}
+
 .guided-summary { display: grid; gap: 8px; margin-top: 4px; }
 .guided-summary dl {
   display: grid; gap: 5px; margin: 0; padding: 10px 12px;
   border: 1px solid var(--border-subtle); border-radius: 9px;
   background: color-mix(in srgb, var(--surface-base) 52%, transparent);
 }
-.guided-summary dl div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
+/* Each row is a label above its answer, not a label beside a value: "Broker disposition"
+   names who answered, and BLOCK is what they answered. Side by side, the two read as one
+   phrase and invite "the application is BLOCK", which is not what happened. */
+.guided-summary dl div { display: grid; gap: 1px; }
 .guided-summary dt { color: var(--text-muted); font-size: .56rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
-.guided-summary dd { margin: 0; color: var(--text-primary); font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
+.guided-summary dd { margin: 0; color: var(--text-primary); font-size: .78rem; font-weight: 800; letter-spacing: .04em; }
 
 .guided-coach-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 4px; }
 .guided-coach .guided-quiet {
@@ -91,6 +102,19 @@ button[data-walkthrough-active="true"] { border-radius: 9px; }
 .control-surface .guided-rail .queue-top { display: grid; gap: 0; }
 
 /* ── Guided acquisition stage ─────────────────────────────────────── */
+/* Progressive reveal, step 1 -> step 2.
+   At step 1 the lesson is the conversation, so the panels the conversation has not caused
+   yet wait their turn: they keep their place in the layout and every fact stays on screen
+   and selectable, they are simply demoted in weight so the conversation is unambiguously
+   the subject. Nothing is concealed and nothing is faked — no invented latency, no looping
+   animation, no withheld state — and the panels' own status markers (PENDING, LOCKED) were
+   already telling the truth about what had not happened yet. */
+.guided-main .acq-evidence-formation { transition: opacity 260ms ease, filter 260ms ease; }
+.guided-main[data-guided-reveal="conversation"] .acq-evidence-formation { opacity: .52; filter: saturate(.55); }
+.guided-main[data-guided-reveal="decision"] .acq-evidence-formation { opacity: 1; filter: none; }
+/* Keyboard users must never focus into something they cannot read. */
+.guided-main[data-guided-reveal="conversation"] .acq-evidence-formation:focus-within { opacity: 1; filter: none; }
+
 .guided-main .acq-resolution-action.guided-resolution-wait { align-content: center; }
 .guided-main .acq-resolution-action.guided-resolution-wait small { max-width: 22ch; color: var(--text-muted); text-align: right; }
 .guided-main .acq-inline-status.is-active { letter-spacing: .1em; }
@@ -116,4 +140,5 @@ button[data-walkthrough-active="true"] { border-radius: 9px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .guided-coach .guided-next, .guided-coach .guided-secondary { transition: none; }
+  .guided-main .acq-evidence-formation { transition: none; }
 }

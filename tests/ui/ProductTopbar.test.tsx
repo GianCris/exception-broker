@@ -49,7 +49,7 @@ describe('Shared product topbar', () => {
     expect(currentRoute()).toBe('Acquisition');
     cleanup();
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
-    render(<LiveControlExperience api={noopApi()} initial={liveRecord()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    render(<LiveControlExperience api={noopApi()} initial={liveRecord()} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
     expect(currentRoute()).toBe('Control');
   });
 
@@ -64,18 +64,21 @@ describe('Shared product topbar', () => {
 
   it('replaces the proof action with a truthful context badge once the user is inside the proof', () => {
     render(<App />);
-    goto('Control');
+    // Control Proof is reached by an explicit proof entry point, never by primary Control.
+    fireEvent.click(screen.getByRole('button', { name: /View all scenarios/ }));
     expect(within(topbar()).queryByRole('button', { name: /Guided walkthrough/ })).not.toBeInTheDocument();
     const context = screen.getByLabelText(/deterministic local proof with configured evidence.*No external execution/i);
     expect(context).toHaveClass('proof-mode');
     expect(context.tagName).toBe('SPAN');
     expect(within(context).getByText('Deterministic proof')).toBeVisible();
     expect(within(context).getByText('Configured evidence · local only · no external execution')).toBeVisible();
+    // And it never wears the Control module's active treatment: Control is the workspace.
+    expect(currentRoute()).toBeUndefined();
   });
 
   it('states the live source on Live Control without claiming a deterministic proof', () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS');
-    render(<LiveControlExperience api={noopApi()} initial={liveRecord()} onNavigateAcquisition={() => undefined} onNavigateDeterministic={() => undefined} />);
+    render(<LiveControlExperience api={noopApi()} initial={liveRecord()} onNavigateAcquisition={() => undefined} onNavigateControl={() => undefined} />);
     const context = within(topbar()).getByText('Live control').closest<HTMLElement>('.proof-mode')!;
     expect(within(context).getByText('CALL-E acquisition · controlled local context · no external execution')).toBeVisible();
     expect(within(topbar()).queryByText('Deterministic proof')).not.toBeInTheDocument();

@@ -687,3 +687,76 @@
 }
 :root[data-theme="light"] .control-drawer,
 :root[data-theme="light"] .control-surface .action-receipt details[open] .receipt-depth { box-shadow: 0 -18px 54px rgb(72 44 160 / 18%); }
+
+/* ── Control Gate: Control with nothing acquired yet ─────────────────
+   The honest empty state, not an error and not a dashboard. It reuses the Control shell
+   and the Control material so it reads as the same module the user asked for, and it
+   carries no operational object at all — no disposition plate, no instrument, no case.
+   The only hierarchy it expresses is between its three exits: acquire, then learn, then
+   verify. That ranking is the whole design, so it is carried by size, weight and colour
+   rather than by three equal buttons in a row. */
+.control-gate-page {
+  display: grid; place-items: center; min-height: 0; flex: 1;
+  padding: clamp(24px, 7vh, 78px) clamp(18px, 4vw, 60px);
+}
+.control-gate {
+  display: grid; gap: 12px; width: min(620px, 100%);
+  padding: clamp(24px, 4.4vh, 40px) clamp(22px, 3vw, 40px);
+  border: 1px solid var(--border-subtle); border-radius: 15px;
+  background: var(--ctl-material); box-shadow: var(--ctl-lift);
+}
+.control-gate .eyebrow {
+  margin: 0; color: color-mix(in srgb, var(--ctl-plum) 82%, var(--text-primary));
+  font-size: 9px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase;
+}
+.control-gate-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
+/* The decision mark in its unfilled state: the object Control works on is absent. */
+.control-gate .gate-mark { width: 34px; height: 34px; flex: none; }
+.control-gate .gate-mark-body {
+  fill: color-mix(in srgb, var(--ctl-plum) 8%, transparent);
+  stroke: color-mix(in srgb, var(--ctl-plum) 42%, var(--border-strong)); stroke-width: 1.4;
+}
+.control-gate h1 {
+  margin: 0; color: var(--text-primary); font-family: var(--ctl-serif);
+  font-size: clamp(1.5rem, 2.5vw, 2.05rem); font-weight: 500; letter-spacing: -.03em; line-height: 1.1;
+}
+.control-gate-lede { margin: 0; max-width: 62ch; color: var(--text-secondary); font-size: .8rem; line-height: 1.6; }
+.control-gate-state {
+  justify-self: start; margin: 2px 0 0; padding: 5px 10px;
+  color: var(--text-muted); border: 1px solid var(--border-subtle); border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-base) 46%, transparent);
+  font-size: .62rem; font-weight: 700; letter-spacing: .04em;
+}
+.control-gate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 6px; }
+.control-gate .gate-primary {
+  display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 19px;
+  color: #fff; border: 1px solid var(--ctl-action-edge); border-radius: 10px;
+  background: var(--ctl-action); box-shadow: 0 14px 30px rgb(60 34 150 / 32%);
+  font: inherit; font-size: .82rem; font-weight: 750; cursor: pointer; transition: filter 140ms ease;
+}
+.control-gate .gate-primary:hover { filter: brightness(1.1); }
+.control-gate .gate-secondary {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px;
+  color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 9px;
+  background: transparent; font: inherit; font-size: .72rem; font-weight: 700; cursor: pointer;
+}
+.control-gate .gate-secondary:hover { color: var(--text-primary); border-color: var(--text-muted); }
+/* Verification is the quietest exit: available, never competing with acquiring. */
+.control-gate .gate-quiet {
+  display: inline-flex; align-items: center; gap: 7px; justify-self: start;
+  margin-top: 2px; padding: 0; border: 0; background: transparent; color: var(--text-muted);
+  font: inherit; font-size: .6rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+}
+.control-gate .gate-quiet:hover { color: var(--text-secondary); }
+.control-gate .gate-icon { width: 15px; height: 15px; flex: none; }
+.control-gate .gate-quiet .gate-icon { width: 13px; height: 13px; }
+.control-gate button:focus-visible { outline: 2px solid var(--ctl-plum); outline-offset: 3px; }
+
+@media (max-width: 640px) {
+  .control-gate-actions { display: grid; }
+  .control-gate .gate-primary, .control-gate .gate-secondary { justify-content: center; }
+  /* Quiet is about visual weight, not about being hard to hit: on touch the tertiary
+     exit keeps a real target while staying the least prominent of the three. */
+  .control-gate .gate-quiet { min-height: 34px; }
+}
+@media (prefers-reduced-motion: reduce) { .control-gate .gate-primary { transition: none; } }

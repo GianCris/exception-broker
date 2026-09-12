@@ -65,10 +65,14 @@ export const SurfaceContext = ({ label, detail, ariaLabel }: Readonly<{ label: s
 );
 
 /**
- * 'walkthrough' is a guided learning mode, not a fourth product module: it deliberately
- * marks none of Home / Acquisition / Control as the active module.
+ * The primary modules are Home, Acquisition and Control, and only those three can be the
+ * active module. 'walkthrough' (guided learning) and 'control-proof' (deterministic
+ * verification) are surfaces, not primary modules: both deliberately mark none of the
+ * three as active. Marking Control active on the proof would claim that Control means
+ * H01/H02/H03, which is exactly what it does not mean — Control means the workspace for an
+ * acquired decision. The nav geometry is identical in every case.
  */
-export type ProductSurface = 'home' | 'acquisition' | 'control' | 'walkthrough';
+export type ProductSurface = 'home' | 'acquisition' | 'control' | 'control-proof' | 'walkthrough';
 
 export const ProductTopbar = ({ surface, onNavigateHome, onNavigateAcquisition, onNavigateControl, context }: Readonly<{
   surface: ProductSurface;

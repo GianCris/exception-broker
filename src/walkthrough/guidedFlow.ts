@@ -37,8 +37,18 @@ export type GuidedWalkthroughStep = Readonly<{
   coachCopy: string;
   spotlightTarget: GuidedTarget;
   requiredAction: GuidedRequiredAction;
+  /**
+   * One teaching idea carried across the handoff, where the story is most easily
+   * misread. Steps 3 and 4 are a single causal moment — the acquired decision moves
+   * forward, and what can happen to it is then established by something other than the
+   * conversation that produced it — so the same idea is stated on both sides of it.
+   */
+  teachingNote?: string;
   nextStep?: GuidedStepId;
 }>;
+
+/** Stated on both sides of the handoff so the transition reads as one move, not two. */
+export const guidedHandoffTeaching = 'The decision moves forward. Operational truth is checked independently.';
 
 export const guidedWalkthroughSteps: readonly GuidedWalkthroughStep[] = [
   {
@@ -63,14 +73,16 @@ export const guidedWalkthroughSteps: readonly GuidedWalkthroughStep[] = [
     coachCopy: 'APPROVED still does not mean execute. Continue to Control to review exactly what was acquired.',
     spotlightTarget: 'continue-control',
     requiredAction: { kind: 'REAL_ACTION', label: 'Continue to Control', hint: 'Use the Continue to Control action to make the handoff yourself.' },
+    teachingNote: guidedHandoffTeaching,
     nextStep: 'review',
   },
   {
     stepId: 'review', index: 4, stage: 'control',
     title: 'Review the exact decision',
-    coachCopy: 'Review exactly what the AI-acquired decision contains before asking the Broker to evaluate its application.',
+    coachCopy: 'This is the decision you just acquired, now in Control. Review exactly what it contains before asking the Broker to evaluate its application.',
     spotlightTarget: 'review-proposal',
     requiredAction: { kind: 'REAL_ACTION', label: 'Review exact proposal', hint: 'Open the real exact review sheet to continue.' },
+    teachingNote: guidedHandoffTeaching,
     nextStep: 'apply',
   },
   {

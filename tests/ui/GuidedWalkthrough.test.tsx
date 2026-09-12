@@ -15,7 +15,7 @@ const setHash = (hash: string) => { window.history.replaceState(null, '', hash =
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); setHash(''); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setHash(''); });
 
-const Walkthrough = () => <GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} />;
+const Walkthrough = () => <GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} />;
 const progress = () => screen.getByText(/^Step \d of 6$/).textContent;
 const coach = () => screen.getByLabelText('Guided walkthrough coach');
 const target = (name: string) => document.querySelector(`[data-walkthrough-target="${name}"]`) as HTMLElement;
@@ -133,14 +133,16 @@ describe('Guided walkthrough flow', () => {
     expect(within(model).queryByText('REJECTED', { exact: true })).not.toBeInTheDocument();
     // The completion summary reads the Broker's own answer back, not a literal of its own.
     const summary = within(coach());
-    expect(summary.getByText('Application').closest('div')).toHaveTextContent('ApplicationBLOCK');
+    expect(summary.getByText('Broker disposition').closest('div')).toHaveTextContent('Broker dispositionBLOCK');
+    // The application is what was blocked; it is not itself a disposition.
+    expect(summary.queryByText('Application', { exact: true })).not.toBeInTheDocument();
     expect(summary.getByText('Decision').closest('div')).toHaveTextContent('DecisionAPPROVED');
     expect(summary.getByText('External execution').closest('div')).toHaveTextContent('External executionNONE');
   });
 
   it('offers both honest exits at completion and no seventh step', () => {
     const acquisition = vi.fn(); const control = vi.fn();
-    render(<GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={acquisition} onNavigateControl={control} />);
+    render(<GuidedWalkthroughExperience onNavigateHome={vi.fn()} onNavigateAcquisition={acquisition} onNavigateControl={vi.fn()} onNavigateControlProof={control} />);
     runToOutcome();
     expect(within(coach()).queryByRole('button', { name: /^Next/ })).not.toBeInTheDocument();
     expect(within(coach()).queryByRole('button', { name: 'Skip walkthrough' })).not.toBeInTheDocument();
@@ -165,7 +167,7 @@ describe('Guided walkthrough flow', () => {
 
   it('skips to an honest exit instead of pretending the walkthrough was completed', () => {
     const home = vi.fn();
-    render(<GuidedWalkthroughExperience onNavigateHome={home} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} />);
+    render(<GuidedWalkthroughExperience onNavigateHome={home} onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateControlProof={vi.fn()} />);
     fireEvent.click(within(coach()).getByRole('button', { name: 'Skip walkthrough' }));
     expect(screen.getByRole('heading', { name: 'Walkthrough skipped' })).toBeVisible();
     expect(screen.getByText(/nothing was demonstrated and nothing was recorded/)).toBeVisible();
@@ -182,6 +184,95 @@ describe('Guided walkthrough flow', () => {
     expect(progress()).toBe('Step 5 of 6');
     expect(within(coach()).getByRole('heading', { name: 'The proposal was discarded' })).toBeVisible();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+  });
+});
+
+describe('Guided walkthrough progressive reveal', () => {
+  const stage = () => document.querySelector('.guided-main') as HTMLElement;
+
+  it('keeps step 1 on the conversation without giving away the step 2 payoff', () => {
+    render(<Walkthrough />);
+    expect(progress()).toBe('Step 1 of 6');
+    // The conversation is the subject; everything it has not caused yet is dormant.
+    expect(stage()).toHaveAttribute('data-guided-reveal', 'conversation');
+    expect(document.querySelector('[data-walkthrough-active="true"]')).toBe(target('conversation'));
+    // The APPROVED payoff belongs to step 2 and is not rendered at all yet.
+    expect(target('decision')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'APPROVED' })).not.toBeInTheDocument();
+    // Dormant is not hidden: the panels keep their place and state nothing false.
+    expect(screen.getByRole('heading', { name: 'Simulated provider evidence' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Decision formation' })).toBeVisible();
+    expect(screen.getByText('PENDING')).toBeVisible();
+    expect(screen.getByText('LOCKED')).toBeVisible();
+  });
+
+  it('gives evidence and decision formation their presence at step 2, where APPROVED is earned', () => {
+    render(<Walkthrough />);
+    next();
+    expect(progress()).toBe('Step 2 of 6');
+    expect(stage()).toHaveAttribute('data-guided-reveal', 'decision');
+    expect(screen.getByText('USABLE')).toBeVisible();
+    expect(within(target('decision')).getByRole('heading', { name: 'APPROVED' })).toBeVisible();
+    expect(screen.queryByText('PENDING')).not.toBeInTheDocument();
+  });
+
+  it('changes no scenario fact between the two reveal states and never self-advances', () => {
+    render(<Walkthrough />);
+    const factsAtStepOne = screen.getByRole('heading', { name: 'Short physical supply' }).closest('header')!.textContent;
+    // Nothing advances on its own: the step only moves when the learner moves it.
+    expect(progress()).toBe('Step 1 of 6');
+    next();
+    expect(screen.getByRole('heading', { name: 'Short physical supply' }).closest('header')!.textContent).toBe(factsAtStepOne);
+    expect(String(factsAtStepOne)).toContain(`${facts.requestedTotalUnits} units`);
+  });
+
+  it('keeps the APPROVED decision neutral plum rather than a success colour', () => {
+    render(<Walkthrough />);
+    next();
+    const resolution = target('decision');
+    expect(resolution).toHaveClass('acq-resolution');
+    expect(resolution.className).not.toMatch(/success|allow|green/i);
+    expect(within(resolution).getByText('READY FOR REVIEW')).toBeVisible();
+  });
+});
+
+describe('Guided walkthrough story continuity', () => {
+  it('carries one teaching idea across the step 3 to step 4 handoff', () => {
+    render(<Walkthrough />);
+    next(); next();
+    expect(progress()).toBe('Step 3 of 6');
+    const teaching = 'The decision moves forward. Operational truth is checked independently.';
+    expect(within(coach()).getByText(teaching)).toBeVisible();
+    fireEvent.click(target('continue-control'));
+    expect(progress()).toBe('Step 4 of 6');
+    expect(within(coach()).getByText(teaching)).toBeVisible();
+  });
+
+  it('describes the guided Control stage as the decision just acquired, evaluated deterministically', () => {
+    render(<Walkthrough />);
+    next(); next();
+    fireEvent.click(target('continue-control'));
+    const context = screen.getByRole('region', { name: 'Guided walkthrough case context' });
+    // Both truths at once: the acquisition was simulated, the evaluation is the real H02.
+    expect(within(context).getByRole('heading', { name: 'The decision you just acquired' })).toBeVisible();
+    expect(within(context).getByText(/Guided simulated acquisition.*deterministic H02 evaluation/)).toBeVisible();
+    expect(within(context).getByText('Operational truth is checked independently')).toBeVisible();
+    // The proof-case framing never appears inside the walkthrough.
+    expect(screen.queryByRole('region', { name: 'Proof case context' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Configured decision input/)).not.toBeInTheDocument();
+    const decision = screen.getByRole('region', { name: 'Decision fixed' });
+    expect(within(decision).getByText('Guided simulated acquisition')).toBeVisible();
+    expect(within(decision).getByText('Deterministic H02 evaluation · not a live CALL-E acquisition')).toBeVisible();
+  });
+
+  it('leaves the normal Control Proof copy untouched outside the walkthrough', () => {
+    render(<App />);
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Control' }));
+    fireEvent.click(screen.getByRole('button', { name: /Explore Control proof/ }));
+    expect(screen.getByRole('region', { name: 'Proof case context' })).toBeVisible();
+    expect(screen.getAllByText('Configured decision input').length).toBeGreaterThan(0);
+    expect(screen.getByText('Deterministic proof · not a CALL-E acquisition')).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Guided walkthrough case context' })).not.toBeInTheDocument();
   });
 });
 
@@ -247,7 +338,9 @@ describe('Guided walkthrough navigation', () => {
     expect(screen.getByText('Step 1 of 6')).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Control' }));
     expect(window.location.hash).toBe('');
-    expect(screen.getByText('Deterministic proof')).toBeVisible();
+    // Primary Control leaves for the Control workspace, never for deterministic proof.
+    expect(screen.getByRole('heading', { name: 'Control starts with an acquired decision.' })).toBeVisible();
+    expect(screen.queryByText('Deterministic proof')).not.toBeInTheDocument();
   });
 
   it('marks no primary module active while guiding, and keeps the nav to three modules', () => {

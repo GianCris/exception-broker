@@ -164,8 +164,10 @@ describe('Acquisition V1 experience', () => {
     expect(screen.getByRole('heading', { name: 'Decisions need guardrails to reach reality.' })).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' })).getByRole('button', { name: 'Acquisition' }));
     expect(screen.getByRole('heading', { name: 'Connect to CALL-E' })).toBeVisible();
+    // Primary Control from Acquisition resolves to the Control workspace. With nothing
+    // acquired yet, that workspace is honestly empty rather than a deterministic proof case.
     fireEvent.click(screen.getByRole('button', { name: 'Control' }));
-    expect(screen.getByRole('heading', { name: 'Can this decision be applied safely now?' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Control starts with an acquired decision.' })).toBeVisible();
   });
 
   it('offers hosted and own-account connection paths without exposing demo-token UX', () => {

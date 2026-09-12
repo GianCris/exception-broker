@@ -21,8 +21,14 @@ const LiveReviewDiamond = () => (
   </svg>
 );
 
-export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onNavigateDeterministic, onNavigateHome }: Readonly<{
-  api: AcquisitionBrowserApi; initial?: LiveControlPublicRecord; onNavigateAcquisition: () => void; onNavigateDeterministic: () => void;
+/**
+ * Live Control IS the Control workspace for an acquired decision, so primary Control
+ * navigation from here resolves back through the Control Workspace resolver — which
+ * returns to this session. It never opens the deterministic H01/H02/H03 proof: that is a
+ * separate verification surface, not the workspace this decision lives in.
+ */
+export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onNavigateControl, onNavigateHome }: Readonly<{
+  api: AcquisitionBrowserApi; initial?: LiveControlPublicRecord; onNavigateAcquisition: () => void; onNavigateControl: () => void;
   onNavigateHome?: () => void;
 }>) => {
   const [record, setRecord] = useState<LiveControlPublicRecord | null>(initial ?? null);
@@ -45,7 +51,7 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
   };
   const receipt = record?.receipt;
   const model = record === null ? undefined : createLiveControlSurfaceModel(record);
-  return <div className="app-shell proof-shell control-surface live-control-shell"><div className="control-chassis"><ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateDeterministic}
+  return <div className="app-shell proof-shell control-surface live-control-shell"><div className="control-chassis"><ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
       context={<SurfaceContext label="Live control" detail="CALL-E acquisition · controlled local context · no external execution" />} />
     <div className="product-layout">
     <aside className="control-queue control-rail" aria-labelledby="live-rail-title">
