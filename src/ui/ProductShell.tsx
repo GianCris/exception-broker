@@ -52,11 +52,11 @@ export const ThemeControl = () => {
 };
 
 /**
- * The deterministic-proof entry point. It is an action, so it is a button and it says what
- * it opens. There is no Guided Demo route yet, so it never promises one.
+ * The learning entry point. It is an action, so it is a button, and it names the surface it
+ * opens: the Guided Walkthrough, which is a real route rather than a promise.
  */
-export const ViewProofAction = ({ onOpen }: Readonly<{ onOpen: () => void }>) => (
-  <button type="button" className="product-cta" onClick={onOpen}>View proof <ShellArrow /></button>
+export const GuidedWalkthroughAction = ({ onOpen }: Readonly<{ onOpen: () => void }>) => (
+  <button type="button" className="product-cta" onClick={onOpen}>Guided walkthrough <ShellArrow /></button>
 );
 
 /** A context indicator, never an action: it states which truth the current surface carries. */
@@ -64,7 +64,11 @@ export const SurfaceContext = ({ label, detail, ariaLabel }: Readonly<{ label: s
   <span className="proof-mode" {...(ariaLabel === undefined ? {} : { 'aria-label': ariaLabel })}><b>{label}</b><span>{detail}</span></span>
 );
 
-export type ProductSurface = 'home' | 'acquisition' | 'control';
+/**
+ * 'walkthrough' is a guided learning mode, not a fourth product module: it deliberately
+ * marks none of Home / Acquisition / Control as the active module.
+ */
+export type ProductSurface = 'home' | 'acquisition' | 'control' | 'walkthrough';
 
 export const ProductTopbar = ({ surface, onNavigateHome, onNavigateAcquisition, onNavigateControl, context }: Readonly<{
   surface: ProductSurface;

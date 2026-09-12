@@ -53,19 +53,19 @@ describe('Shared product topbar', () => {
     expect(currentRoute()).toBe('Control');
   });
 
-  it('exposes the deterministic proof as View proof and never as a demo that does not exist', () => {
+  it('exposes the learning entry as Guided walkthrough and never as a demo that does not exist', () => {
     render(<App />);
-    // Home and Acquisition may open the proof; the label says exactly what it opens.
-    expect(within(topbar()).getByRole('button', { name: /View proof/ })).toBeVisible();
+    // Home and Acquisition may open the walkthrough; the label says exactly what it opens.
+    expect(within(topbar()).getByRole('button', { name: /Guided walkthrough/ })).toBeVisible();
     goto('Acquisition');
-    expect(within(topbar()).getByRole('button', { name: /View proof/ })).toBeVisible();
-    expect(document.body.textContent).not.toMatch(/Try demo|Start demo|Run demo/i);
+    expect(within(topbar()).getByRole('button', { name: /Guided walkthrough/ })).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/Try demo|Start demo|Run demo|View proof/i);
   });
 
   it('replaces the proof action with a truthful context badge once the user is inside the proof', () => {
     render(<App />);
     goto('Control');
-    expect(within(topbar()).queryByRole('button', { name: /View proof/ })).not.toBeInTheDocument();
+    expect(within(topbar()).queryByRole('button', { name: /Guided walkthrough/ })).not.toBeInTheDocument();
     const context = screen.getByLabelText(/deterministic local proof with configured evidence.*No external execution/i);
     expect(context).toHaveClass('proof-mode');
     expect(context.tagName).toBe('SPAN');
@@ -79,7 +79,7 @@ describe('Shared product topbar', () => {
     const context = within(topbar()).getByText('Live control').closest<HTMLElement>('.proof-mode')!;
     expect(within(context).getByText('CALL-E acquisition · controlled local context · no external execution')).toBeVisible();
     expect(within(topbar()).queryByText('Deterministic proof')).not.toBeInTheDocument();
-    expect(within(topbar()).queryByRole('button', { name: /View proof/ })).not.toBeInTheDocument();
+    expect(within(topbar()).queryByRole('button', { name: /Guided walkthrough/ })).not.toBeInTheDocument();
   });
 
   it('shares one mobile navigation disclosure across routes, closing on Escape with focus restored', () => {

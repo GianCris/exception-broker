@@ -1,0 +1,119 @@
+/* Guided Walkthrough.
+
+   The coach is not a tooltip layer floating over the product: it lives in the product's own
+   branded rail, so it can never cover the control it is pointing at, never dims the
+   interface, and always reads as part of Exception Broker rather than as something wrapped
+   around it. The guided stages borrow Acquisition's documentary language and Control's
+   frozen instrument language; only the coach itself is new, and it stays secondary. */
+
+.guided-shell { --guided-plum: #9b78ef; }
+:root[data-theme="light"] .guided-shell, :root[data-theme="light"] .guided-control { --guided-plum: #6a45b0; }
+.guided-control { --guided-plum: #9b78ef; }
+
+/* ── The coach ────────────────────────────────────────────────────── */
+.guided-coach { display: grid; gap: 9px; min-width: 0; }
+.guided-coach .eyebrow {
+  margin: 0; color: color-mix(in srgb, var(--guided-plum) 80%, var(--text-primary));
+  font-size: 9px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase;
+}
+.guided-progress {
+  margin: 0; color: var(--text-muted);
+  font-size: .58rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.guided-progress:focus-visible { outline: 2px solid var(--guided-plum); outline-offset: 3px; }
+.guided-coach-body { display: grid; gap: 8px; min-width: 0; }
+.guided-coach-body h2 {
+  margin: 0; color: var(--text-primary); font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.14rem; font-weight: 500; letter-spacing: -.025em; line-height: 1.18;
+}
+.guided-coach-body > p { margin: 0; color: var(--text-secondary); font-size: .71rem; line-height: 1.55; }
+
+.guided-coach .guided-next {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  justify-self: stretch; min-height: 40px; margin-top: 3px; padding: 0 15px;
+  color: #fff; border: 1px solid rgb(169 137 255 / 58%); border-radius: 9px;
+  background: linear-gradient(135deg, #7040df, #3e1aaf);
+  box-shadow: 0 12px 26px rgb(60 34 150 / 32%);
+  font: inherit; font-size: .76rem; font-weight: 750; cursor: pointer;
+  transition: filter 140ms ease;
+}
+.guided-coach .guided-next:hover { filter: brightness(1.1); }
+.guided-coach .guided-secondary {
+  justify-self: stretch; min-height: 34px; padding: 0 13px;
+  color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 8px;
+  background: transparent; font: inherit; font-size: .7rem; font-weight: 700; cursor: pointer;
+}
+.guided-coach .guided-secondary:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+/* "Your turn": the coach states the action and then gets out of the way. */
+.guided-required {
+  display: grid; gap: 3px; margin: 2px 0 0; padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--guided-plum) 38%, var(--border-subtle));
+  border-left: 2px solid var(--guided-plum); border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-base) 52%, transparent);
+}
+.guided-required b { color: color-mix(in srgb, var(--guided-plum) 76%, var(--text-primary)); font-size: .56rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.guided-required span { color: var(--text-secondary); font-size: .68rem; line-height: 1.5; }
+
+.guided-summary { display: grid; gap: 8px; margin-top: 4px; }
+.guided-summary dl {
+  display: grid; gap: 5px; margin: 0; padding: 10px 12px;
+  border: 1px solid var(--border-subtle); border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-base) 52%, transparent);
+}
+.guided-summary dl div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
+.guided-summary dt { color: var(--text-muted); font-size: .56rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.guided-summary dd { margin: 0; color: var(--text-primary); font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
+
+.guided-coach-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 4px; }
+.guided-coach .guided-quiet {
+  padding: 0; border: 0; background: transparent; color: var(--text-muted);
+  font: inherit; font-size: .58rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+}
+.guided-coach .guided-quiet:hover { color: var(--text-secondary); }
+.guided-coach button:focus-visible { outline: 2px solid var(--guided-plum); outline-offset: 3px; }
+
+/* The coach stays readable while the exact review sheet is open: visible above the scrim,
+   but outside the dialog, so the sheet keeps its own focus trap. */
+.guided-control .guided-coach { position: relative; z-index: 65; }
+
+/* ── Spotlight: one restrained ring on the real control ───────────── */
+[data-walkthrough-active="true"] {
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--guided-plum, #9b78ef) 62%, transparent),
+    0 0 0 6px color-mix(in srgb, var(--guided-plum, #9b78ef) 13%, transparent);
+}
+button[data-walkthrough-active="true"] { border-radius: 9px; }
+
+/* ── Guided rails ─────────────────────────────────────────────────── */
+.guided-shell .guided-rail .acq-rail-scene { margin-top: 18px; }
+.control-surface .guided-rail .queue-top { display: grid; gap: 0; }
+
+/* ── Guided acquisition stage ─────────────────────────────────────── */
+.guided-main .acq-resolution-action.guided-resolution-wait { align-content: center; }
+.guided-main .acq-resolution-action.guided-resolution-wait small { max-width: 22ch; color: var(--text-muted); text-align: right; }
+.guided-main .acq-inline-status.is-active { letter-spacing: .1em; }
+
+/* ── Skip exit ────────────────────────────────────────────────────── */
+.guided-exit-page { display: grid; place-items: center; padding: clamp(20px, 6vh, 64px) clamp(18px, 4vw, 60px); }
+.guided-exit {
+  display: grid; gap: 11px; width: min(560px, 100%); padding: clamp(22px, 4vh, 34px) clamp(22px, 3vw, 36px);
+  border: 1px solid var(--border-subtle); border-radius: 14px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--surface-control) 92%, #071a35), color-mix(in srgb, var(--surface-depth) 90%, transparent));
+  box-shadow: 0 22px 60px rgb(3 7 22 / 22%);
+}
+.guided-exit .eyebrow { margin: 0; color: color-mix(in srgb, var(--guided-plum) 80%, var(--text-primary)); font-size: 9px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase; }
+.guided-exit h1 { margin: 0; color: var(--text-primary); font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.5rem, 2.4vw, 2rem); font-weight: 500; letter-spacing: -.03em; }
+.guided-exit > p { margin: 0; color: var(--text-secondary); font-size: .78rem; line-height: 1.6; }
+.guided-exit-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.guided-exit .guided-next, .guided-exit .guided-secondary { justify-self: start; }
+.guided-exit .guided-quiet { justify-self: start; }
+
+@media (max-width: 800px) {
+  .guided-shell .guided-rail .acq-rail-scene { display: none; }
+  .guided-coach-body h2 { font-size: 1.04rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guided-coach .guided-next, .guided-coach .guided-secondary { transition: none; }
+}

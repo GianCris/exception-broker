@@ -5,6 +5,7 @@ import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, createDecisionTransitionView, historicalCallProof, type DecisionTraceView, type DecisionTransitionView } from '../presentation/decisionTraceViewModel.js';
 import { controlQuestion, createControlQueueItem, createControlSurfaceModel, type ControlProposal } from '../presentation/controlSurfaceViewModel.js';
 import { AttentionQueue, ControlInstrument, ControlKeyTakeaway } from './ControlInstrument.js';
+import type { ReactNode } from 'react';
 import { ProductTopbar, SurfaceContext } from './ProductShell.js';
 import { motionTokens } from './motion.js';
 
@@ -76,7 +77,7 @@ const Review = ({ view, proposal: exact, onReview, onClose }: Readonly<{ view: D
       </div>
       <footer className="sheet-actions">
         <p>Applying asks the Broker to evaluate this exact attempt. It does not execute externally.</p>
-        <div className="proof-actions"><button type="button" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
+        <div className="proof-actions"><button type="button" data-walkthrough-target="apply-reviewed" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
       </footer>
     </> : <div className="sheet-body"><p>No reviewable proposal. No decision application was attempted.</p></div>}
   </motion.aside></motion.div></MotionConfig>;
@@ -137,12 +138,28 @@ const Assessments = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   </section>;
 };
 
-export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavigateHome, initialScenario = 'H02' }: Readonly<{
+/**
+ * Presentation-and-orchestration hooks the Guided Walkthrough composes this experience
+ * with. Every field is optional to the caller and the whole object defaults to undefined:
+ * deterministic Control and Live Control render and behave exactly as before.
+ */
+export type ControlWalkthrough = Readonly<{
+  /** Replaces the deterministic-proof context indicator in the shared topbar. */
+  context: ReactNode;
+  /** Replaces the H01/H02/H03 attention queue; the walkthrough never mixes into it. */
+  rail: ReactNode;
+  onReviewOpen?: () => void;
+  /** Reports the action taken and the disposition the Broker actually produced for it. */
+  onReviewResolved?: (action: 'APPLY' | 'DISCARD', disposition: string) => void;
+}>;
+
+export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavigateHome, initialScenario = 'H02', walkthrough }: Readonly<{
   prepare: (scenario: ProofScenario) => ProofSession;
   review: (session: ProofSession, action: 'APPLY' | 'DISCARD') => ProofSession;
   onNavigateAcquisition?: () => void;
   onNavigateHome?: () => void;
   initialScenario?: ProofScenario;
+  walkthrough?: ControlWalkthrough;
 }>) => {
   const [session, setSession] = useState(() => prepare(initialScenario));
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -170,11 +187,10 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     const resolved = review(session, action);
     setSession(resolved);
     setReceipt(createDecisionTransitionView({ beforeSession: session, afterSession: resolved, action }));
-    if (action === 'APPLY') {
-      const resolvedControl = createDecisionControlView(resolved);
-      setResolvedAnnouncement(`Broker disposition ${resolvedControl.disposition}. ${resolvedControl.why}`);
-    }
+    const resolvedControl = createDecisionControlView(resolved);
+    if (action === 'APPLY') setResolvedAnnouncement(`Broker disposition ${resolvedControl.disposition}. ${resolvedControl.why}`);
     setReviewOpen(false);
+    walkthrough?.onReviewResolved?.(action, resolvedControl.disposition);
   };
   useEffect(() => {
     if (backgroundRef.current) backgroundRef.current.inert = reviewOpen;
@@ -185,19 +201,19 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
       (reviewCloseDestination.current === 'trigger' ? reviewButtonRef.current : controlSummaryRef.current)?.focus({ preventScroll: true });
     }
   }, [reviewOpen]);
-  const openReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(true); };
+  const openReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(true); walkthrough?.onReviewOpen?.(); };
   const closeReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(false); };
   const focusScenario = (scenario: ProofScenario) => {
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
-  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition}
-      context={<SurfaceContext label="Deterministic proof" detail="Configured evidence · local only · no external execution"
+  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><ProductTopbar surface={walkthrough === undefined ? 'control' : 'walkthrough'} onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition}
+      context={walkthrough?.context ?? <SurfaceContext label="Deterministic proof" detail="Configured evidence · local only · no external execution"
         ariaLabel="Demo environment: deterministic local proof with configured evidence. No external execution." />} />
     <div className="product-layout">
-    <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic demo cases.">
+    {walkthrough?.rail ?? <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic demo cases.">
       <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>
-    </AttentionQueue>
+    </AttentionQueue>}
     <main className="control-workspace">
     <header className="control-head"><p className="eyebrow">Decision control</p><h1>{controlQuestion}</h1><p>{model.answer}</p>
       <section className="control-context" aria-label="Demo case context"><b>Demo</b><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><small>Supply exception <span aria-hidden="true">·</span> Demo case {view.scenario}</small><strong>Deterministic workspace</strong></section>
@@ -208,7 +224,7 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
       sceneKey={view.scenario}
       model={model}
       reviewAction={view.canReview
-        ? <div className="control-review-action"><button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal <span aria-hidden="true">→</span></button><small>{model.nextActionNote}</small></div>
+        ? <div className="control-review-action"><button ref={reviewButtonRef} type="button" data-walkthrough-target="review-proposal" onClick={openReview}>Review exact proposal <span aria-hidden="true">→</span></button><small>{model.nextActionNote}</small></div>
         : model.review.state === 'COMPLETED'
           ? <p className="control-review-done"><i aria-hidden="true">✓</i><small>{model.review.detail}</small></p>
           : null}
@@ -219,7 +235,7 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
       <div className="control-dock-top">
         {model.takeaway ? <ControlKeyTakeaway takeaway={model.takeaway} tone={model.disposition.tone} /> : null}
         {/* Verification before demo utilities: Reset is a demo affordance, not a product action. */}
-        <div className="control-dock-tools">
+        {walkthrough === undefined ? <div className="control-dock-tools">
           <details className="supporting-proof"><summary>Verify current decision</summary><div className="control-drawer"><div className="supporting-proof-content">
             <p className="drawer-note">Each demo case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p>
             <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
@@ -228,7 +244,7 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
           </div></div></details>
           <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><div className="control-drawer"><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic demo case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></div></details>
           <button type="button" className="dock-reset" onClick={() => focusScenario(view.scenario)}>Reset demo case</button>
-        </div>
+        </div> : null}
       </div>
       <div className="control-dock-bar">
         {view.canReview ? null : <section className="control-next"><p className="eyebrow">Next action</p><h2>{model.nextAction}</h2></section>}

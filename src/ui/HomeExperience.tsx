@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, MotionConfig, useMotionValue, useReducedMotion } from 'motion/react';
 import { proofScenarios, type ProofScenario } from '../demo/proofDemo.js';
-import { ProductTopbar, ViewProofAction } from './ProductShell.js';
+import { GuidedWalkthroughAction, ProductTopbar } from './ProductShell.js';
 import '../styles/home.css';
 
 const logo = '/images/home/exception-broker-logo.png';
@@ -45,15 +45,16 @@ function SentinelScene() {
   </div>;
 }
 
-export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl }: Readonly<{
+export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl, onNavigateWalkthrough }: Readonly<{
   onNavigateAcquisition: () => void;
   onNavigateControl: (scenario?: ProofScenario) => void;
+  onNavigateWalkthrough: () => void;
 }>) => {
   const homeTitle = useRef<HTMLHeadingElement>(null);
   const goHome = () => { homeTitle.current?.focus(); homeTitle.current?.scrollIntoView?.({ block: 'start' }); };
   return <MotionConfig reducedMotion="user"><div className="eb-page">
     <ProductTopbar surface="home" onNavigateHome={goHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={() => onNavigateControl()}
-      context={<ViewProofAction onOpen={() => onNavigateControl()} />} />
+      context={<GuidedWalkthroughAction onOpen={onNavigateWalkthrough} />} />
     <main>
       <section className="eb-hero" aria-labelledby="home-title">
         <SentinelScene />
@@ -62,7 +63,7 @@ export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl }: Rea
             <p className="eb-eyebrow">Execution control for AI-acquired decisions</p>
             <h1 ref={homeTitle} tabIndex={-1} id="home-title">Decisions need <em>guardrails</em> to reach reality.</h1>
             <p className="eb-lede">Acquire decisions through AI. Review them exactly.<br /> Let operational reality decide what can execute.</p>
-            <div className="eb-cta-row"><button type="button" className="eb-primary" onClick={onNavigateAcquisition}>Acquire a decision <Arrow /></button><button type="button" className="eb-secondary" onClick={() => onNavigateControl()}><span aria-hidden="true">▷</span> See it in action</button></div>
+            <div className="eb-cta-row"><button type="button" className="eb-primary" onClick={onNavigateAcquisition}>Acquire a decision <Arrow /></button><button type="button" className="eb-secondary" onClick={onNavigateWalkthrough}><span aria-hidden="true">▷</span> See it in action</button></div>
             <div className="eb-values" aria-label="Product values"><span><b>Higher ground</b><small>A better perspective</small></span><span><b>Clearer paths</b><small>Guided decisions</small></span><span><b>Stronger outcomes</b><small>Possible together</small></span></div>
           </div>
           <aside className="eb-scenarios" aria-labelledby="scenario-heading">

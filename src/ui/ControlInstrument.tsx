@@ -140,7 +140,7 @@ const OperationalReality = ({ reality, attemptKey, stage }: Readonly<{ reality: 
 const BrokerDisposition = ({ disposition, attemptKey, stage }: Readonly<{ disposition: ControlDisposition; attemptKey: string; stage: Stage }>) => (
   // Stage 6: the Broker answers, and then everything is quiet again.
   <motion.section key={`${disposition.label}-${attemptKey}`} className={`control-object control-disposition ${disposition.resolved ? 'disposition-resolved' : 'disposition-quiet'}`}
-    aria-label="Broker disposition" initial={{ opacity: 0.2, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={stage(applyStages.disposition, 0.22)}>
+    aria-label="Broker disposition" data-walkthrough-target="disposition" initial={{ opacity: 0.2, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={stage(applyStages.disposition, 0.22)}>
     <p className="control-label">Broker disposition</p>
     <strong className="disposition-label">{disposition.label}</strong>
     <p className="disposition-headline">{disposition.headline}</p>

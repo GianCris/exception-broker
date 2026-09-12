@@ -80,7 +80,7 @@ describe('Home product entry', () => {
   });
 
   it('exposes keyboard controls and closes the mobile menu on Escape with focus restored', () => {
-    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} />);
+    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateWalkthrough={vi.fn()} />);
     const button = screen.getByRole('button', { name: 'Open navigation' });
     fireEvent.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
@@ -92,7 +92,7 @@ describe('Home product entry', () => {
 
   it('keeps the reduced-motion scene static without losing the HTML journey', () => {
     motionPreference.reduced = true;
-    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} />);
+    render(<HomeExperience onNavigateAcquisition={vi.fn()} onNavigateControl={vi.fn()} onNavigateWalkthrough={vi.fn()} />);
     const image = screen.getByAltText(/Sentinel Ridge:/);
     const transform = image.style.transform;
     fireEvent(screen.getByLabelText('Sentinel Ridge decision path'), new MouseEvent('pointermove', { bubbles: true, clientX: 100, clientY: 100 }));
@@ -102,18 +102,21 @@ describe('Home product entry', () => {
     for (const title of ['Decision acquired', 'Execution gate', 'Higher ground']) expect(scene.getByText(title)).toBeVisible();
   });
 
-  it('sends acquisition and demo CTA intent only, without a network request', () => {
-    const acquisition = vi.fn(); const control = vi.fn(); const fetch = vi.fn();
+  it('sends acquisition, walkthrough and proof CTA intent only, without a network request', () => {
+    const acquisition = vi.fn(); const control = vi.fn(); const walkthrough = vi.fn(); const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
-    render(<HomeExperience onNavigateAcquisition={acquisition} onNavigateControl={control} />);
+    render(<HomeExperience onNavigateAcquisition={acquisition} onNavigateControl={control} onNavigateWalkthrough={walkthrough} />);
     fireEvent.click(screen.getByRole('button', { name: 'Acquire a decision' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start acquisition' }));
     expect(acquisition).toHaveBeenCalledTimes(2);
+    // Learning goes to the walkthrough; the scenario list still goes to the proof.
     fireEvent.click(screen.getByRole('button', { name: 'See it in action' }));
+    fireEvent.click(screen.getByRole('button', { name: /Guided walkthrough/ }));
+    expect(walkthrough).toHaveBeenCalledTimes(2);
+    expect(control).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'View all scenarios' }));
-    expect(control).toHaveBeenCalledTimes(2);
+    expect(control).toHaveBeenCalledTimes(1);
     expect(control).toHaveBeenNthCalledWith(1);
-    expect(control).toHaveBeenNthCalledWith(2);
     expect(fetch).not.toHaveBeenCalled();
   });
 
