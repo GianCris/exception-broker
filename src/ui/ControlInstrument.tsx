@@ -1,16 +1,27 @@
 import { forwardRef, type ReactNode } from 'react';
-import { motion, MotionConfig } from 'motion/react';
+import { motion, MotionConfig, useReducedMotion, type Transition } from 'motion/react';
 
 import type {
   ControlAttempt, ControlBoundary, ControlDecision, ControlDisposition, ControlProposal,
   ControlQueueItem, ControlReality, ControlReview, ControlSurfaceModel, ControlTakeaway,
 } from '../presentation/controlSurfaceViewModel.js';
-import { motionTokens } from './motion.js';
+import { applyStages, motionTokens } from './motion.js';
 import { SentinelScene } from './ProductShell.js';
 
 // Quiet → one consequential activation → quiet. Each stage is revealed only after the
 // stage that caused it, so the choreography teaches causality rather than decorating it.
-const stage = (index: number) => ({ ...motionTokens.reveal, delay: index * 0.12 });
+// Nothing animates layout: every stage is opacity or a transform that cannot move the
+// camera, grow the instrument, or extend its scroll box.
+const controlEase: [number, number, number, number] = [...motionTokens.reveal.ease];
+type Stage = (delayMs: number, duration?: number) => Transition;
+const useStage = (): Stage => {
+  const reduced = useReducedMotion();
+  // With reduced motion the transition is over before it starts: the resolved state is
+  // readable immediately and nothing waits on decoration.
+  return (delayMs, duration = 0.2) => reduced
+    ? { duration: 0 }
+    : { duration, ease: controlEase, delay: delayMs / 1000 };
+};
 
 // The acquired Decision is an object, not a step. It keeps the same mark in every state.
 const DecisionDiamond = () => (
@@ -21,6 +32,8 @@ const DecisionDiamond = () => (
   </svg>
 );
 
+// The acquired decision never travels and never changes semantic colour, so it is the one
+// object with no entry animation at all — it is the fixed point the choreography moves around.
 const DecisionFixed = ({ decision }: Readonly<{ decision: ControlDecision }>) => (
   <motion.section className={`control-object control-decision ${decision.available ? '' : 'decision-unavailable'}`}
     aria-label="Decision fixed" initial={false} animate={{ opacity: 1 }} transition={motionTokens.settle}>
@@ -31,11 +44,12 @@ const DecisionFixed = ({ decision }: Readonly<{ decision: ControlDecision }>) =>
   </motion.section>
 );
 
-const ExactReviewSummary = ({ review, proposal, action }: Readonly<{
-  review: ControlReview; proposal?: ControlProposal | undefined; action?: ReactNode;
+const ExactReviewSummary = ({ review, proposal, action, stage }: Readonly<{
+  review: ControlReview; proposal?: ControlProposal | undefined; action?: ReactNode; stage: Stage;
 }>) => (
-  <motion.section className={`control-object control-review review-${review.state.toLowerCase()}`} aria-label="Exact review"
-    initial={false} animate={{ opacity: 1 }} transition={stage(1)}>
+  // Stage 1: the review is confirmed and settles into its demoted material.
+  <motion.section key={review.state} className={`control-object control-review review-${review.state.toLowerCase()}`} aria-label="Exact review"
+    initial={{ opacity: 0.5 }} animate={{ opacity: 1 }} transition={stage(applyStages.review, 0.22)}>
     <p className="control-label">{review.label}</p>
     {proposal ? <>
       <dl className="control-proposal">
@@ -52,15 +66,18 @@ const ExactReviewSummary = ({ review, proposal, action }: Readonly<{
 
 // The signature element. It separates decision and review from reality and disposition,
 // and it carries exactly one state: not engaged, evaluated, or not available.
-const ApplicationBoundary = ({ boundary, attempt }: Readonly<{ boundary: ControlBoundary; attempt?: ControlAttempt | undefined }>) => (
+const ApplicationBoundary = ({ boundary, attempt, stage }: Readonly<{ boundary: ControlBoundary; attempt?: ControlAttempt | undefined; stage: Stage }>) => (
   <div className={`control-boundary boundary-${boundary.state.toLowerCase().replaceAll(' ', '-')}`} aria-label="Application boundary">
-    <motion.i className="boundary-rail" aria-hidden="true" initial={false}
-      animate={{ opacity: boundary.engaged ? 1 : 0.5, scaleY: 1 }} transition={motionTokens.causal} />
+    {/* Stage 3: the boundary engages exactly once — the rail draws to full and lights. */}
+    <motion.i className="boundary-rail" aria-hidden="true" key={`${boundary.state}-${attempt?.key ?? 'none'}`}
+      initial={{ opacity: boundary.engaged ? 0.4 : 0.5, scaleY: boundary.engaged ? 0.82 : 1 }}
+      animate={{ opacity: boundary.engaged ? 1 : 0.5, scaleY: 1 }}
+      transition={stage(applyStages.boundary, 0.24)} />
     <div className="boundary-plate">
       <span className="control-label">Application boundary</span>
       <strong>{boundary.state}</strong>
       {attempt ? <motion.span className="boundary-attempt" key={attempt.key}
-        initial={{ opacity: 0.5, y: -3 }} animate={{ opacity: 1, y: 0 }} transition={stage(1)}>
+        initial={{ opacity: 0.5, y: -3 }} animate={{ opacity: 1, y: 0 }} transition={stage(applyStages.boundary)}>
         Attempt #{attempt.ordinal}
       </motion.span> : null}
       <small>{boundary.note}</small>
@@ -68,27 +85,31 @@ const ApplicationBoundary = ({ boundary, attempt }: Readonly<{ boundary: Control
   </div>
 );
 
-const ApplicationAttempt = ({ attempt }: Readonly<{ attempt: ControlAttempt }>) => (
+// Stage 2: the object that is actually evaluated arrives, from the review that caused it.
+const ApplicationAttempt = ({ attempt, stage }: Readonly<{ attempt: ControlAttempt; stage: Stage }>) => (
   <motion.section className={`control-attempt attempt-${attempt.treatment}`} aria-label="Application Attempt"
-    key={attempt.key} initial={{ opacity: 0.55, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={stage(0)}>
+    key={attempt.key} initial={{ opacity: 0.55, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={stage(applyStages.attempt)}>
     <span className="control-label">Application attempt #{attempt.ordinal}</span>
     <strong>{attempt.label}</strong><small>{attempt.detail}</small>
   </motion.section>
 );
 
-const OperationalReality = ({ reality }: Readonly<{ reality: ControlReality }>) => (
-  <motion.section className={`control-object control-reality reality-${reality.kind.toLowerCase().replaceAll('_', '-')}`}
-    aria-label="Operational reality" initial={false} animate={{ opacity: 1 }} transition={stage(2)}>
+const OperationalReality = ({ reality, attemptKey, stage }: Readonly<{ reality: ControlReality; attemptKey: string; stage: Stage }>) => (
+  // Stage 4: reality stops being dormant and is measured against the attempt.
+  <motion.section key={`${reality.kind}-${attemptKey}`} className={`control-object control-reality reality-${reality.kind.toLowerCase().replaceAll('_', '-')}`}
+    aria-label="Operational reality" initial={{ opacity: 0.35 }} animate={{ opacity: 1 }} transition={stage(applyStages.reality, 0.22)}>
     <p className="control-label">Operational reality</p>
     <h3>{reality.headline}</h3>
     {reality.kind === 'MEASURED' ? <>
       <div className="reality-measure">
         <article className="measure-required"><span>Required</span><strong>{reality.required}</strong><small>{reality.unit}</small></article>
-        <b aria-hidden="true">→</b>
+        {/* Stage 5: the required/available relationship resolves. */}
+        <motion.b aria-hidden="true" initial={{ opacity: 0, scaleX: 0.35 }} animate={{ opacity: 1, scaleX: 1 }} transition={stage(applyStages.resolve, 0.18)}>→</motion.b>
         <article className="measure-available"><span>Available</span><strong>{reality.available}</strong><small>{reality.unit}</small></article>
       </div>
       <p className="reality-authorization"><span>Client authorization</span><strong>{reality.authorization}</strong></p>
-      <p className={`reality-causal ${reality.causalSupported ? 'causal-supported' : 'causal-unsupported'}`}>{reality.causal}</p>
+      <motion.p className={`reality-causal ${reality.causalSupported ? 'causal-supported' : 'causal-unsupported'}`}
+        initial={{ opacity: 0.25 }} animate={{ opacity: 1 }} transition={stage(applyStages.resolve + 60, 0.18)}>{reality.causal}</motion.p>
     </> : null}
     {reality.kind === 'CONFLICTED' ? <>
       <div className="reality-claims">
@@ -116,9 +137,10 @@ const OperationalReality = ({ reality }: Readonly<{ reality: ControlReality }>) 
   </motion.section>
 );
 
-const BrokerDisposition = ({ disposition }: Readonly<{ disposition: ControlDisposition }>) => (
-  <motion.section className={`control-object control-disposition ${disposition.resolved ? 'disposition-resolved' : 'disposition-quiet'}`}
-    aria-label="Broker disposition" initial={false} animate={{ opacity: 1 }} transition={stage(3)}>
+const BrokerDisposition = ({ disposition, attemptKey, stage }: Readonly<{ disposition: ControlDisposition; attemptKey: string; stage: Stage }>) => (
+  // Stage 6: the Broker answers, and then everything is quiet again.
+  <motion.section key={`${disposition.label}-${attemptKey}`} className={`control-object control-disposition ${disposition.resolved ? 'disposition-resolved' : 'disposition-quiet'}`}
+    aria-label="Broker disposition" initial={{ opacity: 0.2, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={stage(applyStages.disposition, 0.22)}>
     <p className="control-label">Broker disposition</p>
     <strong className="disposition-label">{disposition.label}</strong>
     <p className="disposition-headline">{disposition.headline}</p>
@@ -135,23 +157,27 @@ export const ControlKeyTakeaway = ({ takeaway, tone }: Readonly<{ takeaway: Cont
 );
 
 export const ControlInstrument = forwardRef<HTMLElement, Readonly<{
-  ariaLabel: string; model: ControlSurfaceModel; reviewAction?: ReactNode;
-}>>(({ ariaLabel, model, reviewAction }, ref) => (
-  <MotionConfig reducedMotion="user">
-    <section ref={ref} className={`control-instrument instrument-${model.disposition.tone}`} aria-label={ariaLabel} tabIndex={-1}>
+  ariaLabel: string; model: ControlSurfaceModel; reviewAction?: ReactNode; sceneKey?: string;
+}>>(({ ariaLabel, model, reviewAction, sceneKey }, ref) => {
+  const stage = useStage();
+  const attemptKey = model.attempt?.key ?? 'no-attempt';
+  return <MotionConfig reducedMotion="user">
+    {/* Switching cases is a camera-stable change of subject, not a page transition. */}
+    <motion.section ref={ref} key={sceneKey} className={`control-instrument instrument-${model.disposition.tone}`}
+      aria-label={ariaLabel} tabIndex={-1} initial={{ opacity: 0.4, y: -5 }} animate={{ opacity: 1, y: 0 }} transition={stage(0, 0.18)}>
       <div className="control-column control-column-decision">
         <DecisionFixed decision={model.decision} />
-        <ExactReviewSummary review={model.review} proposal={model.proposal} action={reviewAction} />
-        {model.attempt ? <ApplicationAttempt attempt={model.attempt} /> : null}
+        <ExactReviewSummary review={model.review} proposal={model.proposal} action={reviewAction} stage={stage} />
+        {model.attempt ? <ApplicationAttempt attempt={model.attempt} stage={stage} /> : null}
       </div>
-      <ApplicationBoundary boundary={model.boundary} attempt={model.attempt} />
+      <ApplicationBoundary boundary={model.boundary} attempt={model.attempt} stage={stage} />
       <div className="control-column control-column-reality">
-        <OperationalReality reality={model.reality} />
-        <BrokerDisposition disposition={model.disposition} />
+        <OperationalReality reality={model.reality} attemptKey={attemptKey} stage={stage} />
+        <BrokerDisposition disposition={model.disposition} attemptKey={attemptKey} stage={stage} />
       </div>
-    </section>
-  </MotionConfig>
-));
+    </motion.section>
+  </MotionConfig>;
+});
 
 export const AttentionQueue = ({ items, selectedId, onSelect, title, description, children }: Readonly<{
   items: readonly ControlQueueItem[]; selectedId: string; onSelect: (id: string) => void;

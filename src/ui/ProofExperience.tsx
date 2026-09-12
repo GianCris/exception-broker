@@ -205,6 +205,7 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     <ControlInstrument
       ref={controlSummaryRef}
       ariaLabel="Decision control model"
+      sceneKey={view.scenario}
       model={model}
       reviewAction={view.canReview
         ? <div className="control-review-action"><button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal <span aria-hidden="true">→</span></button><small>{model.nextActionNote}</small></div>
