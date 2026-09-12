@@ -94,7 +94,7 @@ const renderTurnGroup = (group: TurnGroup, keyPrefix: string) => {
       <span className={`acq-speaker is-${group.speaker}`} aria-hidden="true">{group.speaker === 'bot' ? <img src={calleIcon} alt="" width="10" height="11" /> : null}</span>
       <strong>{speakerLabel(group.speaker)}</strong>
     </div>
-    {group.items.map((item) => <p key={`${keyPrefix}-${item.index}`}><time>{transcriptOffset(item.turn.offsetSeconds)}</time>{item.turn.text}</p>)}
+    {group.items.map((item) => <p key={`${keyPrefix}-${item.index}`}><time>{transcriptOffset(item.turn.offsetSeconds)}</time><span className="acq-turn-text">{item.turn.text}</span></p>)}
   </li>;
 };
 

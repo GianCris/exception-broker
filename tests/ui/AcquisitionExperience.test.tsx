@@ -411,7 +411,7 @@ describe('Acquisition V1 experience', () => {
     const { unmount } = render(<AcquisitionExperience api={api(record())} onNavigateControl={() => undefined} />);
     expect(await screen.findByText('Waiting for CALL-E to begin…')).toBeVisible(); unmount();
     render(<AcquisitionExperience api={api(completed('APPROVED'))} onNavigateControl={() => undefined} />);
-    expect(await screen.findByText('Choose one decision.')).toBeVisible(); expect(screen.getByText('APPROVED', { selector: '.transcript-timeline p' })).toBeVisible();
+    expect(await screen.findByText('Choose one decision.')).toBeVisible(); expect(screen.getByText('APPROVED', { selector: '.acq-turn-text' })).toBeVisible();
     expect(screen.queryByText(/waveform|audio streaming/i)).not.toBeInTheDocument();
   });
 
@@ -1084,22 +1084,33 @@ describe('Acquisition V1 Pass 2A — active instrument + documentary conversatio
     expect(container.querySelectorAll('.acq-speaker.is-user img')).toHaveLength(0);
   });
 
-  it('keeps a realistic 30+ turn transcript internally scrollable and duplicates nothing across expand', async () => {
+  it('keeps a realistic 48-turn transcript structurally exact, internally scrollable and duplicate-free across expand', async () => {
     sessionStorage.setItem(acquisitionAccessKey, 'ACCESS'); localStorage.setItem(acquisitionStorageKey, 'ACQ-TEST-1');
     const complete = completed('APPROVED');
-    const bigTurns: SanitizedTranscriptTurn[] = Array.from({ length: 36 }, (_, index) => ({
+    const bigTurns: SanitizedTranscriptTurn[] = Array.from({ length: 48 }, (_, index) => ({
       offsetSeconds: index * 3, speaker: index % 2 === 0 ? 'bot' as const : 'user' as const,
       text: `Turn ${index + 1} — a longer realistic sentence describing the controlled sandbox recovery scenario in documentary detail.`,
     }));
     const withTranscript = { ...complete, providerEvidence: { ...complete.providerEvidence!, recipients: [{ ...complete.providerEvidence!.recipients[0]!, attempts: [{ ...complete.providerEvidence!.recipients[0]!.attempts[0]!, transcriptTurns: bigTurns }] }] } };
     const { container } = render(<AcquisitionExperience api={api(withTranscript)} onNavigateControl={() => undefined} />);
     await screen.findByText(/^Turn 1 —/);
-    expect(container.querySelectorAll('.transcript-timeline p')).toHaveLength(36);
+    const rawRows = Array.from(container.querySelectorAll('.transcript-timeline p'));
+    expect(rawRows).toHaveLength(48);
+    expect(rawRows.every((row) => row.children.length === 2 && row.children[0]?.tagName === 'TIME' && row.children[1]?.classList.contains('acq-turn-text'))).toBe(true);
+    expect(rawRows.map((row) => row.querySelector('.acq-turn-text')?.textContent)).toEqual(bigTurns.map((turn) => turn.text));
     expect(container.querySelector('.acq-transcript-scroll')).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /View 32 more turns/ }));
-    expect(container.querySelectorAll('.transcript-timeline p')).toHaveLength(36);
+    fireEvent.click(screen.getByRole('button', { name: /View 44 more turns/ }));
+    expect(container.querySelectorAll('.transcript-timeline p')).toHaveLength(48);
     expect(screen.getAllByText(/^Turn 20 —/)).toHaveLength(1);
-    expect(screen.getAllByText(/^Turn 36 —/)).toHaveLength(1);
+    expect(screen.getAllByText(/^Turn 48 —/)).toHaveLength(1);
+  });
+
+  it('scopes the Acquisition transcript out of the legacy app timeline grid and fixes only its desktop reading viewport', () => {
+    const css = readFileSync('src/styles/acquisition.css', 'utf8');
+    expect(css).toMatch(/\.acq-conversation \.transcript-timeline li\s*\{[^}]*display:block;[^}]*width:100%;[^}]*min-width:0;/);
+    expect(css).toMatch(/\.acq-conversation \.transcript-timeline p\s*\{[^}]*display:grid;[^}]*grid-template-columns:48px minmax\(0,1fr\);[^}]*max-width:none;/);
+    expect(css).toMatch(/\.acq-transcript-scroll\s*\{[^}]*height:336px;[^}]*overflow-y:auto;/);
+    expect(css).toMatch(/@media \(max-width:560px\)[^{]*\{[\s\S]*?\.acq-transcript-scroll\s*\{[^}]*height:auto;[^}]*overflow-y:visible;/);
   });
 
   it('gives the title a restrained micro-transition class — opacity/translateY only, no scale or blur', () => {
