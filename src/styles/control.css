@@ -416,7 +416,6 @@
 }
 .control-surface .control-dock .action-receipt details { margin: 0; border: 0; border-radius: 0; }
 .control-surface .control-dock .action-receipt summary { padding: 0; color: var(--ctl-plum); font-size: .62rem; font-weight: 700; white-space: nowrap; }
-.control-surface .dock-reset,
 .control-surface .control-dock-tools > details > summary {
   display: inline-flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 11px;
   color: var(--text-secondary); border: 1px solid var(--border-subtle); border-radius: 999px;
@@ -424,9 +423,21 @@
   font-size: .62rem; font-weight: 700; white-space: nowrap; cursor: pointer;
   list-style: none; transition: color 120ms ease, border-color 120ms ease;
 }
+/* Resetting the demo is a demo affordance, not a product action: it never wears the
+   same chrome as verification, and it sits last in the dock. */
+.control-surface .dock-reset {
+  display: inline-flex; align-items: center; min-height: 28px; margin-left: 4px; padding: 0 2px;
+  color: var(--text-muted); border: 0; border-radius: 0; background: transparent;
+  font-size: .57rem; font-weight: 750; letter-spacing: .11em; text-transform: uppercase;
+  white-space: nowrap; cursor: pointer; transition: color 120ms ease;
+}
+.control-surface .dock-reset::before {
+  margin-right: 9px; color: color-mix(in srgb, var(--border-strong) 80%, transparent); content: "|";
+  font-size: .7rem; font-weight: 400; letter-spacing: 0;
+}
 .control-surface .control-dock-tools > details > summary::-webkit-details-marker { display: none; }
-.control-surface .dock-reset:hover,
 .control-surface .control-dock-tools > details > summary:hover { color: var(--text-primary); border-color: color-mix(in srgb, var(--ctl-plum) 42%, var(--border-strong)); }
+.control-surface .dock-reset:hover { color: var(--text-secondary); }
 .control-surface .control-dock-tools > details[open] > summary { color: var(--text-primary); border-color: color-mix(in srgb, var(--ctl-plum) 55%, var(--border-strong)); background: color-mix(in srgb, #2b2350 60%, transparent); }
 /* The disclosure meta stays available where there is room, and is demoted where there is not. */
 .control-surface .control-dock-tools > details > summary span { display: none; color: var(--text-muted); font-size: .56rem; font-weight: 550; }

@@ -218,8 +218,8 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     <div className="control-dock">
       <div className="control-dock-top">
         {model.takeaway ? <ControlKeyTakeaway takeaway={model.takeaway} tone={model.disposition.tone} /> : null}
+        {/* Verification before demo utilities: Reset is a demo affordance, not a product action. */}
         <div className="control-dock-tools">
-          <button type="button" className="dock-reset" onClick={() => focusScenario(view.scenario)}>Reset demo case</button>
           <details className="supporting-proof"><summary>Verify current decision</summary><div className="control-drawer"><div className="supporting-proof-content">
             <p className="drawer-note">Each demo case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p>
             <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
@@ -227,6 +227,7 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
             <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /><section className="proof-card proof-plan-identity" aria-label="Plan identity and cost"><h3>Plan identity &amp; cost</h3><p>{view.plan.caseId} / {view.plan.id} · version {view.plan.version}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></section></section>
           </div></div></details>
           <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><div className="control-drawer"><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic demo case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></div></details>
+          <button type="button" className="dock-reset" onClick={() => focusScenario(view.scenario)}>Reset demo case</button>
         </div>
       </div>
       <div className="control-dock-bar">

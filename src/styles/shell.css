@@ -104,6 +104,11 @@
   .product-cta { display: none; }
   .product-topbar .proof-mode > span { display: none; }
 }
+@media (max-width: 620px) {
+  /* On a phone the brand, theme and navigation need the room; each surface still states
+     its own context inside the workspace, so the topbar badge stands down. */
+  .product-topbar .proof-mode { display: none; }
+}
 @media (max-width: 560px) {
   .product-brand img { width: 40px; height: 30px; }
   .product-brand strong { font-size: 15px; }
