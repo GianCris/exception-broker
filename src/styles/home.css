@@ -3,31 +3,23 @@
 .eb-page > main { width: 100%; max-width: none; margin: 0; padding: 0; }
 .eb-page button { font-family: inherit; cursor: pointer; }
 .eb-page button:focus-visible, .eb-page select:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
-.eb-logo-link, .eb-footer-brand, .eb-footer-column button, .eb-nav button { padding: 0; border: 0; color: inherit; background: transparent; text-align: left; }
+.eb-footer-brand, .eb-footer-column button { padding: 0; border: 0; color: inherit; background: transparent; text-align: left; }
 .eb-page h1, .eb-page h2, .eb-page p { overflow-wrap: anywhere; }
 .eb-page {
+  /* The shared topbar's mobile navigation panel adopts this shell's own ground. */
+  --shell-drop: #081327;
   min-height: 100dvh;
   background: radial-gradient(circle at 62% 13%, rgba(57,52,115,.18), transparent 28%), linear-gradient(180deg,#081327 0%,#071123 58%,#050b18 100%);
   letter-spacing: -.01em;
 }
-.eb-header { position: relative; z-index: 8; display:flex; align-items:center; height:74px; padding:0 60px; border-bottom:1px solid rgba(192,208,233,.08); }
 .eb-brand { display:inline-flex; align-items:center; gap:9px; white-space:nowrap; }
 .eb-brand img { width:55px; height:39px; object-fit:contain; display:block; }
 .eb-brand-copy { display:grid; gap:3px; }
 .eb-brand strong { font:600 18px/1 var(--app-font-serif); letter-spacing:-.04em; }
 .eb-brand small { color:#a889ff; font-size:7px; font-weight:700; letter-spacing:.2em; text-transform:uppercase; }
-.eb-nav { display:flex; gap:34px; margin-left:77px; height:100%; align-items:center; }
-.eb-nav button { position:relative; color:#bdc4d3; font-size:11px; transition:color .2s ease; }
-.eb-nav button:hover,.eb-nav button.active { color:#f2f0f4; }
-.eb-nav button.active::after { content:""; position:absolute; left:0; right:0; bottom:-14px; height:2px; background:#a889ff; }
-.eb-header-actions { display:flex; align-items:center; gap:14px; margin-left:auto; }
-.eb-demo,.eb-primary { display:inline-flex; align-items:center; justify-content:center; gap:12px; border:1px solid rgba(169,137,255,.5); color:#fff; background:linear-gradient(135deg,#6335d2,#361c9c); box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 8px 22px rgba(49,25,134,.2); transition:transform .2s ease,border-color .2s ease,filter .2s ease; }
-.eb-demo:hover,.eb-primary:hover { transform:translateY(-2px); filter:brightness(1.08); }
-.eb-demo { height:34px; min-width:108px; padding:0 15px; border-radius:6px; font-size:11px; }
+.eb-primary { display:inline-flex; align-items:center; justify-content:center; gap:12px; border:1px solid rgba(169,137,255,.5); color:#fff; background:linear-gradient(135deg,#6335d2,#361c9c); box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 8px 22px rgba(49,25,134,.2); transition:transform .2s ease,border-color .2s ease,filter .2s ease; }
+.eb-primary:hover { transform:translateY(-2px); filter:brightness(1.08); }
 .eb-icon { width:14px; height:14px; }
-.eb-theme,.eb-menu { width:45px; height:36px; display:grid; place-items:center; border:1px solid rgba(166,186,216,.16); border-radius:6px; color:#c9c5d4; background:rgba(12,27,49,.52); }
-.eb-theme svg,.eb-menu svg { width:17px; height:17px; stroke-width:1.4; }
-.eb-menu { display:none; }
 
 .eb-hero { position:relative; min-height:526px; isolation:isolate; overflow:hidden; }
 .eb-ridge { position:absolute; z-index:-4; inset:162px 0 0; overflow:hidden; }
@@ -76,13 +68,11 @@
 .eb-acquisition-action{display:grid;justify-items:end;gap:7px}.eb-primary--small{min-width:169px;height:34px;padding:0 13px}.eb-acquisition-action>span{display:inline-flex;align-items:center;gap:6px;color:#a7b1c2;font-size:8px}.eb-acquisition-action>span svg{width:12px;height:12px}
 .eb-footer{position:relative;z-index:4;padding:12px 31px 10px;color:#94a1b6;background:#071225}.eb-footer-main{display:grid;grid-template-columns:1.7fr .7fr .7fr .8fr 1fr;align-items:center;min-height:61px;border-bottom:1px solid rgba(159,179,211,.13)}.eb-footer-brand{padding-right:35px;border-right:1px solid rgba(159,179,211,.13)}.eb-brand--compact img{width:42px;height:33px}.eb-brand--compact strong{font-size:14px}.eb-footer-column{display:grid;gap:3px;padding-left:34px;border-right:1px solid rgba(159,179,211,.13)}.eb-footer-column b{margin-bottom:2px;color:#d8d9e1;font-size:9px;font-weight:600}.eb-footer-column button,.eb-footer-column span{color:#8491a8;font-size:8px}.eb-footer-motto{padding-left:39px;color:#b99aff;font-size:8px;font-weight:700;letter-spacing:.25em;line-height:1.6;text-transform:uppercase}.eb-footer-bottom{display:flex;justify-content:space-between;padding-top:10px;color:#7d899e;font-size:8px}.eb-footer-bottom>span:last-child{display:flex;gap:28px}.eb-footer-bottom a:hover{color:#d0c4f1}
 
-@media (max-width:900px){.eb-header{padding:0 28px}.eb-nav{margin-left:34px;gap:20px}.eb-hero-grid{gap:28px;padding-inline:28px}.eb-copy h1{font-size:49px}.eb-scenarios{transform:scale(.94);transform-origin:top right}.eb-acquisition{margin-inline:20px;grid-template-columns:1fr 1.7fr}.eb-acquisition-action{grid-column:2;justify-items:end}}
-@media (max-width:720px){.eb-header{height:64px;padding:0 18px}.eb-nav{display:none}.eb-brand small{display:none}.eb-header-actions{gap:8px}.eb-menu{display:grid}.eb-demo{display:none}.eb-hero{min-height:1190px}.eb-hero-grid{display:block;padding:28px 20px 0}.eb-copy{max-width:none}.eb-copy h1{max-width:600px;font-size:clamp(43px,12vw,62px)}.eb-lede br{display:none}.eb-values{width:100%}.eb-scenarios{margin-top:24px;transform:none;position:relative;z-index:4}.eb-ridge{top:750px;bottom:auto;height:420px}.eb-overlay{top:750px;bottom:auto;height:420px;z-index:1}.eb-milestone--one{left:10%;bottom:52px}.eb-milestone--two{left:36%;bottom:149px}.eb-milestone--three{left:60%;bottom:243px}.eb-quote{top:22px;right:16px;font-size:15px}.eb-acquisition{display:block;margin:0 16px;padding:18px}.eb-steps{margin:16px 0}.eb-step-arrow{display:none}.eb-acquisition-action{display:flex;align-items:center;justify-content:space-between}.eb-footer{padding-inline:18px}.eb-footer-main{grid-template-columns:1fr 1fr;gap:18px;padding:18px 0}.eb-footer-brand{grid-column:span 2;border-right:0}.eb-footer-column{padding-left:0;border-right:0}.eb-footer-motto{display:none}}
-@media (max-width:720px){.eb-nav.is-open{position:absolute;display:flex;top:64px;left:0;right:0;height:auto;margin:0;padding:16px 20px;gap:22px;border-bottom:1px solid rgba(192,208,233,.1);background:#081327;box-shadow:0 14px 28px rgba(0,0,0,.22)}.eb-nav.is-open a.active::after{bottom:-7px}}
+@media (max-width:900px){.eb-hero-grid{gap:28px;padding-inline:28px}.eb-copy h1{font-size:49px}.eb-scenarios{transform:scale(.94);transform-origin:top right}.eb-acquisition{margin-inline:20px;grid-template-columns:1fr 1.7fr}.eb-acquisition-action{grid-column:2;justify-items:end}}
+@media (max-width:720px){.eb-hero{min-height:1190px}.eb-hero-grid{display:block;padding:28px 20px 0}.eb-copy{max-width:none}.eb-copy h1{max-width:600px;font-size:clamp(43px,12vw,62px)}.eb-lede br{display:none}.eb-values{width:100%}.eb-scenarios{margin-top:24px;transform:none;position:relative;z-index:4}.eb-ridge{top:750px;bottom:auto;height:420px}.eb-overlay{top:750px;bottom:auto;height:420px;z-index:1}.eb-milestone--one{left:10%;bottom:52px}.eb-milestone--two{left:36%;bottom:149px}.eb-milestone--three{left:60%;bottom:243px}.eb-quote{top:22px;right:16px;font-size:15px}.eb-acquisition{display:block;margin:0 16px;padding:18px}.eb-steps{margin:16px 0}.eb-step-arrow{display:none}.eb-acquisition-action{display:flex;align-items:center;justify-content:space-between}.eb-footer{padding-inline:18px}.eb-footer-main{grid-template-columns:1fr 1fr;gap:18px;padding:18px 0}.eb-footer-brand{grid-column:span 2;border-right:0}.eb-footer-column{padding-left:0;border-right:0}.eb-footer-motto{display:none}}
 @media (max-width:480px){.eb-cta-row{align-items:stretch;flex-direction:column}.eb-cta-row button{width:100%}.eb-values span{padding-inline:8px}.eb-values b{font-size:7px;letter-spacing:.1em}.eb-values small{font-size:9px}.eb-scenario{grid-template-columns:27px minmax(0,1fr) auto 11px;gap:7px}.eb-scenario-time{display:none}.eb-outcome{font-size:7px}.eb-scenario-copy strong{font-size:8px}.eb-scenario-copy span{font-size:7px}.eb-acquisition-action{align-items:flex-start;flex-direction:column}.eb-primary--small{width:100%}.eb-footer-bottom{gap:12px;flex-direction:column}.eb-footer-bottom>span:last-child{gap:18px}}
 
 /* Decorative layers; movement is owned by the existing Motion primitives. */
-.eb-nav-demo { display:none; }
 .eb-ridge img { will-change:transform; }
 .eb-fog { position:absolute; z-index:-2; inset:155px -8% 0; pointer-events:none; opacity:.11; background:radial-gradient(ellipse at 57% 46%,rgba(219,210,255,.22),transparent 34%),radial-gradient(ellipse at 38% 67%,rgba(149,183,220,.18),transparent 38%);  }
 .eb-journey-path { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
@@ -95,12 +85,8 @@
 
 
 /* Light mode keeps the same composition while moving the surrounding surfaces to cream/navy. */
-:root[data-theme="light"] .eb-page { color:#172033; background:radial-gradient(circle at 62% 13%,rgba(138,109,207,.13),transparent 28%),linear-gradient(180deg,#f5f1ea 0%,#eee9e1 58%,#e4e0d9 100%); }
-:root[data-theme="light"] .eb-page .eb-header { border-color:rgba(31,45,69,.14); }
+:root[data-theme="light"] .eb-page { --shell-drop:#f5f1ea; color:#172033; background:radial-gradient(circle at 62% 13%,rgba(138,109,207,.13),transparent 28%),linear-gradient(180deg,#f5f1ea 0%,#eee9e1 58%,#e4e0d9 100%); }
 :root[data-theme="light"] .eb-page .eb-brand strong { color:#172033; }
-:root[data-theme="light"] .eb-page .eb-nav button { color:#5b6575; }
-:root[data-theme="light"] .eb-page .eb-nav button:hover,:root[data-theme="light"] .eb-page .eb-nav button.active { color:#172033; }
-:root[data-theme="light"] .eb-page .eb-theme,:root[data-theme="light"] .eb-page .eb-menu { color:#39445a; border-color:rgba(31,45,69,.2); background:rgba(255,255,255,.52); }
 :root[data-theme="light"] .eb-page .eb-copy h1 { color:#172033; }
 :root[data-theme="light"] .eb-page .eb-copy h1 em { color:#7048bf; }
 :root[data-theme="light"] .eb-page .eb-eyebrow { color:#7048bf; }
@@ -133,10 +119,8 @@
 :root[data-theme="light"] .eb-page .eb-footer-column button,:root[data-theme="light"] .eb-page .eb-footer-column span { color:#718096; }
 :root[data-theme="light"] .eb-page .eb-footer-motto { color:#7048bf; }
 :root[data-theme="light"] .eb-page .eb-footer-bottom { color:#7a8697; }
-:root[data-theme="light"] .eb-page .eb-nav.is-open { background:#f5f1ea; border-color:rgba(42,55,78,.14); box-shadow:0 14px 28px rgba(48,45,41,.16); }
 
 @media (max-width:720px) {
-  .eb-nav-demo { display:block; }
   .eb-hero { display:flex; flex-direction:column; min-height:0; }
   .eb-hero-grid { display:contents; }
   .eb-copy { order:1; z-index:3; padding:28px 20px 0; }
@@ -179,14 +163,10 @@
 .eb-outcome b { font-weight: 600; }
 .eb-step-icon { font-size: 22px; }
 .eb-steps > .eb-icon { flex: 0 0 14px; color: #b3bfd2; }
-.eb-page .theme-control { color: #aab2c7; }
-.eb-page .theme-control select { color: inherit; border-color: rgb(166 186 216 / 20%); background: transparent; }
-.eb-page .theme-control select option { color: var(--text-primary); background: var(--surface-base); }
-:root[data-theme="light"] .eb-page .theme-control { color: #39445a; }
 .eb-footer-column button { font-size: 8px; color: #8491a8; }
 .eb-footer-column button:hover { color: var(--brand); }
 @media (max-width: 1050px) and (min-width: 721px) {
- .eb-header { padding-inline: 28px; } .eb-nav { margin-left: 32px; gap: 20px; }
+
  .eb-hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
  .eb-scenarios { transform: none; } .eb-scenario-head { flex-direction: column; gap: 6px; }
  .eb-scenario { grid-template-columns: 22px minmax(0, 1fr) auto; } .eb-scenario > svg { display: none; }
@@ -194,8 +174,6 @@
 }
 @media (max-width:720px) {
  .eb-hero { min-height: 0; } .eb-sentinel-scene { position: relative; inset: auto; }
- .eb-page .theme-control > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
- .eb-brand img { width: 40px; } .eb-header-actions { gap: 6px; }
  .eb-milestone--three { left: 57%; } .eb-quote { top: auto; bottom: 15px; right: 20px; font-size: 14px; }
  .eb-scenario-head { flex-wrap: wrap; gap: 6px; } .eb-steps > .eb-icon { display: none; }
  .eb-step { align-items: flex-start; gap: 5px; } .eb-step-icon { width: 28px; height: 30px; }

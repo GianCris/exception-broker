@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, MotionConfig, useMotionValue, useReducedMotion } from 'motion/react';
 import { proofScenarios, type ProofScenario } from '../demo/proofDemo.js';
-import { ThemeControl } from './ProofExperience.js';
+import { ProductTopbar, ViewProofAction } from './ProductShell.js';
 import '../styles/home.css';
 
 const logo = '/images/home/exception-broker-logo.png';
@@ -49,27 +49,11 @@ export const HomeExperience = ({ onNavigateAcquisition, onNavigateControl }: Rea
   onNavigateAcquisition: () => void;
   onNavigateControl: (scenario?: ProofScenario) => void;
 }>) => {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuButton = useRef<HTMLButtonElement>(null);
   const homeTitle = useRef<HTMLHeadingElement>(null);
-  const goHome = () => { setMenuOpen(false); homeTitle.current?.focus(); homeTitle.current?.scrollIntoView?.({ block: 'start' }); };
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenuOpen(false); menuButton.current?.focus(); } };
-    document.addEventListener('keydown', close);
-    return () => document.removeEventListener('keydown', close);
-  }, [menuOpen]);
+  const goHome = () => { homeTitle.current?.focus(); homeTitle.current?.scrollIntoView?.({ block: 'start' }); };
   return <MotionConfig reducedMotion="user"><div className="eb-page">
-    <header className="eb-header">
-      <button className="eb-logo-link" type="button" onClick={goHome} aria-label="Exception Broker home"><Brand /></button>
-      <nav id="home-navigation" className={`eb-nav ${menuOpen ? 'is-open' : ''}`} aria-label="Primary navigation">
-        <button type="button" className="active" aria-current="page" onClick={goHome}>Home</button>
-        <button type="button" onClick={onNavigateAcquisition}>Acquisition</button>
-        <button type="button" onClick={() => onNavigateControl()}>Control</button>
-        <button type="button" className="eb-nav-demo" onClick={() => onNavigateControl()}>Try demo</button>
-      </nav>
-      <div className="eb-header-actions"><button type="button" className="eb-demo" onClick={() => onNavigateControl()}>Try demo <Arrow /></button><ThemeControl /><button ref={menuButton} className="eb-menu" type="button" onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} aria-controls="home-navigation">{menuOpen ? '×' : '☰'}</button></div>
-    </header>
+    <ProductTopbar surface="home" onNavigateHome={goHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={() => onNavigateControl()}
+      context={<ViewProofAction onOpen={() => onNavigateControl()} />} />
     <main>
       <section className="eb-hero" aria-labelledby="home-title">
         <SentinelScene />

@@ -23,7 +23,7 @@ describe('Home product entry', () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     render(<App />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Decisions need guardrails to reach reality.');
-    expect(screen.getAllByAltText('Exception Broker logo')[0]).toHaveAttribute('src', '/images/home/exception-broker-logo.png');
+    expect(screen.getAllByAltText('Exception Broker logo')[0]).toHaveAttribute('src', '/images/home/exception-broker-logo-transparent.png');
     expect(screen.getByAltText(/Sentinel Ridge:/)).toHaveAttribute('src', '/images/home/sentinel-ridge.png');
     for (const scenario of proofScenarios) expect(screen.getByRole('button', { name: new RegExp(scenario.title) })).toBeVisible();
     expect(screen.getByText('Decision acquired')).toBeVisible();

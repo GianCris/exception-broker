@@ -5,9 +5,8 @@ import { acquisitionAccessKey } from './AcquisitionExperience.js';
 import type { LiveControlPublicRecord } from '../control/contracts.js';
 import { controlQuestion, createLiveControlSurfaceModel } from '../presentation/controlSurfaceViewModel.js';
 import { ControlInstrument } from './ControlInstrument.js';
-import { ProductBrand, SentinelScene } from './ProductShell.js';
+import { ProductTopbar, SentinelScene, SurfaceContext } from './ProductShell.js';
 import { motionTokens } from './motion.js';
-import { ThemeControl } from './ProofExperience.js';
 
 export const controlSessionStorageKey = 'exception-broker-control-session-id';
 const read = (storage: Storage, key: string) => { try { return storage.getItem(key); } catch { return null; } };
@@ -37,7 +36,8 @@ export const LiveControlExperience = ({ api, initial, onNavigateAcquisition, onN
   };
   const receipt = record?.receipt;
   const model = record === null ? undefined : createLiveControlSurfaceModel(record);
-  return <div className="app-shell proof-shell control-surface live-control-shell"><div className="control-chassis"><header className="product-topbar"><button type="button" className="product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><ProductBrand /></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page" onClick={onNavigateDeterministic}>Control</button></nav><div className="product-topbar-actions"><span className="proof-mode"><b>Live control</b><span>CALL-E decision · controlled local context · no external execution</span></span><ThemeControl /></div></header>
+  return <div className="app-shell proof-shell control-surface live-control-shell"><div className="control-chassis"><ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateDeterministic}
+      context={<SurfaceContext label="Live control" detail="CALL-E acquisition · controlled local context · no external execution" />} />
     <div className="product-layout">
     <aside className="control-queue control-rail" aria-labelledby="live-rail-title">
       <div className="queue-top">

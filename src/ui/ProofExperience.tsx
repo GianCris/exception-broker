@@ -5,39 +5,8 @@ import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, createDecisionTransitionView, historicalCallProof, type DecisionTraceView, type DecisionTransitionView } from '../presentation/decisionTraceViewModel.js';
 import { controlQuestion, createControlQueueItem, createControlSurfaceModel } from '../presentation/controlSurfaceViewModel.js';
 import { AttentionQueue, ControlInstrument, ControlKeyTakeaway } from './ControlInstrument.js';
-import { ProductBrand } from './ProductShell.js';
+import { ProductTopbar, SurfaceContext } from './ProductShell.js';
 import { motionTokens } from './motion.js';
-
-type ThemeMode = 'system' | 'light' | 'dark';
-const themeStorageKey = 'exception-broker-theme';
-const isThemeMode = (value: string | null): value is ThemeMode => value === 'system' || value === 'light' || value === 'dark';
-
-export const ThemeControl = () => {
-  const [mode, setMode] = useState<ThemeMode>(() => {
-    try { const stored = window.localStorage.getItem(themeStorageKey); return isThemeMode(stored) ? stored : 'system'; } catch { return 'system'; }
-  });
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
-  useEffect(() => {
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    if (!media) return undefined;
-    const update = (event: MediaQueryListEvent) => setSystemDark(event.matches);
-    media.addEventListener?.('change', update);
-    return () => media.removeEventListener?.('change', update);
-  }, []);
-  const effectiveTheme = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
-  useEffect(() => {
-    document.documentElement.dataset.theme = effectiveTheme;
-    document.documentElement.dataset.themeMode = mode;
-    return () => { delete document.documentElement.dataset.theme; delete document.documentElement.dataset.themeMode; };
-  }, [effectiveTheme, mode]);
-  const changeMode = (next: ThemeMode) => {
-    setMode(next);
-    try { window.localStorage.setItem(themeStorageKey, next); } catch { /* Rendering remains deterministic when storage is unavailable. */ }
-  };
-  return <label className="theme-control"><span>Theme</span><select aria-label="Theme" value={mode} onChange={(event) => changeMode(event.target.value as ThemeMode)}>
-    <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-  </select></label>;
-};
 
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
   <p className="eyebrow">01 / Operational evidence</p>
@@ -197,7 +166,9 @@ export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavi
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
-  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><header className="product-topbar"><button type="button" className="product-home-link" onClick={onNavigateHome} aria-label="Exception Broker home"><ProductBrand /></button><nav className="product-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" onClick={onNavigateAcquisition}>Acquisition</button><button type="button" aria-current="page">Control</button></nav><div className="product-topbar-actions"><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></div></header>
+  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><ProductTopbar surface="control" onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition}
+      context={<SurfaceContext label="Deterministic proof" detail="Configured evidence · local only · no external execution"
+        ariaLabel="Demo environment: deterministic local proof with configured evidence. No external execution." />} />
     <div className="product-layout">
     <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic demo cases.">
       <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>

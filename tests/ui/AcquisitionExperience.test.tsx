@@ -1004,17 +1004,17 @@ describe('Acquisition V1 Pass 2A — active instrument + documentary conversatio
     fake.create.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve; }));
     const { container } = render(<AcquisitionExperience api={fake} onNavigateControl={() => undefined} createIdentity={() => 'FIXED'} clock={() => '2027-06-10T22:00:00Z'} />);
     await unlockByok(fake);
-    const topbarBefore = container.querySelector('.acq-topbar');
+    const topbarBefore = container.querySelector('.product-topbar');
     const railBefore = container.querySelector('.acq-rail');
     fireEvent.change(screen.getByLabelText('Recipient phone'), { target: { value: '+15551234567' } });
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.submit(document.getElementById('acquisition-create')!);
     expect(screen.getByText('Starting…')).toBeVisible();
-    expect(container.querySelector('.acq-topbar')).toBe(topbarBefore);
+    expect(container.querySelector('.product-topbar')).toBe(topbarBefore);
     expect(container.querySelector('.acq-rail')).toBe(railBefore);
     resolveCreate({ accepted: true, record: withAttempt('queued', 'queued'), existing: false });
     await screen.findByText('Acquisition queued');
-    expect(container.querySelector('.acq-topbar')).toBe(topbarBefore);
+    expect(container.querySelector('.product-topbar')).toBe(topbarBefore);
     expect(container.querySelector('.acq-rail')).toBe(railBefore);
   });
 
@@ -1299,7 +1299,7 @@ describe('Acquisition V1 technical failure and recovery', () => {
     const onNavigateControl = vi.fn();
     const { container } = render(<AcquisitionExperience api={api(providerFailed())} onNavigateControl={onNavigateControl} />);
     await screen.findByRole('heading', { name: "CALL-E couldn't complete this acquisition" });
-    expect(container.querySelector('.acq-topbar')).not.toBeNull();
+    expect(container.querySelector('.product-topbar')).not.toBeNull();
     expect(container.querySelector('.acq-rail')).not.toBeNull();
     expect(container.querySelector('.acq-rail-scene')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Connect your CALL-E account' })).toBeVisible();

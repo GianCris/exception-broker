@@ -13,7 +13,7 @@ import { isTerminalStatus, type AcquisitionPublicRecord, type AcquisitionTechnic
 import type { AcquisitionConnectionKind } from '../acquisition/access.js';
 import type { LiveControlPublicRecord } from '../control/contracts.js';
 import { createAcquisitionPresentation } from '../presentation/acquisitionViewModel.js';
-import { ThemeControl } from './ProofExperience.js';
+import { ProductTopbar, ViewProofAction } from './ProductShell.js';
 import calleIcon from '../assets/brands/call-e/icon-yellow-256.png';
 import calleLogo from '../assets/brands/call-e/logo-yellow-512.png';
 import '../styles/acquisition.css';
@@ -98,7 +98,6 @@ const renderTurnGroup = (group: TurnGroup, keyPrefix: string) => {
   </li>;
 };
 
-function AcquisitionBrand() { return <span className="acq-brand"><img src={productLogo} alt="Exception Broker logo" width="55" height="39" /><span><strong>Exception Broker</strong><small>Higher ground for brighter decisions.</small></span></span>; }
 function Activity({ label }: Readonly<{ label: string }>) { return <span className="acq-activity" role="status"><i aria-hidden="true" />{label}</span>; }
 /** Real elapsed time only: ticks from a real timestamp while active, otherwise stays null. Never fabricates progress. */
 function useElapsedSeconds(startedAt: string | null | undefined, active: boolean): number | null {
@@ -406,7 +405,8 @@ export const AcquisitionExperience = ({ api, onNavigateControl, onNavigateHome, 
   const remainingGroups = groupBySpeaker(remainingTurns.map((turn, index) => ({ turn, index: index + 4 })));
   useEffect(() => { setTranscriptExpanded(false); }, [record?.acquisitionId]);
 
-  return <div className="acquisition-shell"><header className="acq-topbar"><button className="acq-logo-link" type="button" onClick={onNavigateHome} aria-label="Exception Broker home"><AcquisitionBrand /></button><nav className="acq-nav" aria-label="Product">{onNavigateHome ? <button type="button" onClick={onNavigateHome}>Home</button> : null}<button type="button" aria-current="page">Acquisition</button><button type="button" onClick={onNavigateControl}>Control</button></nav><div className="acq-topbar-actions"><button type="button" className="acq-demo" onClick={onNavigateControl}>Try demo <Arrow /></button><ThemeControl /></div></header><main className="acq-page">
+  return <div className="acquisition-shell"><ProductTopbar surface="acquisition" onNavigateHome={onNavigateHome} onNavigateControl={onNavigateControl}
+      context={<ViewProofAction onOpen={onNavigateControl} />} /><main className="acq-page">
     <div className="acq-layout"><AcquisitionRail steps={flowSteps} connectionKind={connectionKind} connected={connected} used={record !== null || storedId !== null} connectionLocked={active} onConfigure={() => void lock()} /><div className={`acq-main${accessToken === null || connectionKind === null ? ' is-gate' : ''}`}>
       {accessToken === null || connectionKind === null ? <ConnectionGate busy={busy} message={message} storedId={storedId} onConnectHosted={() => void connectHosted()} onConnectByok={connectByok} onTryDemo={onNavigateControl} /> : null}
       {accessToken !== null && connectionKind !== null && !connectionReady ? <section className="acq-access acq-recovery acq-verify" aria-label="Connection verification"><div className="acq-verify-bridge"><SignalBridge state="arrived" /></div><h1>Verifying CALL-E connection</h1>{busy ? <Activity label="Checking connection and active acquisition…" /> : <p>{message}</p>}<p>We're keeping your connection while we check its status.</p></section> : null}
