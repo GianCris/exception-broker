@@ -233,3 +233,43 @@
    untouched — this only keeps contrast where the fog is brightest. */
 .eb-milestone, .eb-quote { text-shadow: 0 1px 3px rgb(5 11 24 / 95%), 0 0 16px rgb(5 11 24 / 78%); }
 .eb-milestone-number { box-shadow: 0 0 0 3px rgb(150 114 255 / 25%), 0 0 18px rgb(146 107 255 / 72%), 0 2px 12px rgb(5 11 24 / 65%); }
+
+/* ── Signature arrival ─────────────────────────────────────────────────
+   Everything below exists only for the one-time sequence Home plays on mount.
+   None of it survives into the resting state: the signal ends past the summit,
+   the bloom returns to zero opacity and the mist carrier comes to rest at its
+   origin, so the quiet Home is exactly the ambient system and nothing else. */
+.eb-fog-carrier { position: absolute; z-index: 2; inset: 0; pointer-events: none; will-change: transform; }
+
+/* The current of light: four dashes sharing one front, from a wide faint wake to
+   a small bright head, so it reads as light rather than as a lit tube.
+   The falloff is built from four nested strokes rather than a blur filter: inside
+   a viewBox that is stretched by preserveAspectRatio="none", a CSS blur radius is
+   measured in USER UNITS and smears the signal into nothing, while stroke-width
+   under the inherited non-scaling-stroke stays honest pixels. */
+.eb-journey-signal { fill: none; stroke-linecap: round; will-change: stroke-dashoffset; }
+.eb-journey-signal--glow { stroke: rgb(150 112 250 / 17%); stroke-width: 16; }
+.eb-journey-signal--tail { stroke: rgb(178 145 255 / 30%); stroke-width: 8.5; }
+.eb-journey-signal--body { stroke: rgb(214 196 255 / 62%); stroke-width: 4; }
+.eb-journey-signal--head { stroke: rgb(252 249 255 / 96%); stroke-width: 1.9; }
+
+/* The summit culmination, over the halo's own position. Diffuse enough that the
+   peak reads as the air above the ridge catching light, never as an orb. */
+.eb-summit-bloom {
+  position: absolute; top: 18%; left: 62%;
+  width: 104px; height: 104px; margin: -18px 0 0 -18px;
+  pointer-events: none; opacity: 0; will-change: opacity, transform;
+  background: radial-gradient(circle, rgb(232 222 255 / 52%), rgb(163 126 255 / 20%) 40%, transparent 72%);
+  filter: blur(14px);
+}
+/* The ridge settles out of depth against its own dark ground, so the opening
+   fade reads the same way under either theme. */
+.eb-ridge { background: #050b18; }
+@media (max-width: 720px) {
+  .eb-summit-bloom { top: 14%; left: 59%; width: 86px; height: 86px; }
+  .eb-journey-signal--glow { stroke-width: 12; }
+  .eb-journey-signal--tail { stroke-width: 6.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eb-journey-signal, .eb-summit-bloom { display: none; }
+}

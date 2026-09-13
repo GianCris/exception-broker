@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { motion, MotionConfig, useMotionValue, useReducedMotion } from 'motion/react';
 import { proofScenarios, type ProofScenario } from '../demo/proofDemo.js';
 import { GuidedWalkthroughAction, ProductTopbar } from './ProductShell.js';
@@ -15,8 +15,85 @@ function Brand({ compact = false }: Readonly<{ compact?: boolean }>) {
   </span>;
 }
 
+/**
+ * The arrival score, in seconds.
+ *
+ * Home plays this ONCE per mount and then goes quiet for good: the ridge settles out of
+ * depth, a signal travels the existing route, each milestone answers as the signal reaches
+ * it, and the summit resolves. One score drives all four, so the path and the milestones
+ * cannot drift apart — change a number here and the whole sequence still reads.
+ *
+ * `travel` is the signal's full journey including its run-in before the route and its
+ * run-out past the summit, which is why the milestones land inside it rather than at its
+ * edges: the head of the signal crosses the route start at ~1.7s and the summit at ~4.2s.
+ */
+const arrival = { enter: .9, travel: 4.1, one: 1.7, two: 2.95, three: 4.2, summit: 4.3, mist: 5.4 } as const;
+
+/**
+ * The signal's leading edge, as a share of the route: it starts a full body's length before
+ * the lower path and ends a body past the summit, so the viewer never sees it appear or
+ * vanish — it arrives and it leaves.
+ *
+ * The body is four dashes of different lengths travelling together, from a wide faint wake
+ * to a small bright head. They only read as ONE current of light if their FRONTS coincide,
+ * which is why each offset is its own dash length minus the shared front.
+ */
+const front = { from: -.42, to: 1.42 } as const;
+const comet = [
+  { key: 'glow', share: .42 },
+  { key: 'tail', share: .34 },
+  { key: 'body', share: .2 },
+  { key: 'head', share: .08 },
+] as const;
+
+/**
+ * The route's length in SCREEN pixels.
+ *
+ * The journey SVG is deliberately stretched (preserveAspectRatio="none") and its paths
+ * inherit vector-effect: non-scaling-stroke, which moves the dash pattern as well as the
+ * stroke width into screen space — pathLength normalisation never reaches it, so a dash
+ * authored in viewBox units silently repeats several times along the curve. Measuring once
+ * on mount is what lets the signal be ONE body holding a fixed share of the route at any
+ * viewport. Only one of the two route variants is displayed, so the measurement takes the
+ * first that actually has a screen transform; an environment with no SVG geometry reports
+ * nothing and the scene simply rests without its arrival signal.
+ */
+function useRouteLength(journey: RefObject<SVGSVGElement | null>) {
+  const [length, setLength] = useState(0);
+  useEffect(() => {
+    try {
+      for (const path of journey.current?.querySelectorAll('.eb-journey-base') ?? []) {
+        const route = path as SVGPathElement;
+        const matrix = route.getScreenCTM?.();
+        const total = route.getTotalLength?.();
+        if (matrix === null || matrix === undefined || !total) continue;
+        let measured = 0;
+        let previous = route.getPointAtLength(0).matrixTransform(matrix);
+        for (let step = 1; step <= 48; step += 1) {
+          const point = route.getPointAtLength((total * step) / 48).matrixTransform(matrix);
+          measured += Math.hypot(point.x - previous.x, point.y - previous.y);
+          previous = point;
+        }
+        setLength(measured);
+        return;
+      }
+    } catch { /* No SVG geometry engine: the resting scene is still complete without the signal. */ }
+  }, [journey]);
+  return length;
+}
+
+/** Copy, order and position are exactly the existing three milestones; only the arrival
+ *  response is new, and it is an opacity lift plus a small swell on the disc — never a move. */
+const milestones = [
+  { key: 'one', at: arrival.one, swell: 1.15, title: 'Decision acquired', kicker: 'From signal', lead: 'Capture and structure', tail: 'AI-acquired decisions.' },
+  { key: 'two', at: arrival.two, swell: 1.15, title: 'Execution gate', kicker: 'Through control', lead: 'Apply operational', tail: 'constraints and review.' },
+  { key: 'three', at: arrival.three, swell: 1.26, title: 'Higher ground', kicker: 'Operational reality', lead: 'Decisions grounded', tail: 'in modeled facts.' },
+] as const;
+
 function SentinelScene() {
   const reducedMotion = useReducedMotion();
+  const journey = useRef<SVGSVGElement>(null);
+  const routeLength = useRouteLength(journey);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   useEffect(() => { if (reducedMotion) { x.set(0); y.set(0); } }, [reducedMotion, x, y]);
@@ -26,7 +103,12 @@ function SentinelScene() {
     x.set(Math.max(-3, Math.min(3, ((event.clientX - bounds.left) / bounds.width - .5) * 6)));
     y.set(Math.max(-2, Math.min(2, ((event.clientY - bounds.top) / bounds.height - .5) * 4)));
   }} onPointerLeave={() => { x.set(0); y.set(0); }}>
-    <div className="eb-ridge"><motion.img src={ridge} alt="Sentinel Ridge: a cat watches over a mountain path toward the summit" style={{ x, y, scale: 1.01 }} /></div>
+    {/* ARRIVAL. The ridge comes out of depth rather than out of nothing: it starts a little
+        larger and a little dimmer over its own dark ground and settles to its resting frame.
+        The pointer parallax keeps x/y; only the settle lives in `animate`. */}
+    <div className="eb-ridge"><motion.img src={ridge} alt="Sentinel Ridge: a cat watches over a mountain path toward the summit" style={{ x, y }}
+      initial={reducedMotion ? false : { scale: 1.055, opacity: .48 }} animate={{ scale: 1.01, opacity: 1 }}
+      transition={reducedMotion ? { duration: 0 } : { scale: { duration: 1.6, ease: [.16, 1, .3, 1] }, opacity: { duration: 1, ease: 'easeOut' } }} /></div>
     <div className="eb-wash" aria-hidden="true" />
     {/* Two depth planes, never one cloud layer. Every property carries its OWN period, so
         drift, lift, swell and luminance never return to the same state together: the air
@@ -39,24 +121,46 @@ function SentinelScene() {
         x: { duration: 46, repeat: Infinity, ease: 'easeInOut' }, y: { duration: 59, repeat: Infinity, ease: 'easeInOut' },
         scale: { duration: 63, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 29, repeat: Infinity, ease: 'easeInOut' },
       }} />
-    <motion.div className="eb-fog eb-fog--mist" aria-hidden="true"
-      animate={reducedMotion ? { x: 0, y: 0, scale: 1, opacity: .3 } : { x: [-58, 54, -58], y: [0, -21, 0], scale: [1.06, 1, 1.06], opacity: [.23, .42, .23] }}
-      transition={reducedMotion ? { duration: 0 } : {
-        x: { duration: 27, repeat: Infinity, ease: 'easeInOut' }, y: { duration: 37, repeat: Infinity, ease: 'easeInOut' },
-        scale: { duration: 47, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 19, repeat: Infinity, ease: 'easeInOut' },
-      }} />
+    {/* The carrier gives the near mist ONE visible crossing of the valley while the arrival
+        plays, on top of — not instead of — the ambient drift it keeps forever. It comes to
+        rest at 0 and never runs again, so the resting scene is the ambient system alone. */}
+    <motion.div className="eb-fog-carrier" aria-hidden="true"
+      initial={reducedMotion ? false : { x: -118 }} animate={{ x: 0 }}
+      transition={reducedMotion ? { duration: 0 } : { duration: arrival.mist, ease: [.24, .6, .32, 1] }}>
+      <motion.div className="eb-fog eb-fog--mist"
+        animate={reducedMotion ? { x: 0, y: 0, scale: 1, opacity: .3 } : { x: [-58, 54, -58], y: [0, -21, 0], scale: [1.06, 1, 1.06], opacity: [.23, .42, .23] }}
+        transition={reducedMotion ? { duration: 0 } : {
+          x: { duration: 27, repeat: Infinity, ease: 'easeInOut' }, y: { duration: 37, repeat: Infinity, ease: 'easeInOut' },
+          scale: { duration: 47, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 19, repeat: Infinity, ease: 'easeInOut' },
+        }} />
+    </motion.div>
     <div className="eb-overlay">
-      <svg className="eb-journey-path" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <svg ref={journey} className="eb-journey-path" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {(['desktop', 'mobile'] as const).map((size) => {
           const d = size === 'desktop' ? 'M 42 84 C 47 77, 49 69, 54 60 S 59 46, 65 29' : 'M 13 88 C 21 80, 29 75, 37 65 S 50 48, 60 26';
           /* The path already travels; what it lacked was light. The luminance breath runs on
-             its own short period, so the route brightens and settles as the air moves over it. */
+             its own short period, so the route brightens and settles as the air moves over it.
+             It sits deliberately below the arrival signal's brightness — ambient life, not
+             the protagonist. */
           return <g key={size} className={`eb-journey-${size}`}><path className="eb-journey-base" d={d} /><motion.path className="eb-journey-flow" d={d}
-            animate={reducedMotion ? { strokeDashoffset: 0, opacity: .58 } : { strokeDashoffset: -80, opacity: [.34, .8, .34] }}
+            animate={reducedMotion ? { strokeDashoffset: 0, opacity: .5 } : { strokeDashoffset: -80, opacity: [.26, .6, .26] }}
             transition={reducedMotion ? { duration: 0 } : {
               strokeDashoffset: { duration: 18, repeat: Infinity, ease: 'linear' },
               opacity: { duration: 8.5, repeat: Infinity, ease: 'easeInOut' },
-            }} /></g>;
+            }} />
+            {/* THE SIGNAL. One current of light, once, from the lower route to the summit.
+                Its three dashes share a front, so it reads as a single travelling body with
+                a bright head and a soft wake rather than as three strokes. It ends past the
+                summit and therefore leaves nothing behind to loop. */}
+            {routeLength > 0 && comet.map(({ key, share }) => {
+              const dash = share * routeLength;
+              return <motion.path key={key} className={`eb-journey-signal eb-journey-signal--${key}`} d={d}
+                style={{ strokeDasharray: `${dash} ${routeLength * 1.7}` }}
+                initial={reducedMotion ? false : { strokeDashoffset: dash - front.from * routeLength }}
+                animate={{ strokeDashoffset: dash - front.to * routeLength }}
+                transition={reducedMotion ? { duration: 0 } : { delay: arrival.enter, duration: arrival.travel, ease: 'linear' }} />;
+            })}
+          </g>;
         })}
       </svg>
       {/* Distant light on the summit, not a beacon. Brightness and size breathe on separate
@@ -67,9 +171,21 @@ function SentinelScene() {
         transition={reducedMotion ? { duration: 0 } : {
           opacity: { duration: 12, repeat: Infinity, ease: 'easeInOut' }, scale: { duration: 16.5, repeat: Infinity, ease: 'easeInOut' },
         }} />
-      <div className="eb-milestone eb-milestone--one"><span className="eb-milestone-number">1</span><div><strong>Decision acquired</strong><small>From signal</small><p>Capture and structure<br />AI-acquired decisions.</p></div></div>
-      <div className="eb-milestone eb-milestone--two"><span className="eb-milestone-number">2</span><div><strong>Execution gate</strong><small>Through control</small><p>Apply operational<br />constraints and review.</p></div></div>
-      <div className="eb-milestone eb-milestone--three"><span className="eb-milestone-number">3</span><div><strong>Higher ground</strong><small>Operational reality</small><p>Decisions grounded<br />in modeled facts.</p></div></div>
+      {/* SUMMIT RESOLUTION. A separate, short-lived light that arrives with the signal,
+          swells once over the halo's own position and returns to nothing — the payoff is a
+          culmination, not a new resting element, so the quiet Home afterwards is unchanged. */}
+      <motion.span className="eb-summit-bloom" aria-hidden="true"
+        initial={reducedMotion ? false : { opacity: 0, scale: .62 }} animate={reducedMotion ? { opacity: 0, scale: 1 } : { opacity: [0, .9, 0], scale: [.62, 1.85, 2.4] }}
+        transition={reducedMotion ? { duration: 0 } : { delay: arrival.summit, duration: 2.3, times: [0, .42, 1], ease: [.2, .8, .3, 1] }} />
+      {milestones.map(({ key, at, swell, title, kicker, lead, tail }, index) =>
+        <motion.div className={`eb-milestone eb-milestone--${key}`} key={key}
+          initial={reducedMotion ? false : { opacity: .4 }} animate={{ opacity: 1 }}
+          transition={reducedMotion ? { duration: 0 } : { delay: at, duration: .95, ease: 'easeOut' }}>
+          <motion.span className="eb-milestone-number"
+            animate={reducedMotion ? { scale: 1 } : { scale: [1, swell, 1] }}
+            transition={reducedMotion ? { duration: 0 } : { delay: at, duration: 1.35, times: [0, .32, 1], ease: 'easeInOut' }}>{index + 1}</motion.span>
+          <div><strong>{title}</strong><small>{kicker}</small><p>{lead}<br />{tail}</p></div>
+        </motion.div>)}
       <blockquote className="eb-quote">“Not every decision<br />should execute.”<cite>— The Sentinel</cite></blockquote>
     </div>
   </div>;
