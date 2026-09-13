@@ -28,7 +28,15 @@ function SentinelScene() {
   }} onPointerLeave={() => { x.set(0); y.set(0); }}>
     <div className="eb-ridge"><motion.img src={ridge} alt="Sentinel Ridge: a cat watches over a mountain path toward the summit" style={{ x, y, scale: 1.01 }} /></div>
     <div className="eb-wash" aria-hidden="true" />
-    <motion.div className="eb-fog" aria-hidden="true" animate={reducedMotion ? { x: 0, y: 0 } : { x: [-3, 3, -3], y: [0, -2, 0] }} transition={{ duration: 26, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }} />
+    {/* Two depth planes, never one cloud layer: the distant haze sits with the far ridges
+        and the near valley mist drifts the other way on a longer cycle, so the ridge gains
+        parallax depth without either plane ever reading as an animation. */}
+    <motion.div className="eb-fog eb-fog--haze" aria-hidden="true"
+      animate={reducedMotion ? { x: 0, y: 0, opacity: .1 } : { x: [-9, 7, -9], y: [0, -4, 0], opacity: [.085, .125, .085] }}
+      transition={{ duration: 61, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }} />
+    <motion.div className="eb-fog eb-fog--mist" aria-hidden="true"
+      animate={reducedMotion ? { x: 0, y: 0, opacity: .13 } : { x: [6, -8, 6], y: [0, 3, 0], opacity: [.135, .095, .135] }}
+      transition={{ duration: 89, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }} />
     <div className="eb-overlay">
       <svg className="eb-journey-path" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {(['desktop', 'mobile'] as const).map((size) => {
@@ -36,7 +44,11 @@ function SentinelScene() {
           return <g key={size} className={`eb-journey-${size}`}><path className="eb-journey-base" d={d} /><motion.path className="eb-journey-flow" d={d} animate={{ strokeDashoffset: reducedMotion ? 0 : -80 }} transition={{ duration: 18, repeat: reducedMotion ? 0 : Infinity, ease: 'linear' }} /></g>;
         })}
       </svg>
-      <span className="eb-summit-halo" aria-hidden="true" />
+      {/* Distant light on the summit, not a beacon: the range is small enough that it is
+          felt as the air changing rather than seen as a pulse. */}
+      <motion.span className="eb-summit-halo" aria-hidden="true"
+        animate={reducedMotion ? { opacity: .32, scale: 1 } : { opacity: [.28, .37, .28], scale: [1, 1.045, 1] }}
+        transition={{ duration: 23, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }} />
       <div className="eb-milestone eb-milestone--one"><span className="eb-milestone-number">1</span><div><strong>Decision acquired</strong><small>From signal</small><p>Capture and structure<br />AI-acquired decisions.</p></div></div>
       <div className="eb-milestone eb-milestone--two"><span className="eb-milestone-number">2</span><div><strong>Execution gate</strong><small>Through control</small><p>Apply operational<br />constraints and review.</p></div></div>
       <div className="eb-milestone eb-milestone--three"><span className="eb-milestone-number">3</span><div><strong>Higher ground</strong><small>Operational reality</small><p>Decisions grounded<br />in modeled facts.</p></div></div>

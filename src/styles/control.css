@@ -44,8 +44,9 @@
 /* The rail is ONE environment, not a list with a picture under it: Sentinel Ridge is a
    background layer of the rail itself, anchored to the bottom and dissolved upward by a
    pixel-anchored fade, so the queue always sits on solid ground and there is no seam.
-   Acquisition shows the path toward a decision; Control shows the Sentinel watching
-   before anything crosses the boundary — the same world, a different vantage. */
+   Inside the product the ridge is atmosphere only — the crop holds the summit side of the
+   source so the Sentinel stays on Home, and a flat veil of the rail's own colour keeps the
+   terrain behind the queue rather than beside it. */
 .control-surface .control-queue {
   display: flex; flex-direction: column; min-width: 0; height: 100%; overflow: hidden;
   padding: clamp(14px, 2vh, 21px) 15px 0;
@@ -57,7 +58,8 @@
       color-mix(in srgb, var(--ctl-rail) 20%, transparent) calc(100% - 168px),
       color-mix(in srgb, var(--ctl-rail) 14%, transparent) calc(100% - 104px),
       color-mix(in srgb, var(--ctl-rail) 62%, transparent) 100%),
-    url("/images/home/sentinel-ridge.png") 13% 100% / auto 318px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--ctl-rail) 42%, transparent), color-mix(in srgb, var(--ctl-rail) 42%, transparent)),
+    url("/images/home/sentinel-ridge.png") 58% 100% / auto 318px no-repeat,
     var(--ctl-rail);
 }
 .control-surface .queue-top { position: relative; z-index: 2; flex: none; min-width: 0; }
@@ -100,16 +102,14 @@
 }
 .control-surface .queue-history strong { color: var(--text-secondary); font-size: .66rem; }
 
-/* The scene element carries no image of its own any more: it is the flexible part of the
-   rail that lets the environment breathe, plus the legibility scrim for the motif. */
+/* The scene element carries no image and no words of its own: it is the flexible part of
+   the rail that lets the environment breathe, plus the scrim that settles the terrain onto
+   the rail's floor. */
 .control-surface .rail-scene { position: relative; z-index: 1; flex: 1 1 auto; min-height: 150px; margin: 14px -15px 0; }
 .control-surface .rail-scene::before {
   position: absolute; inset: auto 0 0; height: 108px; content: "";
   background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ctl-rail) 82%, transparent) 62%, color-mix(in srgb, var(--ctl-rail) 94%, transparent));
 }
-.control-surface .rail-motif { position: absolute; right: 15px; bottom: 14px; left: 15px; display: grid; gap: 6px; }
-.control-surface .rail-motif q { color: var(--text-primary); font: italic 16px/1.25 var(--ctl-serif); }
-.control-surface .rail-motif span { color: var(--text-muted); font-size: 9px; }
 
 .disposition-approved, .disposition-rejected, .disposition-discarded,
 .disposition-not-resolved, .disposition-technical-stop { color: var(--neutral); }

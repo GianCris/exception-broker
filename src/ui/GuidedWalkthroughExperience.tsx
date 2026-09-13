@@ -264,7 +264,7 @@ const GuidedAcquisitionStage = ({ step, orientation, coach, onContinue }: Readon
     <div className="acq-layout">
       <aside className="acq-rail guided-rail" aria-label="Interactive demo">
         <div className="acq-rail-top">{orientation}</div>
-        <div className="acq-rail-scene" aria-hidden="true"><div className="acq-rail-motif"><q>Higher ground is a choice.</q><span>— The Sentinel</span></div></div>
+        <div className="acq-rail-scene" aria-hidden="true" />
       </aside>
       {/* Step 1 is about the conversation, so everything the conversation has not caused
           yet stays truthfully dormant rather than pre-announcing step 2's payoff. Nothing

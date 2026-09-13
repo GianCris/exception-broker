@@ -180,3 +180,34 @@
  .eb-ridge, .eb-overlay { inset: 0; } .eb-footer { margin-top: 0; }
  :root[data-theme="light"] .eb-page .eb-wash { background: linear-gradient(180deg, #f5f1ea 0%, rgba(5,11,24,.3) 32%, rgba(5,11,24,.15) 70%, #050b18 100%); }
 }
+
+/* ── Sentinel Ridge atmosphere ────────────────────────────────────────────────
+   Two depth planes, not one fog layer: a distant haze that belongs to the far
+   ridges and a nearer valley mist that drifts the other way on a longer cycle.
+   Colour, reach and resting opacity live here; the drift itself belongs to the
+   Motion primitives in SentinelScene, so reduced motion simply leaves this
+   composition static. Both planes sit inside the scene, which is behind the
+   isolated hero grid, so no headline, CTA, card or milestone can be veiled. */
+.eb-page { --eb-haze: 214 226 250; --eb-mist: 234 240 255; }
+:root[data-theme="light"] .eb-page { --eb-haze: 150 170 206; --eb-mist: 196 210 238; }
+.eb-fog { will-change: transform, opacity; }
+.eb-fog--haze {
+  inset: 146px -13% 28%;
+  opacity: .1;
+  background:
+    radial-gradient(116% 60% at 43% 64%, rgb(var(--eb-haze) / 46%), rgb(var(--eb-haze) / 13%) 44%, transparent 73%),
+    radial-gradient(82% 46% at 77% 47%, rgb(var(--eb-haze) / 28%), transparent 69%);
+}
+.eb-fog--mist {
+  inset: auto -17% -3%;
+  height: 54%;
+  opacity: .13;
+  background:
+    radial-gradient(130% 106% at 35% 104%, rgb(var(--eb-mist) / 50%), rgb(var(--eb-mist) / 15%) 47%, transparent 78%),
+    linear-gradient(0deg, rgb(var(--eb-mist) / 20%), transparent 57%);
+}
+.eb-summit-halo { will-change: opacity, transform; }
+@media (max-width: 720px) {
+  .eb-fog--haze { inset: 4% -13% 38%; }
+  .eb-fog--mist { inset: auto -17% -2%; height: 52%; }
+}

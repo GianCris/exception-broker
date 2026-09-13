@@ -121,10 +121,8 @@ export const ProductTopbar = ({ surface, onNavigateHome, onNavigateAcquisition, 
 
 /**
  * Sentinel Ridge as environment, not as a card: it closes the branded rail exactly the way
- * Acquisition's flow rail closes. Decorative only — the motif carries no operational meaning.
+ * Acquisition's flow rail closes. Decorative only, and deliberately mute — the Sentinel
+ * itself and its words belong to Home. Inside the product the ridge is only the air the
+ * instrument stands in, so this element carries no quote and no character.
  */
-export const SentinelScene = () => (
-  <div className="rail-scene" aria-hidden="true">
-    <div className="rail-motif"><q>Higher ground is a choice.</q><span>— The Sentinel</span></div>
-  </div>
-);
+export const SentinelScene = () => <div className="rail-scene" aria-hidden="true" />;

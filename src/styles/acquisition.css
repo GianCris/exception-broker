@@ -1,4 +1,4 @@
-.acquisition-shell { --shell-drop:color-mix(in srgb,var(--surface-base) 80%,#071329); --acq-plum:#9b78ef; --acq-brass:#c08a52; --acq-calle:#f3c14a; --acq-bridge-mid:#c9a9e6; --acq-panel:color-mix(in srgb,var(--surface-control) 82%,#071a35); min-height:100dvh; color:var(--text-primary); background:radial-gradient(850px 420px at 78% 0%,rgb(87 65 155 / 14%),transparent 68%),linear-gradient(180deg,color-mix(in srgb,var(--surface-base) 80%,#071329),color-mix(in srgb,var(--surface-depth) 75%,#081326)); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+.acquisition-shell { --shell-drop:color-mix(in srgb,var(--surface-base) 80%,#071329); --acq-rail:color-mix(in srgb,var(--surface-depth) 72%,#09172c); --acq-plum:#9b78ef; --acq-brass:#c08a52; --acq-calle:#f3c14a; --acq-bridge-mid:#c9a9e6; --acq-panel:color-mix(in srgb,var(--surface-control) 82%,#071a35); min-height:100dvh; color:var(--text-primary); background:radial-gradient(850px 420px at 78% 0%,rgb(87 65 155 / 14%),transparent 68%),linear-gradient(180deg,color-mix(in srgb,var(--surface-base) 80%,#071329),color-mix(in srgb,var(--surface-depth) 75%,#081326)); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
 .acquisition-shell button,.acquisition-shell input { font:inherit; }
 .acquisition-shell button { cursor:pointer; }
 .acquisition-shell button:focus-visible,.acquisition-shell summary:focus-visible,.acquisition-shell input:focus-visible,.acquisition-shell select:focus-visible { outline:2px solid var(--acq-plum); outline-offset:3px; }
@@ -17,7 +17,7 @@
 .acq-page::before { background:repeating-radial-gradient(circle at 86% -10%,transparent 0 58px,rgb(155 120 239 / 6%) 58px 59px,transparent 59px 122px); }
 .acq-page::after { opacity:.035; mix-blend-mode:overlay; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-size:140px 140px; }
 .acq-layout { display:grid; grid-template-columns:250px minmax(0,1fr); width:100%; min-width:0; height:100%; margin:0; }
-.acq-rail { position:relative; display:flex; flex-direction:column; min-width:0; height:100%; padding:22px 18px 0; overflow:hidden; border-right:1px solid var(--border-subtle); background:color-mix(in srgb,var(--surface-depth) 72%,#09172c); }
+.acq-rail { position:relative; display:flex; flex-direction:column; min-width:0; height:100%; padding:22px 18px 0; overflow:hidden; border-right:1px solid var(--border-subtle); background:var(--acq-rail); }
 .acq-rail-top { position:relative; z-index:2; flex:none; }
 .acq-rail-top > p,.acq-eyebrow { margin:0; color:color-mix(in srgb,var(--acq-plum) 78%,var(--text-primary)); font-size:9px; font-weight:750; letter-spacing:.2em; text-transform:uppercase; }
 .acq-rail ol { position:relative; z-index:2; margin:20px 0 16px; padding:0; list-style:none; }
@@ -33,9 +33,10 @@
 .acq-rail-access b { display:inline-flex; align-items:center; gap:7px; font-size:10px; }.acq-rail-access b i { width:6px; height:6px; border-radius:50%; background:var(--acq-plum); }
 .acq-rail-access > span { color:var(--text-muted); font-size:8px; }.acq-rail-access p,.acq-rail-access small { grid-column:1/-1; margin:0; color:var(--text-muted); font-size:9px; line-height:1.5; }
 .acq-rail-access button { grid-column:1/-1; justify-self:start; margin-top:5px; padding:7px 10px; border:1px solid var(--border-subtle); border-radius:6px; color:var(--text-secondary); background:var(--surface-control); font-size:9px; }
-.acq-rail-scene { position:relative; z-index:1; flex:1 1 auto; min-height:150px; margin:16px -18px 0; background:linear-gradient(180deg,transparent 0%,color-mix(in srgb,var(--surface-depth) 40%,transparent) 55%,color-mix(in srgb,var(--surface-depth) 82%,transparent) 100%),url('/images/home/sentinel-ridge.png') 50% 78%/cover no-repeat; }
-.acq-rail-scene::before { position:absolute; inset:0 0 auto; height:56px; background:linear-gradient(180deg,color-mix(in srgb,var(--surface-depth) 72%,#09172c),transparent); content:''; }
-.acq-rail-motif { position:absolute; right:18px; bottom:18px; left:18px; display:grid; gap:7px; }.acq-rail-motif q { font:italic 17px/1.25 Georgia,'Times New Roman',serif; }.acq-rail-motif span { color:var(--text-muted); font-size:9px; }
+/* Ridge as air, not as picture: the crop is fixed to the summit side of the source so the
+   Sentinel never re-appears inside the product, and the scrim is deep enough that the rail
+   reads as environment behind the flow rather than as a second thing to look at. */
+.acq-rail-scene { position:relative; z-index:1; flex:1 1 auto; min-height:150px; margin:16px -18px 0; background:linear-gradient(0deg,color-mix(in srgb,var(--acq-rail) 90%,transparent) 0,color-mix(in srgb,var(--acq-rail) 58%,transparent) 92px,color-mix(in srgb,var(--acq-rail) 38%,transparent) 176px,color-mix(in srgb,var(--acq-rail) 76%,transparent) 254px,var(--acq-rail) 300px),url('/images/home/sentinel-ridge.png') 64% 100%/auto 300px no-repeat,var(--acq-rail); }
 .acq-main { min-width:0; height:100%; padding:14px clamp(14px,1.6vw,24px) 26px; overflow-y:auto; }
 .acq-interaction-band,.acq-panel,.acq-resolution,.acq-provider-depth,.acq-access { min-width:0; border:1px solid var(--border-subtle); border-radius:12px; background:linear-gradient(145deg,color-mix(in srgb,var(--acq-panel) 94%,transparent),color-mix(in srgb,var(--surface-depth) 88%,transparent)); box-shadow:0 18px 50px rgb(3 7 22 / 12%); }
 .acq-interaction-band { display:grid; grid-template-columns:minmax(270px,1fr) auto; gap:18px 34px; align-items:center; padding:15px 20px; }
@@ -218,7 +219,7 @@
 
 :root[data-theme='light'] .acquisition-shell { --acq-panel:#f7f4ed; background:radial-gradient(850px 420px at 78% 0%,rgb(112 72 191 / 11%),transparent 68%),linear-gradient(180deg,#f5f1ea,#e8e4dc); }
 :root[data-theme='light'] .acq-page::before { background:repeating-radial-gradient(circle at 86% -10%,transparent 0 58px,rgb(91 60 158 / 5%) 58px 59px,transparent 59px 122px); }:root[data-theme='light'] .acq-page::after { opacity:.02; }
-:root[data-theme='light'] .acq-rail { background:#ebe8e2; }:root[data-theme='light'] .acq-rail-scene { background:linear-gradient(180deg,transparent 0%,rgb(235 232 226 / 55%) 55%,rgb(235 232 226 / 92%) 100%),url('/images/home/sentinel-ridge.png') 50% 78%/cover no-repeat; }:root[data-theme='light'] .acq-rail-scene::before { background:linear-gradient(180deg,#ebe8e2,transparent); }:root[data-theme='light'] .acq-resolution { background:radial-gradient(circle at 20% 40%,rgb(110 76 190 / 13%),transparent 37%),linear-gradient(110deg,#f7f3ee,#e8e4e0); }
+:root[data-theme='light'] .acquisition-shell { --acq-rail:#ebe8e2; }:root[data-theme='light'] .acq-resolution { background:radial-gradient(circle at 20% 40%,rgb(110 76 190 / 13%),transparent 37%),linear-gradient(110deg,#f7f3ee,#e8e4e0); }
 :root[data-theme='light'] .acquisition-shell { --acq-calle:#d8a21e; --acq-bridge-mid:#a98bd8; }
 :root[data-theme='light'] .acq-gate-hero { background:radial-gradient(120% 150% at 88% 50%,rgb(216 162 30 / 9%),transparent 55%),radial-gradient(90% 140% at 6% 50%,rgb(110 76 190 / 9%),transparent 60%),linear-gradient(145deg,#f8f5ef,#efebe2); }
 :root[data-theme='light'] .acq-gate-route { background:linear-gradient(145deg,#f8f5ef,#efebe2); }
