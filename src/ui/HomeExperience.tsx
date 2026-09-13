@@ -28,27 +28,45 @@ function SentinelScene() {
   }} onPointerLeave={() => { x.set(0); y.set(0); }}>
     <div className="eb-ridge"><motion.img src={ridge} alt="Sentinel Ridge: a cat watches over a mountain path toward the summit" style={{ x, y, scale: 1.01 }} /></div>
     <div className="eb-wash" aria-hidden="true" />
-    {/* Two depth planes, never one cloud layer: the distant haze sits with the far ridges
-        and the near valley mist drifts the other way on a longer cycle, so the ridge gains
-        parallax depth without either plane ever reading as an animation. */}
+    {/* Two depth planes, never one cloud layer. Every property carries its OWN period, so
+        drift, lift, swell and luminance never return to the same state together: the air
+        keeps changing without the scene ever arriving at a visible loop point. The near
+        mist crosses the valley roughly twice as fast as the deep haze and against it, and
+        that difference in rate — not the amount of travel — is what reads as depth. */}
     <motion.div className="eb-fog eb-fog--haze" aria-hidden="true"
-      animate={reducedMotion ? { x: 0, y: 0, opacity: .1 } : { x: [-9, 7, -9], y: [0, -4, 0], opacity: [.085, .125, .085] }}
-      transition={{ duration: 61, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }} />
+      animate={reducedMotion ? { x: 0, y: 0, scale: 1, opacity: .2 } : { x: [34, -40, 34], y: [0, 11, 0], scale: [1, 1.07, 1], opacity: [.15, .28, .15] }}
+      transition={reducedMotion ? { duration: 0 } : {
+        x: { duration: 46, repeat: Infinity, ease: 'easeInOut' }, y: { duration: 59, repeat: Infinity, ease: 'easeInOut' },
+        scale: { duration: 63, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 29, repeat: Infinity, ease: 'easeInOut' },
+      }} />
     <motion.div className="eb-fog eb-fog--mist" aria-hidden="true"
-      animate={reducedMotion ? { x: 0, y: 0, opacity: .13 } : { x: [6, -8, 6], y: [0, 3, 0], opacity: [.135, .095, .135] }}
-      transition={{ duration: 89, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }} />
+      animate={reducedMotion ? { x: 0, y: 0, scale: 1, opacity: .3 } : { x: [-58, 54, -58], y: [0, -21, 0], scale: [1.06, 1, 1.06], opacity: [.23, .42, .23] }}
+      transition={reducedMotion ? { duration: 0 } : {
+        x: { duration: 27, repeat: Infinity, ease: 'easeInOut' }, y: { duration: 37, repeat: Infinity, ease: 'easeInOut' },
+        scale: { duration: 47, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 19, repeat: Infinity, ease: 'easeInOut' },
+      }} />
     <div className="eb-overlay">
       <svg className="eb-journey-path" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {(['desktop', 'mobile'] as const).map((size) => {
           const d = size === 'desktop' ? 'M 42 84 C 47 77, 49 69, 54 60 S 59 46, 65 29' : 'M 13 88 C 21 80, 29 75, 37 65 S 50 48, 60 26';
-          return <g key={size} className={`eb-journey-${size}`}><path className="eb-journey-base" d={d} /><motion.path className="eb-journey-flow" d={d} animate={{ strokeDashoffset: reducedMotion ? 0 : -80 }} transition={{ duration: 18, repeat: reducedMotion ? 0 : Infinity, ease: 'linear' }} /></g>;
+          /* The path already travels; what it lacked was light. The luminance breath runs on
+             its own short period, so the route brightens and settles as the air moves over it. */
+          return <g key={size} className={`eb-journey-${size}`}><path className="eb-journey-base" d={d} /><motion.path className="eb-journey-flow" d={d}
+            animate={reducedMotion ? { strokeDashoffset: 0, opacity: .58 } : { strokeDashoffset: -80, opacity: [.34, .8, .34] }}
+            transition={reducedMotion ? { duration: 0 } : {
+              strokeDashoffset: { duration: 18, repeat: Infinity, ease: 'linear' },
+              opacity: { duration: 8.5, repeat: Infinity, ease: 'easeInOut' },
+            }} /></g>;
         })}
       </svg>
-      {/* Distant light on the summit, not a beacon: the range is small enough that it is
-          felt as the air changing rather than seen as a pulse. */}
+      {/* Distant light on the summit, not a beacon. Brightness and size breathe on separate
+          periods and the halo is diffuse enough that the swell reads as air catching light
+          rather than as an orb switching on. */}
       <motion.span className="eb-summit-halo" aria-hidden="true"
-        animate={reducedMotion ? { opacity: .32, scale: 1 } : { opacity: [.28, .37, .28], scale: [1, 1.045, 1] }}
-        transition={{ duration: 23, repeat: reducedMotion ? 0 : Infinity, ease: 'easeInOut' }} />
+        animate={reducedMotion ? { opacity: .36, scale: 1 } : { opacity: [.24, .5, .24], scale: [.95, 1.12, .95] }}
+        transition={reducedMotion ? { duration: 0 } : {
+          opacity: { duration: 12, repeat: Infinity, ease: 'easeInOut' }, scale: { duration: 16.5, repeat: Infinity, ease: 'easeInOut' },
+        }} />
       <div className="eb-milestone eb-milestone--one"><span className="eb-milestone-number">1</span><div><strong>Decision acquired</strong><small>From signal</small><p>Capture and structure<br />AI-acquired decisions.</p></div></div>
       <div className="eb-milestone eb-milestone--two"><span className="eb-milestone-number">2</span><div><strong>Execution gate</strong><small>Through control</small><p>Apply operational<br />constraints and review.</p></div></div>
       <div className="eb-milestone eb-milestone--three"><span className="eb-milestone-number">3</span><div><strong>Higher ground</strong><small>Operational reality</small><p>Decisions grounded<br />in modeled facts.</p></div></div>

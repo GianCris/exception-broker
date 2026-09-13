@@ -181,33 +181,55 @@
  :root[data-theme="light"] .eb-page .eb-wash { background: linear-gradient(180deg, #f5f1ea 0%, rgba(5,11,24,.3) 32%, rgba(5,11,24,.15) 70%, #050b18 100%); }
 }
 
-/* ── Sentinel Ridge atmosphere ────────────────────────────────────────────────
-   Two depth planes, not one fog layer: a distant haze that belongs to the far
-   ridges and a nearer valley mist that drifts the other way on a longer cycle.
-   Colour, reach and resting opacity live here; the drift itself belongs to the
-   Motion primitives in SentinelScene, so reduced motion simply leaves this
-   composition static. Both planes sit inside the scene, which is behind the
-   isolated hero grid, so no headline, CTA, card or milestone can be veiled. */
-.eb-page { --eb-haze: 214 226 250; --eb-mist: 234 240 255; }
-:root[data-theme="light"] .eb-page { --eb-haze: 150 170 206; --eb-mist: 196 210 238; }
+/* ── Sentinel Ridge atmosphere ──────────────────────────────────
+   Two depth planes, not one fog layer: a deep haze that belongs to the far
+   ridges and a near mist bank that crosses the valley against it. Each plane is
+   BANKED rather than uniform — several soft ellipses at different heights — so
+   the eye has edges to track and the drift is actually seen; a single even wash
+   can move a long way and still look still. Colour and reach live here; the
+   motion belongs to the Motion primitives in SentinelScene, so reduced motion
+   simply leaves this composition static. Both planes sit inside the scene,
+   which is behind the isolated hero grid, so no headline, CTA, card or milestone
+   can be veiled, and the milestones and quote render above them. */
+.eb-page { --eb-haze: 208 223 252; --eb-mist: 232 240 255; }
+:root[data-theme="light"] .eb-page { --eb-haze: 184 200 228; --eb-mist: 214 226 246; }
 .eb-fog { will-change: transform, opacity; }
 .eb-fog--haze {
-  inset: 146px -13% 28%;
-  opacity: .1;
+  inset: 142px -20% 26%;
+  opacity: .2;
   background:
-    radial-gradient(116% 60% at 43% 64%, rgb(var(--eb-haze) / 46%), rgb(var(--eb-haze) / 13%) 44%, transparent 73%),
-    radial-gradient(82% 46% at 77% 47%, rgb(var(--eb-haze) / 28%), transparent 69%);
+    radial-gradient(46% 54% at 20% 46%, rgb(var(--eb-haze) / 44%), transparent 70%),
+    radial-gradient(38% 44% at 50% 64%, rgb(var(--eb-haze) / 36%), transparent 72%),
+    radial-gradient(52% 50% at 80% 40%, rgb(var(--eb-haze) / 32%), transparent 70%);
 }
+/* Lifted off the hero floor so the bank reads as weather in the valley rather
+   than as a glow along the bottom edge of the section. */
 .eb-fog--mist {
-  inset: auto -17% -3%;
-  height: 54%;
-  opacity: .13;
+  inset: auto -24% 5%;
+  height: 50%;
+  opacity: .3;
   background:
-    radial-gradient(130% 106% at 35% 104%, rgb(var(--eb-mist) / 50%), rgb(var(--eb-mist) / 15%) 47%, transparent 78%),
-    linear-gradient(0deg, rgb(var(--eb-mist) / 20%), transparent 57%);
+    radial-gradient(44% 56% at 13% 64%, rgb(var(--eb-mist) / 62%), transparent 70%),
+    radial-gradient(36% 44% at 40% 80%, rgb(var(--eb-mist) / 50%), transparent 72%),
+    radial-gradient(50% 54% at 70% 68%, rgb(var(--eb-mist) / 56%), transparent 70%),
+    linear-gradient(0deg, transparent, rgb(var(--eb-mist) / 20%) 38%, transparent 86%);
 }
-.eb-summit-halo { will-change: opacity, transform; }
+.eb-journey-flow, .eb-summit-halo { will-change: opacity, transform; }
+/* Wider falloff and a softer core: the halo can brighten without ever resolving
+   into a lit sphere. */
+.eb-summit-halo {
+  width: 104px; height: 104px; filter: blur(12px);
+  background: radial-gradient(circle, rgb(198 166 255 / 30%), rgb(137 101 255 / 12%) 40%, transparent 74%);
+}
 @media (max-width: 720px) {
-  .eb-fog--haze { inset: 4% -13% 38%; }
-  .eb-fog--mist { inset: auto -17% -2%; height: 52%; }
+  .eb-fog--haze { inset: 4% -20% 34%; }
+  .eb-fog--mist { inset: auto -24% 4%; height: 48%; }
+  .eb-summit-halo { width: 86px; height: 86px; }
 }
+
+/* The milestones and the quote already sat above the atmosphere; now that the
+   mist bank is dense enough to lift the rock behind them, their existing
+   legibility shadow gets a second, wider stop. Type, colour and position are
+   untouched — this only keeps contrast where the fog is brightest. */
+.eb-milestone, .eb-quote { text-shadow: 0 1px 3px rgb(5 11 24 / 95%), 0 0 16px rgb(5 11 24 / 78%); }
+.eb-milestone-number { box-shadow: 0 0 0 3px rgb(150 114 255 / 25%), 0 0 18px rgb(146 107 255 / 72%), 0 2px 12px rgb(5 11 24 / 65%); }
