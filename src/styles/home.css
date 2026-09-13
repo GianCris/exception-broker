@@ -247,7 +247,7 @@
    a viewBox that is stretched by preserveAspectRatio="none", a CSS blur radius is
    measured in USER UNITS and smears the signal into nothing, while stroke-width
    under the inherited non-scaling-stroke stays honest pixels. */
-.eb-journey-signal { fill: none; stroke-linecap: round; will-change: stroke-dashoffset; }
+.eb-journey-signal { fill: none; stroke-linecap: round; will-change: stroke-dashoffset, opacity; }
 .eb-journey-signal--glow { stroke: rgb(150 112 250 / 17%); stroke-width: 16; }
 .eb-journey-signal--tail { stroke: rgb(178 145 255 / 30%); stroke-width: 8.5; }
 .eb-journey-signal--body { stroke: rgb(214 196 255 / 62%); stroke-width: 4; }

@@ -30,6 +30,18 @@ function Brand({ compact = false }: Readonly<{ compact?: boolean }>) {
 const arrival = { enter: .9, travel: 4.1, one: 1.7, two: 2.95, three: 4.2, summit: 4.3, mist: 5.4 } as const;
 
 /**
+ * The resting loop, in seconds. Once the arrival has fully resolved — signal gone, summit
+ * bloom returned to nothing — the route keeps ONE quieter current travelling it for as long
+ * as Home is mounted: the light emerges at Decision acquired, crosses Execution gate, fades
+ * as it reaches Higher ground, and the path rests before the next one sets out.
+ *
+ * Nothing else replays. This is the path's own life, not the arrival again, which is why it
+ * peaks well below the arrival's brightness and why the gap is long enough to read as a
+ * pause rather than as a pulse.
+ */
+const loop = { from: 0, to: 1.12, travel: 5, cycle: 6.6, peak: .66 } as const;
+
+/**
  * The signal's leading edge, as a share of the route: it starts a full body's length before
  * the lower path and ends a body past the summit, so the viewer never sees it appear or
  * vanish — it arrives and it leaves.
@@ -94,6 +106,12 @@ function SentinelScene() {
   const reducedMotion = useReducedMotion();
   const journey = useRef<SVGSVGElement>(null);
   const routeLength = useRouteLength(journey);
+  /* The hand-off from the one-time arrival to the endless resting loop. The summit bloom is
+     the last thing the arrival does, so its completion IS the moment the arrival is over —
+     no clock of Home's own, and nothing to keep in sync with the score. Only the signal
+     changes hands; the ridge, the milestones, the bloom and the mist sweep have finished
+     their single run and are never re-triggered. */
+  const [resting, setResting] = useState(false);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   useEffect(() => { if (reducedMotion) { x.set(0); y.set(0); } }, [reducedMotion, x, y]);
@@ -148,17 +166,30 @@ function SentinelScene() {
               strokeDashoffset: { duration: 18, repeat: Infinity, ease: 'linear' },
               opacity: { duration: 8.5, repeat: Infinity, ease: 'easeInOut' },
             }} />
-            {/* THE SIGNAL. One current of light, once, from the lower route to the summit.
-                Its three dashes share a front, so it reads as a single travelling body with
-                a bright head and a soft wake rather than as three strokes. It ends past the
-                summit and therefore leaves nothing behind to loop. */}
+            {/* THE SIGNAL. One current of light from the lower route to the summit: first as
+                the arrival, then — once that has resolved — forever, quieter. Its four dashes
+                share a front, so it reads as a single travelling body with a bright head and
+                a soft wake rather than as four strokes.
+
+                The arrival leg leaves past the summit; the resting leg fades at Higher ground
+                and waits out the gap at zero, so the restart happens while the body is both
+                invisible AND off the route and can never be seen as a jump. */}
             {routeLength > 0 && comet.map(({ key, share }) => {
               const dash = share * routeLength;
+              const at = (edge: number) => dash - edge * routeLength;
+              const arc = loop.travel / loop.cycle;
               return <motion.path key={key} className={`eb-journey-signal eb-journey-signal--${key}`} d={d}
                 style={{ strokeDasharray: `${dash} ${routeLength * 1.7}` }}
-                initial={reducedMotion ? false : { strokeDashoffset: dash - front.from * routeLength }}
-                animate={{ strokeDashoffset: dash - front.to * routeLength }}
-                transition={reducedMotion ? { duration: 0 } : { delay: arrival.enter, duration: arrival.travel, ease: 'linear' }} />;
+                initial={reducedMotion ? false : { strokeDashoffset: at(front.from) }}
+                animate={resting
+                  ? { strokeDashoffset: [at(loop.from), at(loop.to), at(loop.to)], opacity: [0, loop.peak, loop.peak, 0, 0] }
+                  : { strokeDashoffset: at(front.to) }}
+                transition={reducedMotion ? { duration: 0 } : resting
+                  ? {
+                    strokeDashoffset: { duration: loop.cycle, times: [0, arc, 1], ease: 'linear', repeat: Infinity },
+                    opacity: { duration: loop.cycle, times: [0, .05, .6, arc, 1], ease: 'easeInOut', repeat: Infinity },
+                  }
+                  : { delay: arrival.enter, duration: arrival.travel, ease: 'linear' }} />;
             })}
           </g>;
         })}
@@ -176,7 +207,8 @@ function SentinelScene() {
           culmination, not a new resting element, so the quiet Home afterwards is unchanged. */}
       <motion.span className="eb-summit-bloom" aria-hidden="true"
         initial={reducedMotion ? false : { opacity: 0, scale: .62 }} animate={reducedMotion ? { opacity: 0, scale: 1 } : { opacity: [0, .9, 0], scale: [.62, 1.85, 2.4] }}
-        transition={reducedMotion ? { duration: 0 } : { delay: arrival.summit, duration: 2.3, times: [0, .42, 1], ease: [.2, .8, .3, 1] }} />
+        transition={reducedMotion ? { duration: 0 } : { delay: arrival.summit, duration: 2.3, times: [0, .42, 1], ease: [.2, .8, .3, 1] }}
+        onAnimationComplete={() => { if (!reducedMotion) setResting(true); }} />
       {milestones.map(({ key, at, swell, title, kicker, lead, tail }, index) =>
         <motion.div className={`eb-milestone eb-milestone--${key}`} key={key}
           initial={reducedMotion ? false : { opacity: .4 }} animate={{ opacity: 1 }}
