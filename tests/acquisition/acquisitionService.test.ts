@@ -6,13 +6,14 @@ import type { Call, CreateCallInput } from '@call-e/calle';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AcquisitionCallGateway } from '../../src/acquisition/calleGateway.js';
-import { CalleAcquisitionGateway } from '../../src/acquisition/calleGateway.js';
-import { acquisitionCreateSchema, type AcquisitionCreateInput } from '../../src/acquisition/contracts.js';
+import { CalleAcquisitionGateway, ProviderNotDispatchedError } from '../../src/acquisition/calleGateway.js';
+import { createBrowserAcquisitionRequest, reconcileBrowserAcquisitionRequest, type BrowserAcquisitionCreateInput } from '../../src/acquisition/browserClient.js';
+import { acquisitionCreateSchema, toPublicAcquisitionRecord, type AcquisitionCreateInput, type AcquisitionRecord } from '../../src/acquisition/contracts.js';
 import { acquisitionGuardPolicyFromEnvironment, hashClientToken, type AcquisitionGuardPolicy } from '../../src/acquisition/guardrails.js';
 import { createAcquisitionHttpHandler } from '../../src/acquisition/http.js';
 import { createProductionAcquisitionHandler } from '../../src/acquisition/server.js';
 import { AcquisitionService } from '../../src/acquisition/service.js';
-import { JsonFileAcquisitionStore, MemoryAcquisitionStore } from '../../src/acquisition/store.js';
+import { JsonFileAcquisitionStore, MemoryAcquisitionStore, type AcquisitionStore } from '../../src/acquisition/store.js';
 import { PHONE_DECISION_SCHEMA } from '../../src/integrations/calle/contract.js';
 import { mapCalleResponseForContext } from '../../src/integrations/calle/mapper.js';
 
@@ -28,6 +29,7 @@ afterEach(async () => {
 const input = (overrides: Record<string, unknown> = {}): AcquisitionCreateInput => acquisitionCreateSchema.parse({
   acquisitionId: 'ACQ-001',
   clientToken: token,
+  accessMode: 'HOSTED_DEMO',
   authorizationConfirmed: true,
   phoneNumber: phone,
   request: {
@@ -102,6 +104,16 @@ const policy = (overrides: Partial<AcquisitionGuardPolicy> = {}): AcquisitionGua
   ...overrides,
 });
 
+/** Accepts a fixed number of writes, then refuses — the durable boundary a dying process leaves behind. */
+const haltingStore = (store: AcquisitionStore, writes: number, reason: string): AcquisitionStore => {
+  let accepted = 0;
+  return {
+    get: (acquisitionId) => store.get(acquisitionId),
+    list: () => store.list(),
+    put: async (record) => { accepted += 1; if (accepted > writes) throw new Error(reason); await store.put(record); },
+  };
+};
+
 const setup = (created: Call = call(), policyOverride: Partial<AcquisitionGuardPolicy> = {}) => {
   const create = vi.fn(async (_request: CreateCallInput, _idempotencyKey: string) => structuredClone(created));
   const get = vi.fn(async (_callId: string) => structuredClone(created));
@@ -152,7 +164,7 @@ describe('Acquisition V1 server boundary', () => {
     expect(providerInput?.resultSchema).toMatchObject({
       type: 'object',
       additionalProperties: false,
-      properties: { decision: { enum: ['APPROVED', 'REJECTED', 'PENDING', 'NEEDS_CLARIFICATION'] } },
+      properties: { decision: { enum: ['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION'] } },
     });
   });
 
@@ -197,6 +209,19 @@ describe('Acquisition V1 server boundary', () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
+  it('allows different authorized Hosted and BYOK connections to own independent active acquisitions', async () => {
+    const connections = new Set(['CONNECTION-A', 'CONNECTION-B', 'CONNECTION-C']);
+    const { service, create } = setup(call('queued'), { allowedClientTokens: connections });
+    expect(await service.create(input({ clientToken: 'CONNECTION-A' }))).toMatchObject({ accepted: true });
+    expect(await service.create(input({ acquisitionId: 'ACQ-002', clientToken: 'CONNECTION-B', request: { ...input().request, requestId: 'REQUEST-ACQ-002' } }))).toMatchObject({ accepted: true });
+    expect(await service.create(input({ acquisitionId: 'ACQ-003', clientToken: 'CONNECTION-C', accessMode: 'BYOK', request: { ...input().request, requestId: 'REQUEST-ACQ-003' } }))).toMatchObject({ accepted: true });
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(await service.getActive('CONNECTION-A')).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.getActive('CONNECTION-B')).toMatchObject({ acquisitionId: 'ACQ-002' });
+    expect(await service.getActive('CONNECTION-C')).toMatchObject({ acquisitionId: 'ACQ-003' });
+    expect(await service.getActive('CONNECTION-OTHER')).toBeUndefined();
+  });
+
   it('enforces per-client cap and cooldown without another provider call', async () => {
     const capped = setup(call(), { perClientDailyLimit: 1 });
     await capped.service.create(input());
@@ -207,6 +232,53 @@ describe('Acquisition V1 server boundary', () => {
     await cooling.service.create(input());
     expect(await cooling.service.create(input({ acquisitionId: 'ACQ-003', request: { ...input().request, requestId: 'REQUEST-ACQ-003' } }))).toMatchObject({ accepted: false, code: 'COOLDOWN_ACTIVE' });
     expect(cooling.create).toHaveBeenCalledOnce();
+  });
+
+  it('scopes Hosted cooldown to the owning connection rather than the whole service', async () => {
+    const connections = new Set(['HOSTED-A', 'HOSTED-B']);
+    const { service, create } = setup(call(), { allowedClientTokens: connections, cooldownMs: 60_000 });
+    expect(await service.create(input({ clientToken: 'HOSTED-A' }))).toMatchObject({ accepted: true });
+    expect(await service.create(input({ acquisitionId: 'ACQ-HOSTED-B', clientToken: 'HOSTED-B', request: { ...input().request, requestId: 'REQUEST-HOSTED-B' } }))).toMatchObject({ accepted: true });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('separates one-per-session allowance from the server-wide hosted budget', async () => {
+    const sessions = new Set(['HOSTED-SESSION-A', 'HOSTED-SESSION-B']);
+    const { service, create } = setup(call(), { allowedClientTokens: sessions, perClientDailyLimit: 1, globalDailyLimit: 2, cooldownMs: 0 });
+    const first = input({ acquisitionId: 'ACQ-HOSTED-A', clientToken: 'HOSTED-SESSION-A', request: { ...input().request, requestId: 'REQUEST-HOSTED-A' } });
+    const sameSession = input({ acquisitionId: 'ACQ-HOSTED-A-SECOND', clientToken: 'HOSTED-SESSION-A', request: { ...input().request, requestId: 'REQUEST-HOSTED-A-SECOND' } });
+    const distinctSession = input({ acquisitionId: 'ACQ-HOSTED-B', clientToken: 'HOSTED-SESSION-B', request: { ...input().request, requestId: 'REQUEST-HOSTED-B' } });
+    expect(await service.create(first)).toMatchObject({ accepted: true });
+    expect(await service.create(sameSession)).toMatchObject({ accepted: false, code: 'CALL_LIMIT_REACHED' });
+    expect(await service.create(distinctSession)).toMatchObject({ accepted: true });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists trusted access mode and excludes BYOK from Hosted limits and cooldown', async () => {
+    const connections = new Set(['HOSTED', 'BYOK']);
+    const { service, create } = setup(call(), { allowedClientTokens: connections, perClientDailyLimit: 1, globalDailyLimit: 1, cooldownMs: 60_000 });
+    const hosted = await service.create(input({ clientToken: 'HOSTED' }));
+    const byok = await service.create(input({ acquisitionId: 'ACQ-BYOK-1', clientToken: 'BYOK', accessMode: 'BYOK', request: { ...input().request, requestId: 'REQUEST-BYOK-1' } }));
+    const byokAgain = await service.create(input({ acquisitionId: 'ACQ-BYOK-2', clientToken: 'BYOK', accessMode: 'BYOK', request: { ...input().request, requestId: 'REQUEST-BYOK-2' } }));
+    expect(hosted).toMatchObject({ accepted: true, record: { accessMode: 'HOSTED_DEMO' } });
+    expect(byok).toMatchObject({ accepted: true, record: { accessMode: 'BYOK' } });
+    expect(byokAgain).toMatchObject({ accepted: true, record: { accessMode: 'BYOK' } });
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
+  it('counts legacy records conservatively against the Hosted budget after registry loss', async () => {
+    const connections = new Set(['HOSTED-A', 'HOSTED-B']);
+    const first = setup(call(), { allowedClientTokens: connections, globalDailyLimit: 1 });
+    const created = await first.service.create(input({ clientToken: 'HOSTED-A' }));
+    expect(created).toMatchObject({ accepted: true });
+    if (!created.accepted) throw new Error('Expected initial acquisition');
+    const { accessMode: _mode, ...legacy } = created.record;
+    await first.store.put(legacy);
+    expect(await first.service.create(input({ acquisitionId: 'ACQ-HOSTED-B', clientToken: 'HOSTED-B', request: { ...input().request, requestId: 'REQUEST-HOSTED-B' } }))).toMatchObject({
+      accepted: false,
+      code: 'CALL_LIMIT_REACHED',
+    });
+    expect(first.create).toHaveBeenCalledOnce();
   });
 
   it('polls queued to in_progress to completed without recreating the call', async () => {
@@ -262,11 +334,17 @@ describe('Acquisition V1 server boundary', () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
-  it.each(['failed', 'canceled'] as const)('persists terminal %s as a safe stop', async (status) => {
-    const { service } = setup(call(status));
+  it.each(['failed', 'canceled'] as const)('keeps terminal %s technical and never turns it into a business safe stop', async (status) => {
+    const { service, store } = setup(call(status));
     const result = await service.create(input());
-    expect(result).toMatchObject({ accepted: true, record: { status, normalizationStatus: 'SAFE_STOP', handoffState: 'SAFE_STOP' } });
+    // Technical terminal outcomes stop before business normalization entirely.
+    expect(result).toMatchObject({ accepted: true, record: { status, normalizationStatus: 'PENDING', handoffState: 'NOT_READY', safeStopReason: null } });
     if (result.accepted) expect(result.record.normalizedResult).toBeNull();
+    const stored = await store.get('ACQ-001');
+    expect(stored?.technicalFailure).toMatchObject({ stage: 'PROVIDER_TERMINAL', acceptance: 'PROVIDER_IDENTIFIED', reconciliationAvailable: false });
+    // Whatever CALL-E actually returned survives; nothing is invented for it.
+    expect(stored?.providerEvidence?.status).toBe(status);
+    expect(stored?.technicalFailure?.code).toBe(status === 'failed' ? 'call_failed' : null);
   });
 
   it('normalizes APPROVED through the existing mapper but grants no authority or application effect', async () => {
@@ -296,13 +374,15 @@ describe('Acquisition V1 server boundary', () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
-  it('fails provider create and polling errors safely without exposing error details or retrying', async () => {
+  it('keeps an ambiguous create recoverable instead of terminal, and never exposes provider error details', async () => {
     const first = setup();
     first.create.mockRejectedValueOnce(new Error('Bearer private-key +12025550123'));
     const created = await first.service.create(input());
-    expect(created).toMatchObject({ accepted: true, record: { status: 'failed', safeStopReason: 'CALL-E provider operation failed safely' } });
+    // One bounded reconciliation reused the same idempotency key and found the call.
+    expect(created).toMatchObject({ accepted: true, record: { status: 'completed', callId: 'call_test_001' } });
     expect(JSON.stringify(created)).not.toContain('private-key');
-    expect(first.create).toHaveBeenCalledOnce();
+    expect(first.create).toHaveBeenCalledTimes(2);
+    expect(first.create.mock.calls.map((call) => call[1])).toEqual(['exception-broker-acquisition-v1:ACQ-001', 'exception-broker-acquisition-v1:ACQ-001']);
 
     const second = setup(call('queued'));
     second.get.mockRejectedValueOnce(new Error('rate limited private detail'));
@@ -406,11 +486,551 @@ describe('Acquisition V1 server boundary', () => {
     const providerInput: CreateCallInput = { task: 'Synthetic task.', recipients: [{ phones: [phone] }] };
     await gateway.create(providerInput, 'inert-idempotency-key');
     await gateway.get('call_test_001');
-    expect(apiKeySource).toHaveBeenCalledOnce();
-    expect(clientFactory).toHaveBeenCalledWith('inert-api-key');
+    expect(apiKeySource).toHaveBeenCalledTimes(2);
+    expect(clientFactory).toHaveBeenCalledTimes(2);
+    expect(clientFactory).toHaveBeenNthCalledWith(1, 'inert-api-key');
+    expect(clientFactory).toHaveBeenNthCalledWith(2, 'inert-api-key');
     expect(providerCreate).toHaveBeenCalledWith(providerInput, { idempotencyKey: 'inert-idempotency-key' });
     expect(providerGet).toHaveBeenCalledWith('call_test_001');
     expect(JSON.stringify(providerInput)).not.toContain('inert-api-key');
+  });
+
+  it('classifies a proven local pre-dispatch refusal without claiming CALL-E accepted anything', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValueOnce(new ProviderNotDispatchedError());
+    const created = await service.create(input());
+    // Nothing left this process, so reconciliation cannot discover anything: exactly one attempt.
+    expect(create).toHaveBeenCalledOnce();
+    expect(created).toMatchObject({ accepted: true, record: { status: 'failed', callId: null, technicalFailure: {
+      stage: 'CREATE', acceptance: 'DEFINITELY_NOT_SENT', reconciliationAvailable: false, attempts: 1, code: 'CONNECTION_CREDENTIAL_UNAVAILABLE',
+    } } });
+    const stored = await store.get('ACQ-001');
+    expect(stored?.providerEvidence).toBeNull();
+    // Nothing business-shaped is recorded: no decision, no verdict, no review eligibility.
+    expect(stored).toMatchObject({ normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY' });
+  });
+
+  it('does not burn the Hosted allowance when no provider operation could have happened', async () => {
+    const { service, create } = setup(call('queued'), { perClientDailyLimit: 1 });
+    create.mockRejectedValueOnce(new ProviderNotDispatchedError());
+    await service.create(input());
+    // A provably undispatched attempt cost nothing, so an ordinary new acquisition still fits.
+    const second = await service.create(input({ acquisitionId: 'ACQ-002' }));
+    expect(second).toMatchObject({ accepted: true, record: { acquisitionId: 'ACQ-002', status: 'queued' } });
+  });
+
+  it('keeps acceptance UNKNOWN when an ambiguous dispatch is followed by a proven-local refusal in the same invocation', async () => {
+    const { service, create, store } = setup(call('queued'), { perClientDailyLimit: 1 });
+    create.mockRejectedValueOnce(new Error('socket hang up')).mockRejectedValueOnce(new ProviderNotDispatchedError());
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    // The later proven-local refusal must not erase the uncertainty the first dispatch created.
+    expect(created).toMatchObject({ accepted: true, record: {
+      status: 'creating', callId: null, terminalAt: null, normalizedResult: null, normalizationStatus: 'PENDING', handoffState: 'NOT_READY',
+      technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', reconciliationAvailable: true, attempts: 2 },
+    } });
+    const stored = await store.get('ACQ-001');
+    expect(stored?.technicalFailure?.acceptance).toBe('UNKNOWN');
+    // The connection stays locked against an independent second call for this acquisition —
+    // which conservatively guarantees it also still counts against the Hosted budget.
+    expect(await service.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: false, code: 'ACTIVE_ACQUISITION_EXISTS' });
+  });
+
+  it('never downgrades a persisted UNKNOWN to DEFINITELY_NOT_SENT on a later manual reconciliation', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+    await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true });
+
+    // The explicit final reconciliation dispatch is proven local, but the acquisition's history
+    // already contains ambiguity, so acceptance must remain UNKNOWN, not become DEFINITELY_NOT_SENT.
+    create.mockRejectedValueOnce(new ProviderNotDispatchedError());
+    const third = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(third).toMatchObject({ accepted: true, record: {
+      status: 'creating', callId: null, technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false },
+    } });
+    expect(await service.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.create(input({ acquisitionId: 'ACQ-OTHER' }))).toMatchObject({ accepted: false, code: 'ACTIVE_ACQUISITION_EXISTS' });
+
+    // The lifetime ceiling is now spent: no further dispatch, no new acquisition, ever.
+    for (let repeat = 0; repeat < 10; repeat += 1) {
+      const again = await service.create(input());
+      expect(again).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false } } });
+    }
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('classifies DEFINITELY_NOT_SENT only when no dispatch in the acquisition history was ever ambiguous', async () => {
+    const { service, create } = setup(call('queued'), { perClientDailyLimit: 1 });
+    create.mockRejectedValueOnce(new ProviderNotDispatchedError());
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    expect(created).toMatchObject({ accepted: true, record: { status: 'failed', callId: null, technicalFailure: { acceptance: 'DEFINITELY_NOT_SENT', reconciliationAvailable: false, attempts: 1 } } });
+    // No provider operation could have happened, so the Hosted budget is not consumed.
+    expect(await service.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: true, record: { acquisitionId: 'ACQ-002', status: 'queued' } });
+  });
+
+  it('has already reserved the dispatch durably before the provider is ever invoked', async () => {
+    const store = new MemoryAcquisitionStore();
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); return call('queued'); });
+    const service = new AcquisitionService({ store, gateway: { create, get: vi.fn(async () => call('queued')) }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    // Snapshot taken inside gateway.create: the slot was already durable when the call began.
+    expect(seen[0]).toMatchObject({
+      acquisitionId: 'ACQ-001', idempotencyKey: 'exception-broker-acquisition-v1:ACQ-001', status: 'creating', callId: null,
+      normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY',
+      technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', attempts: 1, reconciliationAvailable: true },
+    });
+  });
+
+  it('reserves the second dispatch durably before retrying, without any post-call counter', async () => {
+    const store = new MemoryAcquisitionStore();
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); throw new Error('socket hang up'); });
+    const service = new AcquisitionService({ store, gateway: { create, get: vi.fn(async () => call('queued')) }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(seen[0]?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+    // The retry's slot is durable before it is spent, so the count never depends on memory.
+    expect(seen[1]?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2 });
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true });
+  });
+
+  it('never replays a dispatch slot that a crashed process had already reserved', async () => {
+    const store = new MemoryAcquisitionStore();
+    // A process that died after reserving slot #1: no further durable progress was possible.
+    const crashedCreate = vi.fn(async () => { throw new Error('socket hang up'); });
+    const dying = new AcquisitionService({ store: haltingStore(store, 2, 'process died'), gateway: { create: crashedCreate, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await expect(dying.create(input())).rejects.toThrow('process died');
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+
+    // A fresh process reads the reservation and continues from slot #2, never reusing #1.
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); throw new Error('socket hang up'); });
+    const restarted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await restarted.create(input());
+    expect(seen.map((record) => record?.technicalFailure?.attempts)).toEqual([2, 3]);
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false });
+    // The lifetime ceiling is durable, not per process: nothing may dial again.
+    const exhausted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await exhausted.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a crashed reservation UNKNOWN even when the next dispatch is proven local', async () => {
+    const store = new MemoryAcquisitionStore();
+    const dying = new AcquisitionService({ store: haltingStore(store, 2, 'process died'), gateway: { create: vi.fn(async () => { throw new Error('socket hang up'); }), get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await expect(dying.create(input())).rejects.toThrow('process died');
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+
+    // The restarted process lacks the dead process's proof, so local refusal cannot claim certainty.
+    const create = vi.fn(async () => { throw new ProviderNotDispatchedError(); });
+    const restarted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    const result = await restarted.create(input());
+    expect(result).toMatchObject({ accepted: true, record: {
+      status: 'creating', callId: null, terminalAt: null,
+      technicalFailure: { acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true },
+    } });
+    expect(await restarted.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+  });
+
+  it('still proves a true first-ever DEFINITELY_NOT_SENT despite reserving the slot first', async () => {
+    const store = new MemoryAcquisitionStore();
+    const seen: Array<AcquisitionRecord | undefined> = [];
+    const create = vi.fn(async () => { seen.push(await store.get('ACQ-001')); throw new ProviderNotDispatchedError(); });
+    const service = new AcquisitionService({ store, gateway: { create, get: vi.fn(async () => call('queued')) }, policy: policy({ perClientDailyLimit: 1 }), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    // The conservative reservation was written first, and the live proof still overrides it.
+    expect(seen[0]?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 1 });
+    expect(created).toMatchObject({ accepted: true, record: { status: 'failed', callId: null, technicalFailure: { acceptance: 'DEFINITELY_NOT_SENT', attempts: 1, reconciliationAvailable: false } } });
+    expect(await store.get('ACQ-001')).toMatchObject({ normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY' });
+    // No provider operation happened, so the Hosted budget is untouched.
+    const gateway = { create: vi.fn(async () => call('queued')), get: vi.fn() };
+    const next = new AcquisitionService({ store, gateway, policy: policy({ perClientDailyLimit: 1 }), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    expect(await next.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: true, record: { acquisitionId: 'ACQ-002', status: 'queued' } });
+  });
+
+  it('resolves the reserved slot into the normal lifecycle when the provider answers', async () => {
+    const { service, create, store } = setup(call('queued'));
+    const resolved = await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    expect(create.mock.calls[0]?.[1]).toBe('exception-broker-acquisition-v1:ACQ-001');
+    expect(resolved).toMatchObject({ accepted: true, record: { status: 'queued', callId: 'call_test_001' } });
+    const stored = await store.get('ACQ-001');
+    // Provider identity resolves the reservation: the stale UNKNOWN does not survive.
+    expect(stored?.technicalFailure).toBeUndefined();
+    expect(stored?.idempotencyKey).toBe('exception-broker-acquisition-v1:ACQ-001');
+  });
+
+  it('contacts no provider at all when the dispatch reservation cannot be persisted', async () => {
+    const store = new MemoryAcquisitionStore();
+    const create = vi.fn(async () => call('queued'));
+    // Only the initial record lands; the dispatch reservation write fails.
+    const service = new AcquisitionService({ store: haltingStore(store, 1, 'durable write unavailable'), gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+
+    await expect(service.create(input())).rejects.toThrow('durable write unavailable');
+    // The reservation never landed, so the provider was never contacted.
+    expect(create).not.toHaveBeenCalled();
+    expect((await store.get('ACQ-001'))?.technicalFailure).toBeUndefined();
+  });
+
+  it('stays exhausted across a restart at the persisted lifetime ceiling', async () => {
+    const store = new MemoryAcquisitionStore();
+    const ambiguous = vi.fn(async () => { throw new Error('socket hang up'); });
+    const first = new AcquisitionService({ store, gateway: { create: ambiguous, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    await first.create(input());
+    await first.create(input());
+    expect(ambiguous).toHaveBeenCalledTimes(3);
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false });
+
+    const create = vi.fn(async () => call('queued'));
+    const restarted = new AcquisitionService({ store, gateway: { create, get: vi.fn() }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30 });
+    for (let repeat = 0; repeat < 5; repeat += 1) {
+      expect(await restarted.create(input())).toMatchObject({ accepted: true, existing: true, record: {
+        acquisitionId: 'ACQ-001', idempotencyKey: 'exception-broker-acquisition-v1:ACQ-001', status: 'creating',
+        technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false },
+      } });
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('resolves a monotonically-UNKNOWN acquisition once the allowed reconciliation returns the real provider call', async () => {
+    const { service, create, store } = setup();
+    // A mixed history: ambiguous, then proven-local, so acceptance was pinned to UNKNOWN.
+    create.mockRejectedValueOnce(new Error('socket hang up')).mockRejectedValueOnce(new ProviderNotDispatchedError());
+    await service.create(input());
+    expect((await store.get('ACQ-001'))?.technicalFailure).toMatchObject({ acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true });
+
+    create.mockResolvedValue(call('queued'));
+    const reconciled = await service.create(input());
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', status: 'queued', callId: 'call_test_001' } });
+    if (reconciled.accepted) expect(reconciled.record.technicalFailure).toBeUndefined();
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set(['exception-broker-acquisition-v1:ACQ-001']));
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('keeps repeated ambiguity non-terminal, bounded and recoverable under the same idempotency key', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(created).toMatchObject({ accepted: true, record: {
+      status: 'creating', callId: null, terminalAt: null, normalizedResult: null, normalizationStatus: 'PENDING', handoffState: 'NOT_READY',
+      technicalFailure: { stage: 'CREATE', acceptance: 'UNKNOWN', reconciliationAvailable: true, attempts: 2 },
+    } });
+    // Still the one logical acquisition, still owned, still locked against an independent call.
+    expect(await store.list()).toHaveLength(1);
+    expect(await service.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.create(input({ acquisitionId: 'ACQ-OTHER' }))).toMatchObject({ accepted: false, code: 'ACTIVE_ACQUISITION_EXISTS' });
+
+    create.mockResolvedValue(call('queued'));
+    const reconciled = await service.create(input());
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', status: 'queued', callId: 'call_test_001' } });
+    if (reconciled.accepted) expect(reconciled.record.technicalFailure).toBeUndefined();
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set(['exception-broker-acquisition-v1:ACQ-001']));
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('reconciles a Hosted acquisition from the canonical request rebuilt out of its public record', async () => {
+    const { service, create, store } = setup();
+    const hostedRecipient = phone;
+    const browserInput = createBrowserAcquisitionRequest({ identity: 'RELIABILITY-1', createdAt: '2026-09-05T14:59:00.000Z' });
+    const asServerWould = (browser: BrowserAcquisitionCreateInput) => ({ ...browser, clientToken: token, accessMode: 'HOSTED_DEMO', phoneNumber: hostedRecipient });
+
+    create.mockRejectedValue(new Error('socket hang up'));
+    const ambiguous = await service.create(asServerWould(browserInput));
+    expect(ambiguous).toMatchObject({ accepted: true, record: { status: 'creating', technicalFailure: { acceptance: 'UNKNOWN' } } });
+
+    // Only the public projection survives a browser reload, so recovery must work from it alone.
+    const rebuilt = reconcileBrowserAcquisitionRequest(toPublicAcquisitionRecord((await store.get(browserInput.acquisitionId))!));
+    expect(rebuilt).not.toBeNull();
+    create.mockResolvedValue(call('queued'));
+    const reconciled = await service.create(asServerWould(rebuilt!));
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: browserInput.acquisitionId, status: 'queued' } });
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set([`exception-broker-acquisition-v1:${browserInput.acquisitionId}`]));
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('rejects reconciliation whose request content does not match the persisted fingerprint', async () => {
+    const { service, create } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+    await service.create(input());
+    create.mockClear();
+    const tampered = await service.create(input({ request: { ...input().request, objective: 'A different objective entirely.' } }));
+    expect(tampered).toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('preserves provider-returned failure diagnostics on a terminal failed call without redialling', async () => {
+    const failedCall = call('failed');
+    const { service, create, store } = setup(failedCall);
+    const created = await service.create(input());
+    expect(create).toHaveBeenCalledOnce();
+    expect(created).toMatchObject({ accepted: true, record: {
+      status: 'failed', callId: 'call_test_001',
+      technicalFailure: { stage: 'PROVIDER_TERMINAL', acceptance: 'PROVIDER_IDENTIFIED', reconciliationAvailable: false, code: 'call_failed', message: 'Call failed safely.' },
+    } });
+    const stored = await store.get('ACQ-001');
+    // Provider-level diagnostics survive sanitization, and no decision or handoff is invented.
+    expect(stored?.providerEvidence?.failureCode).toBe('call_failed');
+    expect(stored?.providerEvidence?.recipients[0]?.attempts[0]?.failureCode).toBe('provider_failed');
+    expect(stored?.providerEvidence?.recipients[0]?.attempts[0]?.providerCallId).toBe('provider_call_public_001');
+    expect(stored?.normalizedResult).toBeNull();
+    expect(stored?.handoffState).not.toBe('READY_FOR_REVIEW');
+    // A technical provider failure is never a completed business outcome.
+    expect(stored?.status).toBe('failed');
+  });
+
+  it('redacts credential, phone and email shaped text out of persisted create diagnostics', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('Authorization: Bearer abc.def sk-live-9f8e7d6c5b4a apiKey=supersecretvalue agent@example.com called +12025550123 trace 0123456789abcdef0123456789abcdef'));
+    const created = await service.create(input());
+    const exposed = `${JSON.stringify(created)}${JSON.stringify(await store.get('ACQ-001'))}`;
+    for (const secret of ['supersecretvalue', 'sk-live-9f8e7d6c5b4a', 'abc.def', 'agent@example.com', '+12025550123', '0123456789abcdef0123456789abcdef']) {
+      expect(exposed).not.toContain(secret);
+    }
+    if (created.accepted) expect(created.record.technicalFailure?.message).toContain('[redacted');
+  });
+
+  it('grants exactly one explicit Hosted recovery after a genuine terminal provider failure', async () => {
+    const { service, create, store } = setup(call('failed'), { perClientDailyLimit: 1, cooldownMs: 3_600_000 });
+    await service.create(input());
+    // No automatic redial: the failed acquisition dialled exactly once.
+    expect(create).toHaveBeenCalledOnce();
+    // Without the verified recovery claim the client stays capped.
+    expect(await service.create(input({ acquisitionId: 'ACQ-002' }))).toMatchObject({ accepted: false, code: 'CALL_LIMIT_REACHED' });
+
+    create.mockResolvedValue(call('queued'));
+    const recovered = await service.create(input({ acquisitionId: 'ACQ-RECOVERY', recoveryOfAcquisitionId: 'ACQ-001' }));
+    expect(recovered).toMatchObject({ accepted: true, existing: false, record: { acquisitionId: 'ACQ-RECOVERY', recoveryOfAcquisitionId: 'ACQ-001' } });
+    // A new real phone operation uses a new acquisition identity and therefore a new key.
+    expect(create.mock.calls.at(-1)?.[1]).toBe('exception-broker-acquisition-v1:ACQ-RECOVERY');
+    expect((await store.get('ACQ-001'))?.recoveredByAcquisitionId).toBe('ACQ-RECOVERY');
+
+    // The allowance is spent: a second recovery claim cannot dial again.
+    const callsBefore = create.mock.calls.length;
+    const again = await service.create(input({ acquisitionId: 'ACQ-RECOVERY-2', recoveryOfAcquisitionId: 'ACQ-001' }));
+    expect(again).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-RECOVERY' } });
+    expect(create).toHaveBeenCalledTimes(callsBefore);
+    expect(await store.get('ACQ-RECOVERY-2')).toBeUndefined();
+  });
+
+  it('refuses a recovery claim that is not a provider-identified Hosted technical failure', async () => {
+    const completedRun = setup(call('completed'), { perClientDailyLimit: 1 });
+    await completedRun.service.create(input());
+    expect(await completedRun.service.create(input({ acquisitionId: 'ACQ-R1', recoveryOfAcquisitionId: 'ACQ-001' })))
+      .toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+
+    const safeStopRun = setup(call('completed', decision('NEEDS_CLARIFICATION')), { perClientDailyLimit: 1 });
+    await safeStopRun.service.create(input());
+    expect(await safeStopRun.service.create(input({ acquisitionId: 'ACQ-R2', recoveryOfAcquisitionId: 'ACQ-001' })))
+      .toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+
+    // A legacy failure with no provable acceptance never earns another real call.
+    const legacy = setup(call('queued'), { perClientDailyLimit: 1 });
+    await legacy.store.put({ ...(await (async () => { await legacy.service.create(input()); return (await legacy.store.get('ACQ-001'))!; })()), status: 'failed', callId: null, providerEvidence: null, terminalAt: now });
+    expect(await legacy.service.create(input({ acquisitionId: 'ACQ-R3', recoveryOfAcquisitionId: 'ACQ-001' })))
+      .toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+
+    // Another connection cannot claim recovery of a failure it does not own.
+    const owned = setup(call('failed'), { allowedClientTokens: new Set([token, 'other-token']) });
+    await owned.service.create(input());
+    expect(await owned.service.create(input({ acquisitionId: 'ACQ-R4', clientToken: 'other-token', recoveryOfAcquisitionId: 'ACQ-001' })))
+      .toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+  });
+
+  it('spends at most three provider create dispatches across the lifetime of one acquisition', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+
+    // The original request spends the initial dispatch plus one automatic reconciliation.
+    const first = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(first).toMatchObject({ accepted: true, record: { status: 'creating', technicalFailure: { acceptance: 'UNKNOWN', attempts: 2, reconciliationAvailable: true } } });
+
+    // One explicit reconciliation may spend the last dispatch — exactly one, never two.
+    const second = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(second).toMatchObject({ accepted: true, existing: true, record: { status: 'creating', technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false } } });
+
+    for (let repeat = 0; repeat < 10; repeat += 1) {
+      const exhausted = await service.create(input());
+      expect(exhausted).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', status: 'creating', callId: null, technicalFailure: { acceptance: 'UNKNOWN', attempts: 3, reconciliationAvailable: false } } });
+    }
+    // The ceiling holds: no further provider request, no second acquisition, no second key.
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set(['exception-broker-acquisition-v1:ACQ-001']));
+    const records = await store.list();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ idempotencyKey: 'exception-broker-acquisition-v1:ACQ-001', normalizationStatus: 'PENDING', handoffState: 'NOT_READY', safeStopReason: null });
+    // Still protected: the provider may have accepted one of those requests.
+    expect(await service.getActive(token)).toMatchObject({ acquisitionId: 'ACQ-001' });
+    expect(await service.create(input({ acquisitionId: 'ACQ-SECOND' }))).toMatchObject({ accepted: false, code: 'ACTIVE_ACQUISITION_EXISTS' });
+  });
+
+  it('resumes the normal lifecycle when the third dispatch finally returns the original call', async () => {
+    const { service, create, store } = setup();
+    create.mockRejectedValue(new Error('socket hang up'));
+    await service.create(input());
+    expect(create).toHaveBeenCalledTimes(2);
+
+    create.mockResolvedValue(call('queued'));
+    const reconciled = await service.create(input());
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-001', status: 'queued', callId: 'call_test_001' } });
+    const stored = await store.get('ACQ-001');
+    // The ambiguity is resolved, so its diagnostics must not linger on the record.
+    expect(stored?.technicalFailure).toBeUndefined();
+    expect(stored?.idempotencyKey).toBe('exception-broker-acquisition-v1:ACQ-001');
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set(['exception-broker-acquisition-v1:ACQ-001']));
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('never runs a technical terminal outcome through business decision normalization', async () => {
+    // A provider-terminal call may still carry a structured result; a business verdict must not
+    // be manufactured from it, because the call itself did not complete.
+    for (const status of ['failed', 'canceled'] as const) {
+      const { service, store } = setup(call(status, decision('APPROVED')));
+      await service.create(input());
+      const stored = await store.get('ACQ-001');
+      expect(stored).toMatchObject({ status, normalizedResult: null, normalizationStatus: 'PENDING', safeStopReason: null, handoffState: 'NOT_READY' });
+      expect(stored?.technicalFailure?.acceptance).toBe('PROVIDER_IDENTIFIED');
+    }
+  });
+
+  it('keeps completed business outcomes on the existing mapper path', async () => {
+    const usable = setup(call('completed', decision('APPROVED')));
+    expect(await usable.service.create(input())).toMatchObject({ accepted: true, record: { status: 'completed', normalizationStatus: 'USABLE', handoffState: 'READY_FOR_REVIEW', normalizedResult: { decision: 'APPROVED' } } });
+
+    // A legitimate completed non-reviewable result is still a business SAFE_STOP.
+    const clarification = setup(call('completed', decision('NEEDS_CLARIFICATION')));
+    const stopped = await clarification.service.create(input());
+    expect(stopped).toMatchObject({ accepted: true, record: { status: 'completed', normalizationStatus: 'SAFE_STOP', handoffState: 'SAFE_STOP', safeStopReason: 'Decision NEEDS_CLARIFICATION requires a safe stop before review' } });
+    expect(stopped.accepted && stopped.record.technicalFailure).toBeUndefined();
+  });
+
+  it('reconciles a reloaded BYOK acquisition only when the same authorized recipient is re-entered', async () => {
+    const { service, create, store } = setup();
+    const browserInput = createBrowserAcquisitionRequest({ identity: 'BYOK-RELOAD', createdAt: '2026-09-05T14:59:00.000Z', phoneNumber: phone });
+    const asServerWould = (browser: BrowserAcquisitionCreateInput) => ({ ...browser, clientToken: token, accessMode: 'BYOK', phoneNumber: browser.phoneNumber });
+
+    create.mockRejectedValue(new Error('socket hang up'));
+    await service.create(asServerWould(browserInput));
+    expect(create).toHaveBeenCalledTimes(2);
+
+    // Only the public projection survives the reload, and it never carries the full recipient.
+    const restored = toPublicAcquisitionRecord((await store.get(browserInput.acquisitionId))!);
+    expect(JSON.stringify(restored)).not.toContain(phone);
+
+    const wrongPhone = reconcileBrowserAcquisitionRequest(restored, '+12025550999')!;
+    const rejected = await service.create(asServerWould(wrongPhone));
+    expect(rejected).toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+    // A mismatch costs nothing: no provider request, no spent allowance, no mutation.
+    expect(create).toHaveBeenCalledTimes(2);
+    expect((await store.get(browserInput.acquisitionId))?.technicalFailure).toMatchObject({ attempts: 2, reconciliationAvailable: true });
+
+    create.mockResolvedValue(call('queued'));
+    const rebuilt = reconcileBrowserAcquisitionRequest(restored, phone)!;
+    const reconciled = await service.create(asServerWould(rebuilt));
+    expect(reconciled).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: browserInput.acquisitionId, status: 'queued' } });
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(new Set(create.mock.calls.map((entry) => entry[1]))).toEqual(new Set([`exception-broker-acquisition-v1:${browserInput.acquisitionId}`]));
+    const persisted = JSON.stringify(await store.list());
+    expect(persisted).not.toContain(phone);
+    expect(persisted).not.toContain(token);
+  });
+
+  it('never lets an observation error end the provider lifecycle or unlock the connection', async () => {
+    const active: Array<Readonly<{ connectionId: string; active: boolean }>> = [];
+    const gatewayCall = call('in_progress');
+    const create = vi.fn(async () => structuredClone(gatewayCall));
+    const get = vi.fn(async () => { throw new Error('transport reset'); });
+    const store = new MemoryAcquisitionStore();
+    const service = new AcquisitionService({ store, gateway: { create, get }, policy: policy(), clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30,
+      onConnectionActiveChange: (connectionId, isActive) => { active.push({ connectionId, active: isActive }); } });
+    await service.create(input());
+    const before = await store.get('ACQ-001');
+
+    expect(await service.refresh('ACQ-001', token)).toEqual({ found: false, code: 'PROVIDER_FAILURE', reason: 'CALL-E provider operation failed safely' });
+    expect(await service.poll('ACQ-001', token)).toEqual({ found: false, code: 'PROVIDER_FAILURE', reason: 'CALL-E provider operation failed safely' });
+    // The record is untouched: no terminal state, no decision, no redial, no unlock.
+    expect(await store.get('ACQ-001')).toEqual(before);
+    expect(create).toHaveBeenCalledOnce();
+    expect(active).toEqual([{ connectionId: token, active: true }]);
+  });
+
+  it('never lets recovery chain: a failed recovery earns no further allowance', async () => {
+    const { service, create } = setup(call('failed'), { perClientDailyLimit: 1, cooldownMs: 3_600_000 });
+    await service.create(input());
+    const recovered = await service.create(input({ acquisitionId: 'ACQ-RECOVERY', recoveryOfAcquisitionId: 'ACQ-001' }));
+    expect(recovered).toMatchObject({ accepted: true, record: { status: 'failed', recoveryOfAcquisitionId: 'ACQ-001' } });
+    const dialled = create.mock.calls.length;
+    // The recovery itself failed technically, but the one allowance for that failure is spent.
+    expect(await service.create(input({ acquisitionId: 'ACQ-RECOVERY-2', recoveryOfAcquisitionId: 'ACQ-RECOVERY' })))
+      .toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+    expect(create).toHaveBeenCalledTimes(dialled);
+  });
+
+  it('creates at most one recovery acquisition under concurrent recovery requests', async () => {
+    const { service, store } = setup(call('failed'), { perClientDailyLimit: 1, cooldownMs: 3_600_000 });
+    await service.create(input());
+    const [first, second, third] = await Promise.all([
+      service.create(input({ acquisitionId: 'ACQ-RECOVERY-A', recoveryOfAcquisitionId: 'ACQ-001' })),
+      service.create(input({ acquisitionId: 'ACQ-RECOVERY-B', recoveryOfAcquisitionId: 'ACQ-001' })),
+      service.create(input({ acquisitionId: 'ACQ-RECOVERY-C', recoveryOfAcquisitionId: 'ACQ-001' })),
+    ]);
+    const created = (await store.list()).filter((record) => record.recoveryOfAcquisitionId === 'ACQ-001');
+    expect(created).toHaveLength(1);
+    const identities = [first, second, third].map((result) => result.accepted ? result.record.acquisitionId : 'rejected');
+    expect(new Set(identities)).toEqual(new Set([created[0]!.acquisitionId]));
+  });
+
+  it('enforces recovery lineage from durable state after a process restart', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'exception-broker-recovery-'));
+    temporaryDirectories.push(directory);
+    const path = join(directory, 'acquisitions.json');
+    const gatewayFor = (result: Call) => ({ create: vi.fn(async () => structuredClone(result)), get: vi.fn(async () => structuredClone(result)) });
+    const serviceOn = (gateway: AcquisitionCallGateway) => new AcquisitionService({
+      store: new JsonFileAcquisitionStore(path), gateway, policy: policy({ perClientDailyLimit: 1, cooldownMs: 3_600_000 }),
+      clock: () => now, delay: async () => undefined, pollIntervalMs: 10, pollTimeoutMs: 30,
+    });
+
+    const firstProcess = gatewayFor(call('failed'));
+    await serviceOn(firstProcess).create(input());
+    const recoveryGateway = gatewayFor(call('queued'));
+    await serviceOn(recoveryGateway).create(input({ acquisitionId: 'ACQ-RECOVERY', recoveryOfAcquisitionId: 'ACQ-001' }));
+    expect(recoveryGateway.create).toHaveBeenCalledOnce();
+
+    // A fresh process keeps no memory of the allowance: the durable lineage must still hold.
+    const restarted = gatewayFor(call('queued'));
+    const repeated = await serviceOn(restarted).create(input({ acquisitionId: 'ACQ-RECOVERY-AFTER-RESTART', recoveryOfAcquisitionId: 'ACQ-001' }));
+    expect(repeated).toMatchObject({ accepted: true, existing: true, record: { acquisitionId: 'ACQ-RECOVERY' } });
+    expect(restarted.create).not.toHaveBeenCalled();
+    const persisted = JSON.parse(await readFile(path, 'utf8')) as Record<string, AcquisitionRecord>;
+    expect(Object.values(persisted).filter((record) => record.recoveryOfAcquisitionId === 'ACQ-001')).toHaveLength(1);
+  });
+
+  it('never grants BYOK an automatic redial or leaks its key into the record', async () => {
+    const { service, create, store } = setup(call('failed'));
+    const byok = await service.create(input({ acquisitionId: 'ACQ-BYOK', accessMode: 'BYOK' }));
+    expect(create).toHaveBeenCalledOnce();
+    expect(byok).toMatchObject({ accepted: true, record: { status: 'failed', accessMode: 'BYOK' } });
+    // The Hosted technical-recovery allowance is Hosted-only; BYOK stays an explicit user action.
+    expect(await service.create(input({ acquisitionId: 'ACQ-BYOK-2', accessMode: 'BYOK', recoveryOfAcquisitionId: 'ACQ-BYOK' })))
+      .toMatchObject({ accepted: false, code: 'INVALID_INPUT' });
+    expect(create).toHaveBeenCalledOnce();
+    expect(JSON.stringify(await store.list())).not.toContain(token);
   });
 
   it('serves deny-by-default policy without reading CALLE_API_KEY', async () => {
@@ -428,7 +1048,7 @@ describe('Acquisition V1 server boundary', () => {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input()),
     }));
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'LIVE_CALLING_DISABLED' });
+    expect(await response.json()).toMatchObject({ code: 'CLIENT_NOT_ALLOWED' });
     expect(apiKeyReads).toBe(0);
   });
 });

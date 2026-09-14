@@ -5,6 +5,7 @@ import type { AcquisitionCreateInput, AcquisitionRecord, CreateAcquisitionResult
 export type AcquisitionGuardPolicy = Readonly<{
   liveCallingEnabled: boolean;
   allowedClientTokens: ReadonlySet<string>;
+  isClientAllowed?: (clientToken: string) => boolean;
   recipientAllowlist?: ReadonlySet<string>;
   perClientDailyLimit: number;
   globalDailyLimit: number;
@@ -19,30 +20,43 @@ const utcDay = (timestamp: string) => timestamp.slice(0, 10);
 export const hashClientToken = (token: string): string =>
   createHash('sha256').update(token, 'utf8').digest('hex');
 
+/**
+ * A Hosted attempt is spent unless the server can PROVE no provider request was dispatched.
+ * Ambiguous acceptance still counts: it may have reached CALL-E.
+ */
+const consumedProviderBudget = (record: AcquisitionRecord): boolean =>
+  record.technicalFailure?.acceptance !== 'DEFINITELY_NOT_SENT';
+
 export const evaluateAcquisitionGuard = (
   input: AcquisitionCreateInput,
   records: readonly AcquisitionRecord[],
   policy: AcquisitionGuardPolicy,
   now: string,
+  /** One server-verified recovery of a terminal technical provider failure. Never client-granted. */
+  technicalRecovery = false,
 ): GuardRejection | undefined => {
   if (!policy.liveCallingEnabled) return rejection('LIVE_CALLING_DISABLED', 'Live acquisition is disabled by server policy');
-  if (!policy.allowedClientTokens.has(input.clientToken)) return rejection('CLIENT_NOT_ALLOWED', 'Client is not authorized for live acquisition');
+  if (!policy.allowedClientTokens.has(input.clientToken) && policy.isClientAllowed?.(input.clientToken) !== true) return rejection('CLIENT_NOT_ALLOWED', 'Client is not authorized for live acquisition');
   if (policy.recipientAllowlist !== undefined && !policy.recipientAllowlist.has(input.phoneNumber)) {
     return rejection('RECIPIENT_NOT_ALLOWED', 'Recipient is not allowed by server policy');
   }
-  if (records.some((record) => record.status === 'creating' || record.status === 'queued' || record.status === 'in_progress')) {
-    return rejection('ACTIVE_ACQUISITION_EXISTS', 'Another live acquisition is active');
+  const clientHash = hashClientToken(input.clientToken);
+  if (records.some((record) => record.clientTokenHash === clientHash && (record.status === 'creating' || record.status === 'queued' || record.status === 'in_progress'))) {
+    return rejection('ACTIVE_ACQUISITION_EXISTS', 'This connection already owns an active acquisition');
   }
 
+  if (input.accessMode === 'BYOK') return undefined;
   const today = utcDay(now);
-  const todayRecords = records.filter((record) => utcDay(record.createdAt) === today);
+  // Missing accessMode is conservative legacy Hosted usage, never inferred BYOK.
+  const todayRecords = records.filter((record) => record.accessMode !== 'BYOK' && utcDay(record.createdAt) === today && consumedProviderBudget(record));
+  // The server-wide budget always applies, including to a verified technical recovery.
   if (todayRecords.length >= policy.globalDailyLimit) return rejection('CALL_LIMIT_REACHED', 'Global live acquisition limit reached');
+  if (technicalRecovery) return undefined;
 
-  const clientHash = hashClientToken(input.clientToken);
   const clientRecords = todayRecords.filter((record) => record.clientTokenHash === clientHash);
   if (clientRecords.length >= policy.perClientDailyLimit) return rejection('CALL_LIMIT_REACHED', 'Client live acquisition limit reached');
 
-  const latest = records.reduce<AcquisitionRecord | undefined>((candidate, record) =>
+  const latest = clientRecords.reduce<AcquisitionRecord | undefined>((candidate, record) =>
     candidate === undefined || Date.parse(record.createdAt) > Date.parse(candidate.createdAt) ? record : candidate, undefined);
   if (latest !== undefined && Date.parse(now) - Date.parse(latest.createdAt) < policy.cooldownMs) {
     return rejection('COOLDOWN_ACTIVE', 'Live acquisition cooldown is active');
@@ -64,6 +78,6 @@ export const acquisitionGuardPolicyFromEnvironment = (environment: NodeJS.Proces
     ? {}
     : { recipientAllowlist: csvSet(environment.ACQUISITION_RECIPIENT_ALLOWLIST) }),
   perClientDailyLimit: integer(environment.ACQUISITION_PER_CLIENT_DAILY_LIMIT, 1),
-  globalDailyLimit: integer(environment.ACQUISITION_GLOBAL_DAILY_LIMIT, 1),
+  globalDailyLimit: integer(environment.ACQUISITION_GLOBAL_DAILY_LIMIT, 25),
   cooldownMs: integer(environment.ACQUISITION_COOLDOWN_MS, 60_000),
 });

@@ -1,42 +1,8 @@
-import { executeOrchestrationAction, type OrchestrationState } from '../application/adaptiveOrchestrator.js';
-import { exceptionCaseSchema, planSchema } from '../domain/schemas.js';
 import { createCallRequest, PHONE_DECISION_SCHEMA } from '../integrations/calle/contract.js';
-import { createReadyDecisionBridgeResult } from '../integrations/calle/decisionBridge.js';
-import { bindReviewCommand } from '../integrations/calle/decisionApplication.js';
 import { MockProvider } from '../integrations/calle/mockProvider.js';
-
-export type OperatorSandboxFacts = Readonly<{
-  caseId: string; planId: string; clientActorId: string;
-  requestedQuantity: number; targetDeliveryDate: string;
-  originalQuantity: number; substituteQuantity: number;
-  substituteAuthorizationLimit: number; clientAdditionalCost: number;
-  clientCostLimit: number; supplierAbsorbedCost: number;
-  laterDeliveryDate: string;
-}>;
-
-export const OPERATOR_SANDBOX_FACTS: OperatorSandboxFacts = Object.freeze({
-  caseId: 'CASE-OPERATOR-SANDBOX', planId: 'PLAN-OPERATOR-SANDBOX', clientActorId: 'ACTOR-OPERATOR-CLIENT',
-  requestedQuantity: 500, targetDeliveryDate: '2027-07-01T17:00:00-05:00',
-  originalQuantity: 350, substituteQuantity: 150, substituteAuthorizationLimit: 180,
-  clientAdditionalCost: 0, clientCostLimit: 100, supplierAbsorbedCost: 75,
-  laterDeliveryDate: '2027-07-02T17:00:00-05:00',
-});
-
-export const renderOperatorFacts = (facts: OperatorSandboxFacts) =>
-  `${facts.requestedQuantity} units due ${facts.targetDeliveryDate}; proposal ${facts.originalQuantity} original and ${facts.substituteQuantity} substitute units; substitute limit ${facts.substituteAuthorizationLimit}; Client cost ${facts.clientAdditionalCost} with limit ${facts.clientCostLimit}; Supplier absorbs ${facts.supplierAbsorbedCost}`;
-
-/** Synthetic Client policy for acquisition only; downstream execution controls remain independent. */
-export const renderClientDecisionPolicy = (facts: OperatorSandboxFacts) => [
-  `Required Client conditions: deliver ${facts.requestedQuantity} total units by ${facts.targetDeliveryDate};`,
-  `use no more than ${facts.substituteAuthorizationLimit} substitute units;`,
-  `and charge the Client no more than ${facts.clientCostLimit} additional cost.`,
-  `Proposal facts: ${facts.originalQuantity} original units, ${facts.substituteQuantity} substitute units, and ${facts.clientAdditionalCost} Client additional cost.`,
-  `Supplier absorbed cost ${facts.supplierAbsorbedCost} is proposal context, not a Client hard condition.`,
-  'Return APPROVED only when every required Client condition is satisfied.',
-  'Return REJECTED when any stated hard Client condition is violated.',
-  'Return NEEDS_CLARIFICATION only when information necessary to evaluate those conditions is missing or ambiguous.',
-  'Evaluate neutrally; no outcome is preferred. Give a brief reason and exactly one decision.',
-].join(' ');
+import { OPERATOR_SANDBOX_DEFINITION, OPERATOR_SANDBOX_FACTS, renderClientDecisionPolicy, renderOperatorFacts, type OperatorSandboxFacts } from './operatorDefinition.js';
+import { createOperatorControlledState } from './operatorContext.js';
+export { OPERATOR_SANDBOX_DEFINITION, OPERATOR_SANDBOX_FACTS, renderClientDecisionPolicy, renderOperatorFacts, type OperatorSandboxFacts } from './operatorDefinition.js';
 
 const requestFor = (facts: OperatorSandboxFacts) => createCallRequest({
   requestId: 'REQUEST-OPERATOR-SANDBOX-CLIENT-V1', caseId: facts.caseId, planId: facts.planId, actorId: facts.clientActorId, actorRole: 'client',
@@ -60,36 +26,7 @@ export const createOperatorRequest = (input: unknown = requestV1, facts: Operato
 };
 
 export const createOperatorScenario = (facts: OperatorSandboxFacts = OPERATOR_SANDBOX_FACTS) => {
-  const authorization = { maxAbsorbableAdditionalCost: facts.clientCostLimit, maxSubstituteQuantity: facts.requestedQuantity, latestAcceptedDeliveryDate: facts.laterDeliveryDate };
-  const minimum = { type: 'MINIMUM_DELIVERY', minimumRequiredQuantity: facts.requestedQuantity, deliveryDate: facts.targetDeliveryDate, allowsOriginalAndSubstituteMix: true };
-  const exceptionCase = exceptionCaseSchema.parse({ id: facts.caseId, status: 'CASE_CREATED', requestedQuantity: facts.requestedQuantity, targetDeliveryDate: facts.targetDeliveryDate,
-    actors: [
-      { id: 'ACTOR-OPERATOR-SUPPLIER', role: 'supplier', authorization, constraints: [{ type: 'SUPPLY', originalQuantity: facts.originalQuantity, substituteQuantity: facts.substituteQuantity, deliveryDate: facts.targetDeliveryDate, substituteUnitAdditionalCost: 0.5 }] },
-      { id: 'ACTOR-OPERATOR-PRODUCTION', role: 'production', authorization, constraints: [minimum] },
-      { id: facts.clientActorId, role: 'client', authorization: { ...authorization, maxSubstituteQuantity: facts.substituteAuthorizationLimit }, constraints: [minimum] },
-    ],
-  });
-  const plan = planSchema.parse({ id: facts.planId, caseId: facts.caseId, status: 'PENDING_APPROVAL', version: 1,
-    originalQuantityTomorrow: facts.originalQuantity, substituteQuantityTomorrow: facts.substituteQuantity, originalQuantityLater: 0,
-    laterDeliveryDate: facts.laterDeliveryDate, clientAdditionalCost: facts.clientAdditionalCost, supplierAbsorbedCost: facts.supplierAbsorbedCost, productionAbsorbedCost: 0 });
-  const registered = executeOrchestrationAction({ exceptionCase, plans: [], planLineages: [], approvals: [], operationHistory: [], events: [] }, {
-    type: 'REGISTER_PLAN_PROPOSAL', lineageId: 'LINEAGE-OPERATOR-SANDBOX', plan,
-  });
-  if (!registered.accepted) throw new Error(registered.failure.reason);
-  let state: OrchestrationState = registered.state;
-  for (const role of ['supplier', 'production'] as const) {
-    const actor = exceptionCase.actors.find((candidate) => candidate.role === role)!;
-    const bridge = createReadyDecisionBridgeResult({ operationType: 'PLAN_DECISION', caseId: facts.caseId, planId: facts.planId, actorId: actor.id, actorRole: role,
-      requestId: `REQUEST-OPERATOR-SETUP-${role}`, decision: 'APPROVED', summary: `Synthetic ${role} setup approval`,
-      proposedAuthorizationChanges: [], evidence: ['Synthetic pre-recorded sandbox setup, not acquired from CALL-E'],
-      completionConfidence: { score: 1, label: 'synthetic' }, receivedAt: '2027-07-01T16:40:00-05:00',
-      requiresReview: true, reviewState: 'DECISION_REVIEW_REQUIRED' });
-    const applied = executeOrchestrationAction(state, { type: 'APPLY_REVIEWED_DECISION', bridgeResult: bridge,
-      review: bindReviewCommand({ action: 'APPLY', operationId: `OPERATOR-SETUP-${role}`, eventId: `OPERATOR-EVENT-${role}`,
-        approvalId: `OPERATOR-APPROVAL-${role}`, reviewedBy: 'SYNTHETIC-SETUP-REVIEWER', reviewedAt: '2027-07-01T16:41:00-05:00', authorizationReviews: [] }, bridge.reviewTarget) });
-    if (!applied.accepted) throw new Error(applied.failure.reason);
-    state = applied.state;
-  }
+  const state = createOperatorControlledState(facts);
   const request = createOperatorRequest(requestFor(facts), facts);
   const response = { status: 'completed', taskCompleted: true,
     structuredResult: { decision: 'APPROVED', caseId: facts.caseId, planId: facts.planId, actorId: facts.clientActorId, actorRole: 'client',

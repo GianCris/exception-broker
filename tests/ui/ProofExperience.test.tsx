@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { App } from '../../src/App.js';
 import { ProofExperience } from '../../src/ui/ProofExperience.js';
 import { prepareProof, reviewProof } from '../../src/demo/proofDemo.js';
 import { createReadyDecisionBridgeResult } from '../../src/integrations/calle/decisionBridge.js';
@@ -19,6 +18,9 @@ const apply = () => { startApply(); resolveAttempt(); };
 const select = (id: string) => fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${id} /`) }));
 const revealSupporting = () => fireEvent.click(screen.getByText('Verify current decision'));
 const attempt = () => screen.getByRole('region', { name: 'Application Attempt' });
+
+// Keep the established Control regression suite at its own surface entry.
+const App = () => <ProofExperience prepare={prepareProof} review={reviewProof} />;
 
 describe('Evidence-to-decision primary experience', () => {
   it('defaults to accessible System theme and supports explicit persisted finishes', () => {
@@ -56,11 +58,10 @@ describe('Evidence-to-decision primary experience', () => {
 
   it('keeps compressed queue truth and primary controls available in every theme', () => {
     render(<App />);
-    const selected = screen.getByRole('button', { name: /^H02 \/.*NOT RESOLVED/ });
+    const selected = screen.getByRole('button', { name: /^H02 \/.*· APPROVED · Review required/ });
     expect(within(selected).getByText('APPROVED')).toBeVisible();
-    expect(within(selected).getByText('EXACT REVIEW REQUIRED')).toBeVisible();
-    expect(within(selected).getByText(/normalized decision is ready/i)).toBeVisible();
-    expect(within(selected).getByText('Review exact proposal')).toBeVisible();
+    expect(within(selected).getByText('Review required')).toBeVisible();
+    expect(within(selected).getByText('150 required · 100 available')).toBeVisible();
     expect(screen.getByRole('region', { name: 'Decision control model' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
   });
@@ -69,12 +70,12 @@ describe('Evidence-to-decision primary experience', () => {
     render(<App />);
     const selected = screen.getByRole('button', { name: /^H02 \/ Short physical supply/ });
     expect(within(selected).getByText('Short physical supply').tagName).toBe('STRONG');
-    expect(within(selected).getByText('Demo case H02')).toBeVisible();
-    const context = screen.getByRole('region', { name: 'Demo case context' });
+    expect(within(selected).getByText('Proof case H02')).toBeVisible();
+    const context = screen.getByRole('region', { name: 'Proof case context' });
     expect(within(context).getByRole('heading', { name: 'Short physical supply' })).toBeVisible();
-    expect(within(context).getByText(/Supply exception.*Demo case H02/)).toBeVisible();
+    expect(within(context).getByText(/Supply exception.*Proof case H02/)).toBeVisible();
     expect(within(context).getByText('Deterministic workspace')).toBeVisible();
-    expect(screen.getByText('Three independent deterministic demo cases.')).toBeVisible();
+    expect(screen.getByText('Three independent deterministic proof cases.')).toBeVisible();
     expect(context).not.toHaveTextContent(/customer|order number|shipment|SLA/i);
   });
 
@@ -93,11 +94,14 @@ describe('Evidence-to-decision primary experience', () => {
 
   it('H02 click exposes the real physical reason and operation-scoped zero effects', () => {
     render(<App />); apply();
-    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
-    expect(within(explanation).getByText('Up to 180 substitute units')).toBeVisible();
-    expect(within(explanation).getByText('150 substitute units required')).toBeVisible();
-    expect(within(explanation).getByText('100 substitute units available')).toBeVisible();
-    expect(within(explanation).getByText('50 substitute units unsupported')).toBeVisible();
+    const explanation = screen.getByRole('region', { name: 'Broker disposition' });
+    const truth = screen.getByRole('region', { name: 'Operational reality' });
+    expect(within(truth).getByText('Up to 180 substitutes')).toBeVisible();
+    expect(within(truth).getByText('150')).toBeVisible();
+    expect(within(truth).getByText('100')).toBeVisible();
+    expect(within(explanation).getByText('50 required substitute units are unavailable.')).toBeVisible();
+    expect(within(explanation).getByText('PLAN_PHYSICALLY_INFEASIBLE')).toBeVisible();
+    expect(within(truth).getByText('Authority is sufficient. Physical supply is not.')).toBeVisible();
     expect(within(explanation).getByText('Application stopped. No application effects created.')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Resolve the supply gap externally or revise the proposal' })).toBeVisible();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('APPROVED')).toBeVisible();
@@ -123,7 +127,7 @@ describe('Evidence-to-decision primary experience', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' }));
       resolveAttempt();
     }
-    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    const explanation = screen.getByRole('region', { name: 'Broker disposition' });
     expect(within(explanation).getByText('ALLOW', { exact: true })).toBeVisible();
     expect(within(explanation).getByText(/1 decision, 1 operation, and 1 event record created locally/)).toBeVisible();
     expect(within(explanation).getAllByText(/No external execution/).length).toBeGreaterThan(0);
@@ -146,7 +150,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByText('PLAN_PHYSICALLY_INFEASIBLE')).not.toBeInTheDocument();
     expect(screen.getAllByText(/CASE-PROOF-H01 \/ PLAN-PROOF-H01/).length).toBeGreaterThan(0);
     apply();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset demo case' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset proof case' }));
     openReview();
     expect(screen.getByRole('heading', { name: 'Review the client decision' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Local effects of this attempt' })).not.toBeInTheDocument();
@@ -156,7 +160,7 @@ describe('Evidence-to-decision primary experience', () => {
 
   it('H03 shows unaccepted claims and never offers review or fabricated feasibility', () => {
     render(<App />); select('H03');
-    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    const explanation = screen.getByRole('region', { name: 'Broker disposition' });
     expect(within(explanation).getByText(/Conflicting physical-supply claims prevent a trusted operational state/)).toBeVisible();
     expect(within(explanation).getByText('WAIT', { exact: true })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Resolve the conflicting supply evidence' })).toBeVisible();
@@ -175,7 +179,7 @@ describe('Evidence-to-decision primary experience', () => {
     render(<App />);
     openReview();
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    expect(within(screen.getByRole('region', { name: 'Why this disposition' })).getByText('DISCARDED')).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'Broker disposition' })).getByText('DISCARDED')).toBeVisible();
     expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
     expect(screen.getAllByText('DISCARDED_BY_REVIEWER').length).toBeGreaterThan(0);
@@ -187,7 +191,7 @@ describe('Evidence-to-decision primary experience', () => {
     revealSupporting();
     fireEvent.click(screen.getByText('Observed live validation', { selector: 'summary' }));
     const historical = screen.getByRole('complementary', { name: 'Observed live validation' });
-    expect(within(historical).getByText(/Not provenance for the selected deterministic demo case/)).toBeInTheDocument();
+    expect(within(historical).getByText(/Not provenance for the selected deterministic proof case/)).toBeInTheDocument();
     expect(within(historical).getByText(/NOT DEMONSTRATED/)).toBeInTheDocument();
     expect(within(historical).getByText(/No original recording is bundled/)).toBeInTheDocument();
     expect(within(historical).getByText(/OPERATOR-LIVE-V1/)).toBeInTheDocument();
@@ -199,8 +203,8 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByText(/not a live CALL-E response/)).toBeInTheDocument();
   });
 
-  it('keeps browser entry and new demo/presentation composition free of network and clock mechanisms', () => {
-    const sources = ['src/App.tsx', 'src/ui/ProofExperience.tsx', 'src/demo/proofDemo.ts', 'src/presentation/decisionTraceViewModel.ts']
+  it('keeps deterministic Control composition free of network and clock mechanisms', () => {
+    const sources = ['src/ui/ProofExperience.tsx', 'src/demo/proofDemo.ts', 'src/presentation/decisionTraceViewModel.ts']
       .map((path) => readFileSync(path, 'utf8')).join('\n');
     expect(sources).not.toMatch(/fetch\s*\(|axios|process\.env|CALLE_API_KEY|new CallEProvider|Date\.now|new Date\(|Math\.random|randomUUID/);
     expect(sources).not.toMatch(/from ['"][^'"]*(?:callEProvider|mockProvider|\/adapter)\.js/);
@@ -211,12 +215,12 @@ describe('Evidence-to-decision primary experience', () => {
     const prepared = prepareProof('H02');
     const failed = { ...prepared, stopped: true, registration: { accepted: false as const, state: prepared.state!, failure: { source: 'STATE' as const, reason: 'UNKNOWN_PREPARATION_FAILURE' } } };
     render(<ProofExperience prepare={() => failed} review={reviewProof} />);
-    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    const explanation = screen.getByRole('region', { name: 'Broker disposition' });
     expect(within(explanation).getByText('TECHNICAL STOP')).toBeVisible();
     expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Technical result' })).toBeInTheDocument();
-    expect(screen.getByText('UNKNOWN_PREPARATION_FAILURE')).toBeInTheDocument();
+    expect(screen.getAllByText('UNKNOWN_PREPARATION_FAILURE').length).toBeGreaterThan(0);
     expect(screen.queryByText('ALLOW', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText(/Only local plan registration has occurred/)).not.toBeInTheDocument();
@@ -224,13 +228,15 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByRole('button', { name: 'Review exact proposal' })).not.toBeInTheDocument();
   });
 
-  it('the complete local App import graph excludes live acquisition entry points', () => {
+  it('the browser App graph includes only the same-origin acquisition client and excludes provider/server execution', () => {
     const visited = new Set<string>();
+    const browserNetworkFiles: string[] = [];
     const inspect = (path: string) => {
       if (visited.has(path)) return;
       visited.add(path);
       const source = readFileSync(path, 'utf8');
-      expect(source).not.toMatch(/@call-e\/calle|process\.env|fetch\s*\(|XMLHttpRequest|WebSocket/);
+      expect(source).not.toMatch(/@call-e\/calle|process\.env|CALLE_API_KEY|XMLHttpRequest|WebSocket/);
+      if (source.includes('globalThis.fetch')) browserNetworkFiles.push(path);
       for (const match of source.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
         const base = resolve(dirname(path), match[1]!).replace(/\.js$/, '');
         const file = [`${base}.ts`, `${base}.tsx`].find(existsSync);
@@ -239,6 +245,7 @@ describe('Evidence-to-decision primary experience', () => {
     };
     inspect(resolve('src/App.tsx'));
     expect([...visited].some((path) => /callEProvider\.ts|mockProvider\.ts|[/\\]adapter\.ts$/.test(path))).toBe(false);
+    expect(browserNetworkFiles).toEqual([resolve('src/acquisition/browserClient.ts')]);
     expect([...visited].some((path) => path.endsWith('adaptiveOrchestrator.ts'))).toBe(true);
     expect([...visited].some((path) => path.endsWith('decisionApplication.ts'))).toBe(true);
   });
@@ -248,13 +255,13 @@ describe('Evidence-to-decision primary experience', () => {
     if (!session.bridge?.ready) throw new Error('Bridge required');
     const rejected = reviewProof({ ...session, bridge: createReadyDecisionBridgeResult({ ...session.bridge.proposal, decision: 'REJECTED' }) }, 'APPLY');
     render(<ProofExperience prepare={() => rejected} review={reviewProof} />);
-    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    const explanation = screen.getByRole('region', { name: 'Broker disposition' });
     expect(within(explanation).getByText('REJECTED', { exact: true })).toBeVisible();
     expect(within(explanation).getByText(/represented decision rejected the proposal/)).toBeVisible();
     expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     revealSupporting();
     expect(screen.getByRole('heading', { name: 'Technical result' })).toBeInTheDocument();
-    expect(screen.getByText('PLAN_REJECTED', { exact: true })).toBeInTheDocument();
+    expect(screen.getAllByText('PLAN_REJECTED', { exact: true }).length).toBeGreaterThan(0);
     expect(screen.getByText('New decision breakdown: 0 APPROVED / 1 REJECTED.')).toBeInTheDocument();
     expect(screen.queryByText('New approvals')).not.toBeInTheDocument();
     expect(screen.getByText('New decision records')).toBeInTheDocument();
@@ -265,15 +272,16 @@ describe('Evidence-to-decision primary experience', () => {
     const queue = screen.getByRole('complementary', { name: 'Needs attention' });
     expect(within(queue).getAllByRole('button')).toHaveLength(3);
     expect(within(queue).getAllByText('APPROVED')).toHaveLength(2);
-    expect(within(queue).getAllByText('NOT RESOLVED')).toHaveLength(2);
+    expect(within(queue).getAllByText('Review required')).toHaveLength(2);
     expect(within(queue).queryByText('ALLOW')).not.toBeInTheDocument();
     expect(within(queue).getByText('WAIT')).toBeInTheDocument();
+    expect(within(queue).getByText('Trusted truth not established')).toBeInTheDocument();
   });
 
   it('keeps authority scope distinct from exact review completion in the side sheet', () => {
     render(<App />);
     const model = screen.getByRole('region', { name: 'Decision control model' });
-    expect(within(model).getByText('EXACT REVIEW REQUIRED')).toBeInTheDocument();
+    expect(within(model).getByText('Exact review required')).toBeInTheDocument();
     expect(within(model).getByText('NOT RESOLVED')).toBeInTheDocument();
     openReview();
     const sheet = screen.getByRole('dialog', { name: 'Review the client decision' });
@@ -287,8 +295,8 @@ describe('Evidence-to-decision primary experience', () => {
     expect(disclosure).not.toHaveAttribute('open');
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('APPROVED')).toBeVisible();
-    expect(within(model).getByText('EXACT REVIEW REQUIRED')).toBeVisible();
-    expect(within(model).getByText('Not evaluated for application')).toBeVisible();
+    expect(within(model).getByText('Exact review required')).toBeVisible();
+    expect(within(model).getByText('Operational reality is evaluated after exact review.')).toBeVisible();
     expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
     expect(within(model).getByText(/normalized decision is ready/)).toBeVisible();
     expect(screen.getByLabelText(/deterministic local proof with configured evidence.*No external execution/i)).toHaveClass('proof-mode');
@@ -304,7 +312,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByText('Technical basis & local effects')).toBeInTheDocument();
   });
 
-  it('computes H02 APPLY exactly once and retains the coherent pre-attempt snapshot until reveal', () => {
+  it('computes H02 APPLY exactly once and reveals the already-known result without fake latency', () => {
     const review = vi.fn(reviewProof);
     render(<ProofExperience prepare={prepareProof} review={review} />);
     openReview();
@@ -314,19 +322,31 @@ describe('Evidence-to-decision primary experience', () => {
     expect(review).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-interrupted');
-    expect(screen.getByText('Exact review bound')).toBeVisible();
+    expect(screen.getByText(/Exact review bound/)).toBeVisible();
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('APPROVED')).toBeVisible();
-    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
-    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^H02 \/.*NOT RESOLVED/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reset demo case' })).toBeDisabled();
-    act(() => vi.advanceTimersByTime(699));
-    expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
-    act(() => vi.advanceTimersByTime(1));
-    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
+    expect(within(model).getByText('BLOCK', { exact: true })).toBeVisible();
+    expect(within(model).getByText('EVALUATED')).toBeVisible();
+    expect(within(model).getByText('Attempt #1')).toBeVisible();
+    const reality = within(model).getByRole('region', { name: 'Operational reality' });
+    expect(within(reality).getByText('Required')).toBeVisible();
+    expect(within(reality).getByText('Available')).toBeVisible();
+    // Authority is stated on both the reviewed proposal and the evaluated reality; they are different facts.
+    expect(within(reality).getByText('Up to 180 substitutes')).toBeVisible();
+    expect(within(model).getAllByText('Up to 180 substitutes')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /^H02 \/.*BLOCK/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reset proof case' })).toBeEnabled();
     expect(screen.getByText(/^Broker disposition BLOCK\./)).toHaveTextContent(/150 substitute units.*100/);
+  });
+
+  it('uses one compositional instrument without turning APPROVED into the Broker disposition', () => {
+    render(<App />);
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(model).toHaveClass('control-instrument');
+    expect(within(model).getByRole('heading', { name: 'APPROVED' })).toBeVisible();
+    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
+    const source = readFileSync('src/ui/ControlInstrument.tsx', 'utf8');
+    expect(source).not.toMatch(/leftMetric|rightMetric/);
   });
 
   it('resolves an H01 intermediate attempt to WAIT and re-derives exact review authority for the next role', () => {
@@ -337,12 +357,11 @@ describe('Evidence-to-decision primary experience', () => {
     expect(review).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-suspended');
-    resolveAttempt();
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(within(model).getByText('WAIT', { exact: true })).toBeVisible();
-    expect(within(model).getByText('EXACT REVIEW REQUIRED')).toBeVisible();
+    expect(within(model).getByText('Exact review required')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Review exact proposal' })).toBeEnabled();
-    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Application Attempt' })).toHaveTextContent('client review applied');
   });
 
   it('uses completed continuity only for a pending resolved ALLOW, not for the scenario name', () => {
@@ -353,7 +372,9 @@ describe('Evidence-to-decision primary experience', () => {
     startApply();
     expect(attempt()).toHaveClass('attempt-complete');
     resolveAttempt();
-    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('ALLOW', { exact: true })).toBeVisible();
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(within(model).getByText('ALLOW', { exact: true })).toBeVisible();
+    expect(within(model).getByText('EVALUATED')).toBeVisible();
   });
 
   it('never creates an Application Attempt for opening review, DISCARD, H03, or a pre-apply technical stop', () => {
@@ -362,9 +383,10 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Why this disposition' })).getByText('DISCARDED')).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'Broker disposition' })).getByText('DISCARDED')).toBeVisible();
     select('H03');
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('NOT AVAILABLE')).toBeVisible();
     cleanup();
     const prepared = prepareProof('H02');
     const failed = { ...prepared, stopped: true, registration: { accepted: false as const, state: prepared.state!, failure: { source: 'STATE' as const, reason: 'UNKNOWN_PREPARATION_FAILURE' } } };
@@ -383,10 +405,11 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-neutral');
     resolveAttempt();
-    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    const explanation = screen.getByRole('region', { name: 'Broker disposition' });
     expect(within(explanation).getByText('REJECTED', { exact: true })).toBeVisible();
     expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
     expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('EVALUATED')).toBeVisible();
   });
 
   it('resolves an unclassified post-APPLY result to neutral TECHNICAL STOP', () => {
@@ -401,13 +424,13 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-neutral-stopped');
     resolveAttempt();
-    const explanation = screen.getByRole('region', { name: 'Why this disposition' });
+    const explanation = screen.getByRole('region', { name: 'Broker disposition' });
     expect(within(explanation).getByText('TECHNICAL STOP')).toBeVisible();
     expect(within(explanation).queryByText('WAIT', { exact: true })).not.toBeInTheDocument();
     expect(within(explanation).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
   });
 
-  it('uses discrete reduced-motion stages without retaining normal reveal latency', () => {
+  it('preserves the complete causal state under reduced motion without relying on spatial travel', () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
     const review = vi.fn(reviewProof);
     render(<ProofExperience prepare={prepareProof} review={review} />);
@@ -415,14 +438,12 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('region', { name: 'Application Attempt' })).toBeVisible();
     expect(attempt()).toHaveClass('attempt-interrupted');
     expect(review).toHaveBeenCalledTimes(1);
-    act(() => vi.advanceTimersByTime(0));
-    expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('BLOCK', { exact: true })).toBeVisible();
-    const styles = readFileSync('src/styles/app.css', 'utf8');
-    expect(styles).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.attempt-continuity span \{ animation: none; transform: none; \}/);
+    const instrument = readFileSync('src/ui/ControlInstrument.tsx', 'utf8');
+    expect(instrument).toContain('reducedMotion="user"');
   });
 
-  it('cleans a pending reveal timer on unmount without re-running review', () => {
+  it('unmounts a known result presentation without re-running review', () => {
     const review = vi.fn(reviewProof);
     const rendered = render(<ProofExperience prepare={prepareProof} review={review} />);
     startApply();
@@ -447,13 +468,11 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
   });
 
-  it('reveals one H02 receipt only after commit and separates established interpretation from zero local effects', () => {
+  it('reveals one H02 receipt with the known result and separates interpretation from zero local effects', () => {
     const review = vi.fn(reviewProof);
     render(<ProofExperience prepare={prepareProof} review={review} />);
     startApply();
     expect(review).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
-    resolveAttempt();
     const receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
     expect(within(receipt).getByText(/Decision stayed APPROVED.*represented supply was insufficient.*resolved to BLOCK.*No local application effects/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
@@ -496,7 +515,7 @@ describe('Evidence-to-decision primary experience', () => {
     openReview(); fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(review).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('Not evaluated for application')).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'Decision control model' })).getByText('Operational reality is evaluated after exact review.')).toBeVisible();
     const receipt = screen.getByRole('heading', { name: 'What Changed?' }).parentElement!;
     expect(within(receipt).getByText(/No Application Attempt occurred.*No application evaluation occurred.*No local application effects/s)).toBeVisible();
     fireEvent.click(within(receipt).getByText('Inspect comparison'));
@@ -522,7 +541,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(screen.getByRole('heading', { name: 'What Changed?' })).toBeInTheDocument();
     openReview(); fireEvent.click(screen.getByRole('button', { name: 'Close exact review' }));
     expect(screen.getByRole('heading', { name: 'What Changed?' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset demo case' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset proof case' }));
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
     apply(); select('H02');
     expect(screen.queryByRole('heading', { name: 'What Changed?' })).not.toBeInTheDocument();
@@ -542,7 +561,7 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(current).queryByText('Observed live validation')).not.toBeInTheDocument();
     fireEvent.click(historical.querySelector('summary')!);
     expect(within(historical).getByText(/Not replayed by this browser/)).toBeInTheDocument();
-    expect(within(historical).getByText(/Not provenance for the selected deterministic demo case/)).toBeInTheDocument();
+    expect(within(historical).getByText(/Not provenance for the selected deterministic proof case/)).toBeInTheDocument();
     expect(within(historical).queryByRole('button')).not.toBeInTheDocument();
   });
 
@@ -572,7 +591,8 @@ describe('Evidence-to-decision primary experience', () => {
     const ui = readFileSync('src/ui/ProofExperience.tsx', 'utf8');
     expect(ui).not.toMatch(/continuity:\s*['"]\d+%/);
     const styles = readFileSync('src/styles/app.css', 'utf8');
-    expect(styles).toMatch(/@media \(max-width: 1050px\)[\s\S]*\.application-attempt \{ grid-template-columns: 1fr; \}/);
+    const control = readFileSync('src/styles/control.css', 'utf8');
+    expect(control).toMatch(/@media \(max-width: 980px\)[\s\S]*\.control-instrument \{ grid-template-columns: minmax\(0, 1fr\); gap: 12px; \}/);
     expect(styles).toMatch(/@media \(max-width: 760px\)[\s\S]*\.proof-table-scroll \{ max-width: 100%; overflow-x: auto; \}/);
   });
 
@@ -634,15 +654,14 @@ describe('Evidence-to-decision primary experience', () => {
     expect(within(technical).getByText(/Lineage-scoped resolution: CASE-PROOF-H01/)).toBeInTheDocument();
   });
 
-  it('returns post-action focus to the stable control model without revealing pending APPLY outcome', () => {
+  it('returns post-action focus to the stable control model with the known APPLY outcome', () => {
     render(<App />);
     openReview(); fireEvent.click(screen.getByRole('button', { name: 'Apply reviewed decision' }));
     const model = screen.getByRole('region', { name: 'Decision control model' });
     expect(model).toHaveFocus();
     expect(model.parentElement?.parentElement).not.toHaveAttribute('inert');
     expect(screen.getByRole('region', { name: 'Application Attempt' })).not.toHaveFocus();
-    expect(within(model).getByText('NOT RESOLVED')).toBeVisible();
-    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+    expect(within(model).getByText('BLOCK', { exact: true })).toBeVisible();
   });
 
   it('returns post-DISCARD focus to the stable control model and restores the background', () => {
@@ -653,5 +672,120 @@ describe('Evidence-to-decision primary experience', () => {
     expect(model.parentElement?.parentElement).not.toHaveAttribute('inert');
     expect(screen.queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What Changed?' })).not.toHaveFocus();
+  });
+});
+
+describe('Control product grammar', () => {
+  it('moves the attention queue from review-required to application-stopped when the Broker blocks', () => {
+    render(<App />);
+    const before = screen.getByRole('button', { name: /^H02 \// });
+    expect(within(before).getByText('APPROVED')).toBeVisible();
+    expect(within(before).getByText('Review required')).toBeVisible();
+    expect(within(before).getByText('150 required · 100 available')).toBeVisible();
+    expect(within(before).queryByText('BLOCK')).not.toBeInTheDocument();
+    apply();
+    const after = screen.getByRole('button', { name: /^H02 \// });
+    expect(within(after).getByText('BLOCK')).toBeVisible();
+    expect(within(after).getByText('Application stopped')).toBeVisible();
+    expect(within(after).getByText('50 units short')).toBeVisible();
+    // Attention lifecycle and Broker disposition are not the same thing.
+    expect(within(after).queryByText('Review required')).not.toBeInTheDocument();
+  });
+
+  it('keeps the acquired decision APPROVED and plum after the Broker blocks the application', () => {
+    render(<App />); apply();
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    const decision = within(model).getByRole('region', { name: 'Decision fixed' });
+    expect(within(decision).getByRole('heading', { name: 'APPROVED' })).toBeVisible();
+    expect(within(decision).queryByText('BLOCK')).not.toBeInTheDocument();
+    expect(within(decision).queryByText('REJECTED')).not.toBeInTheDocument();
+    expect(within(model).getByText('BLOCK', { exact: true })).toHaveClass('disposition-label');
+    const queued = screen.getByRole('button', { name: /^H01 \// });
+    expect(within(queued).getByText('APPROVED')).toHaveClass('disposition-approved');
+  });
+
+  it('reserves semantic green for ALLOW and never for APPROVED or a completed exact review', () => {
+    const control = readFileSync('src/styles/control.css', 'utf8');
+    const rules = [...control.matchAll(/([^{}]+)\{([^}]*)\}/g)];
+    const green = rules.filter((rule) => rule[2]?.includes('var(--allow)')).map((rule) => rule[1]!.trim());
+    expect(green.length).toBeGreaterThan(0);
+    expect(green.some((selector) => /approved|review|pending|not-resolved/.test(selector))).toBe(false);
+    expect(control).toMatch(/\.disposition-approved \{ color: var\(--approved\); \}/);
+    expect(control).toMatch(/\.control-review \.control-label \{ color: var\(--approved\); \}/);
+    expect(control).toMatch(/\.control-review-done i \{[^}]*color: var\(--approved\)/);
+    const tokens = readFileSync('src/styles/app.css', 'utf8');
+    // BLOCK stays coral and WAIT stays amber; neither borrows the ALLOW green.
+    expect(tokens).toMatch(/--approved: #6d477b;/);
+    expect(tokens).toMatch(/--block: #b44f45;/);
+    expect(tokens).toMatch(/--wait: #966617;/);
+  });
+
+  it('carries one boundary state per surface and never shows an evaluated reality before the exact review', () => {
+    render(<App />);
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    const boundary = within(model).getByLabelText('Application boundary');
+    expect(within(boundary).getByText('NOT ENGAGED')).toBeVisible();
+    expect(within(boundary).queryByText(/Attempt #/)).not.toBeInTheDocument();
+    const reality = within(model).getByRole('region', { name: 'Operational reality' });
+    expect(within(reality).getByText('Operational reality is evaluated after exact review.')).toBeVisible();
+    expect(within(reality).queryByText('Required')).not.toBeInTheDocument();
+    expect(within(reality).queryByText('Available')).not.toBeInTheDocument();
+    apply();
+    expect(within(screen.getByLabelText('Application boundary')).getByText('EVALUATED')).toBeVisible();
+    expect(within(screen.getByLabelText('Application boundary')).getByText('Attempt #1')).toBeVisible();
+  });
+
+  it('gives H03 no Apply action, no Application Attempt and an unavailable boundary', () => {
+    render(<App />); select('H03');
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(screen.queryByRole('button', { name: 'Review exact proposal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Apply reviewed decision' })).not.toBeInTheDocument();
+    expect(within(model).queryByRole('region', { name: 'Application Attempt' })).not.toBeInTheDocument();
+    expect(within(model).queryByText(/Attempt #/)).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText('Application boundary')).getByText('NOT AVAILABLE')).toBeVisible();
+    const reality = within(model).getByRole('region', { name: 'Operational reality' });
+    expect(within(reality).getByText('Trusted operational truth not established.')).toBeVisible();
+    expect(within(reality).getByText('Source A')).toBeVisible();
+    expect(within(reality).getByText('Source B')).toBeVisible();
+    expect(within(model).getByText('WAIT', { exact: true })).toBeVisible();
+    expect(within(model).queryByText('BLOCK', { exact: true })).not.toBeInTheDocument();
+    // WAIT means the Broker does not know enough to act, not that an attempt was stopped.
+    expect(within(model).queryByText(/Application stopped/)).not.toBeInTheDocument();
+  });
+
+  it('never claims a decision is fixed and usable when no reviewable decision exists', () => {
+    render(<App />); select('H03');
+    const decision = within(screen.getByRole('region', { name: 'Decision control model' })).getByRole('region', { name: 'Decision fixed' });
+    expect(within(decision).getByText('NO REVIEWABLE DECISION')).toBeVisible();
+    expect(within(decision).queryByText('Decision fixed and usable.')).not.toBeInTheDocument();
+    expect(decision).toHaveClass('decision-unavailable');
+  });
+
+  it('states controlled evaluation and no external execution wherever an attempt was evaluated', () => {
+    render(<App />); apply();
+    const disposition = screen.getByRole('region', { name: 'Broker disposition' });
+    expect(within(disposition).getByText('No external execution. This was a controlled evaluation.')).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/live (ERP|WMS|inventory)/i);
+    expect(document.body.textContent).not.toMatch(/shipment (was )?(executed|dispatched)/i);
+  });
+
+  it('keeps the deterministic decision source free of any CALL-E acquisition claim', () => {
+    render(<App />);
+    const decision = within(screen.getByRole('region', { name: 'Decision control model' })).getByRole('region', { name: 'Decision fixed' });
+    expect(within(decision).getByText('Configured decision input')).toBeVisible();
+    expect(within(decision).getByText(/not a CALL-E acquisition/)).toBeVisible();
+    expect(within(decision).queryByText(/CALL-E · Live acquisition/)).not.toBeInTheDocument();
+  });
+
+  it('keeps deep technical proof out of the primary surface while staying reachable', () => {
+    render(<App />); apply();
+    expect(screen.getByRole('heading', { name: 'Technical result' })).not.toBeVisible();
+    expect(screen.getByText('Verify current decision').closest('details')).not.toHaveAttribute('open');
+    const model = screen.getByRole('region', { name: 'Decision control model' });
+    expect(within(model).queryByText(/APPROVAL-PLAN-PROOF/)).not.toBeInTheDocument();
+    expect(within(model).queryByRole('table')).not.toBeInTheDocument();
+    revealSupporting();
+    expect(screen.getByRole('heading', { name: 'Technical result' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Plan identity & cost' })).toBeInTheDocument();
   });
 });

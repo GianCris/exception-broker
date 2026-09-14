@@ -10,7 +10,7 @@ import type { DemoRunResult, DemoRunnerInput } from '../../src/demo/demoTypes.js
 import { DemoExperience } from '../../src/ui/DemoExperience.js';
 
 // Preserve regression coverage for the retained legacy experience. The actual
-// App now mounts ProofExperience, covered independently in ProofExperience.test.tsx.
+// App surface navigation and Control are covered in HomeExperience.test.tsx and ProofExperience.test.tsx.
 const App = () => <DemoExperience runner={runDemo} createInput={createLocalSimulationInput} />;
 
 afterEach(cleanup);

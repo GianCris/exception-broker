@@ -1,53 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, MotionConfig } from 'motion/react';
 import type { ProofScenario, ProofSession } from '../demo/proofDemo.js';
 import { proofScenarios } from '../demo/proofDemo.js';
 import { createDecisionControlView, createDecisionTraceView, createDecisionTransitionView, historicalCallProof, type DecisionTraceView, type DecisionTransitionView } from '../presentation/decisionTraceViewModel.js';
-import { BrokerMark } from './CaseHeader.js';
-
-type ThemeMode = 'system' | 'light' | 'dark';
-const themeStorageKey = 'exception-broker-theme';
-const isThemeMode = (value: string | null): value is ThemeMode => value === 'system' || value === 'light' || value === 'dark';
-
-const ThemeControl = () => {
-  const [mode, setMode] = useState<ThemeMode>(() => {
-    try { const stored = window.localStorage.getItem(themeStorageKey); return isThemeMode(stored) ? stored : 'system'; } catch { return 'system'; }
-  });
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
-  useEffect(() => {
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    if (!media) return undefined;
-    const update = (event: MediaQueryListEvent) => setSystemDark(event.matches);
-    media.addEventListener?.('change', update);
-    return () => media.removeEventListener?.('change', update);
-  }, []);
-  const effectiveTheme = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
-  useEffect(() => {
-    document.documentElement.dataset.theme = effectiveTheme;
-    document.documentElement.dataset.themeMode = mode;
-    return () => { delete document.documentElement.dataset.theme; delete document.documentElement.dataset.themeMode; };
-  }, [effectiveTheme, mode]);
-  const changeMode = (next: ThemeMode) => {
-    setMode(next);
-    try { window.localStorage.setItem(themeStorageKey, next); } catch { /* Rendering remains deterministic when storage is unavailable. */ }
-  };
-  return <label className="theme-control"><span>Theme</span><select aria-label="Theme" value={mode} onChange={(event) => changeMode(event.target.value as ThemeMode)}>
-    <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-  </select></label>;
-};
-
-const attemptVisualFor = (resolved: ProofSession) => {
-  const disposition = createDecisionControlView(resolved).disposition;
-  if (disposition === 'ALLOW') return { treatment: 'complete' } as const;
-  if (disposition === 'BLOCK') return { treatment: 'interrupted' } as const;
-  if (disposition === 'WAIT') return { treatment: 'suspended' } as const;
-  if (disposition === 'REJECTED') return { treatment: 'neutral' } as const;
-  return { treatment: 'neutral-stopped' } as const;
-};
+import { controlQuestion, createControlQueueItem, createControlSurfaceModel, type ControlProposal } from '../presentation/controlSurfaceViewModel.js';
+import { AttentionQueue, ControlInstrument, ControlKeyTakeaway } from './ControlInstrument.js';
+import type { ReactNode } from 'react';
+import { ProductTopbar, SurfaceContext } from './ProductShell.js';
+import { motionTokens } from './motion.js';
 
 const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section className="proof-card" aria-labelledby="evidence-title">
   <p className="eyebrow">01 / Operational evidence</p>
   <h2 id="evidence-title">{view.trustedCaseProduced ? 'Trusted snapshot facts' : 'Input claims — not a trusted snapshot'}</h2>
-  <p>Deterministic demo evidence. Configured ERP / WMS sources are not live connections.</p>
+  <p>Deterministic proof evidence. Configured ERP / WMS sources are not live connections.</p>
   <div className="proof-table-scroll"><table className="proof-table"><caption>Assembly: {view.assemblyStatus}</caption><thead><tr><th>Fact / value</th><th>Configured source</th><th>Trust status</th></tr></thead><tbody>
     {view.facts.map((fact) => <tr key={fact.evidenceId}><td><strong>{fact.label}</strong><span>{fact.value}</span></td><td>{fact.sourceId}<small>Authority configured for {fact.label.toLowerCase()}</small></td><td>{fact.trusted ? 'Accepted evidence' : 'Unaccepted input claim'}
       <details><summary>Evidence details</summary><dl><dt>Evidence ID</dt><dd>{fact.evidenceId}</dd><dt>Observed at</dt><dd>{fact.observedAt}</dd><dt>Effective at</dt><dd>{fact.effectiveAt}</dd><dt>Authoritative source</dt><dd>{fact.authority}</dd></dl></details>
@@ -58,7 +23,16 @@ const Evidence = ({ view }: Readonly<{ view: DecisionTraceView }>) => <section c
   {view.assemblyIssues.length > 0 ? <ul className="proof-issues">{view.assemblyIssues.map((issue, index) => <li key={index}>{issue.code}: {issue.message} {issue.factKind}</li>)}</ul> : null}
 </section>;
 
-const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView; onReview: (action: 'APPLY' | 'DISCARD') => void; onClose: () => void }>) => {
+/** The same diamond the instrument uses: one decision object, one mark, never a check. */
+const ReviewDiamond = () => (
+  <svg className="sheet-diamond" viewBox="0 0 40 40" aria-hidden="true">
+    <path d="M20 2.5 37.5 20 20 37.5 2.5 20Z" className="control-diamond-body" />
+    <path d="M16.2 13.6h5.6l3.1 3.1v9.7h-8.7Z" className="control-diamond-mark" />
+    <path d="M18.3 21.2h4.2M18.3 24h3" className="control-diamond-rule" />
+  </svg>
+);
+
+const Review = ({ view, proposal: exact, onReview, onClose }: Readonly<{ view: DecisionTraceView; proposal?: ControlProposal | undefined; onReview: (action: 'APPLY' | 'DISCARD') => void; onClose: () => void }>) => {
   const proposal = view.proposal;
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -73,24 +47,40 @@ const Review = ({ view, onReview, onClose }: Readonly<{ view: DecisionTraceView;
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
-  return <div className="review-backdrop"><aside ref={dialogRef} className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title" onKeyDown={onDialogKeyDown}>
-    <button ref={closeRef} type="button" className="sheet-close" onClick={onClose} aria-label="Close exact review">×</button>
-    <p className="eyebrow">02 / Explicit review</p><h2 id="review-title">{proposal ? `Review the ${proposal.actorRole} decision` : 'Review not reached'}</h2>
+  return <MotionConfig reducedMotion="user"><motion.div className="review-backdrop" initial={{ opacity: 0.42 }} animate={{ opacity: 1 }} transition={motionTokens.settle}><motion.aside ref={dialogRef} className="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title" onKeyDown={onDialogKeyDown} initial={{ x: 26, opacity: 0.55 }} animate={{ x: 0, opacity: 1 }} transition={motionTokens.settle}>
+    <header className="sheet-head">
+      <p className="eyebrow">02 / Exact review</p>
+      <button ref={closeRef} type="button" className="sheet-close" onClick={onClose} aria-label="Close exact review">×</button>
+      {proposal ? <p className="proof-decision"><ReviewDiamond />Represented external decision <strong>{proposal.decision}</strong></p> : null}
+      <h2 id="review-title">{proposal ? `Review the ${proposal.actorRole} decision` : 'Review not reached'}</h2>
+    </header>
     {proposal ? <>
-      <p className="proof-decision">Represented external decision <strong>{proposal.decision}</strong></p>
-      <p className="proof-verbatim">{proposal.summary}</p>
-      <p>Plan version {view.plan.version} · {proposal.actorRole} · {view.canReview ? 'Awaiting your review' : 'Review interaction closed'}</p>
-      <p>Proposed authorization changes: {proposal.proposedAuthorizationChanges.length === 0 ? 'none' : proposal.proposedAuthorizationChanges.length}</p>
-      <p className="proof-note">Synthetic decision input, not a live CALL-E response. Review applies to this exact proposal. Applying it asks the broker; it does not bypass safety checks.</p>
-      <details><summary>Exact proposal &amp; bound review details</summary><dl>
-        <dt>Case</dt><dd>{proposal.caseId}</dd><dt>Plan</dt><dd>{proposal.operationType === 'PLAN_DECISION' ? proposal.planId : 'Case authorization'}</dd>
-        <dt>Actor / role</dt><dd>{proposal.actorId} / {proposal.actorRole}</dd><dt>Request</dt><dd>{proposal.requestId}</dd><dt>Received at</dt><dd>{proposal.receivedAt}</dd><dt>Review state</dt><dd>{proposal.reviewState}</dd>
-        <dt>Local demo reviewer</dt><dd>{view.reviewer}</dd><dt>Deterministic review timestamp</dt><dd>{view.reviewedAt}</dd>
-      </dl><p>Demo metadata, not authenticated reviewer identity or the current wall clock.</p><ul>{proposal.evidence.map((value, index) => <li className="proof-verbatim" key={index}>{value}</li>)}</ul><pre>{JSON.stringify(view.reviewTarget, null, 2)}</pre></details>
-      <div className="proof-actions"><button type="button" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
-      {view.canReview && view.attempts.length > 0 ? <p>Previous role recorded. This is a new, separate role review; it has not been applied.</p> : null}
-    </> : <p>No reviewable proposal. No decision application was attempted.</p>}
-  </aside></div>;
+      <div className="sheet-body">
+        <p className="proof-verbatim">{proposal.summary}</p>
+        {exact ? <section className="sheet-block" aria-label="Exact proposal">
+          <p className="sheet-block-label">Exact proposal</p>
+          <dl className="control-proposal">{exact.lines.map((line) => <div key={line.label} {...(line.total ? { className: 'proposal-total' } : {})}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}</dl>
+        </section> : null}
+        <dl className="sheet-context">
+          <div><dt>Actor / role</dt><dd>{proposal.actorRole}</dd></div>
+          <div><dt>Plan version</dt><dd>{view.plan.version}</dd></div>
+          <div><dt>Authorization changes</dt><dd>{proposal.proposedAuthorizationChanges.length === 0 ? 'none' : proposal.proposedAuthorizationChanges.length}</dd></div>
+          <div><dt>Review state</dt><dd>{view.canReview ? 'Awaiting your review' : 'Review interaction closed'}</dd></div>
+        </dl>
+        <p className="proof-note">Synthetic decision input, not a live CALL-E response. Review applies to this exact proposal.</p>
+        {view.canReview && view.attempts.length > 0 ? <p className="proof-note">Previous role recorded. This is a new, separate role review; it has not been applied.</p> : null}
+        <details className="sheet-binding"><summary>Inspect exact binding</summary><div className="sheet-binding-body"><dl>
+          <dt>Case</dt><dd>{proposal.caseId}</dd><dt>Plan</dt><dd>{proposal.operationType === 'PLAN_DECISION' ? proposal.planId : 'Case authorization'}</dd>
+          <dt>Actor / role</dt><dd>{proposal.actorId} / {proposal.actorRole}</dd><dt>Request</dt><dd>{proposal.requestId}</dd><dt>Received at</dt><dd>{proposal.receivedAt}</dd><dt>Review state</dt><dd>{proposal.reviewState}</dd>
+          <dt>Local proof reviewer</dt><dd>{view.reviewer}</dd><dt>Deterministic review timestamp</dt><dd>{view.reviewedAt}</dd>
+        </dl><p>Proof metadata, not authenticated reviewer identity or the current wall clock.</p><ul>{proposal.evidence.map((value, index) => <li className="proof-verbatim" key={index}>{value}</li>)}</ul><pre>{JSON.stringify(view.reviewTarget, null, 2)}</pre></div></details>
+      </div>
+      <footer className="sheet-actions">
+        <p>Applying asks the Broker to evaluate this exact attempt. It does not execute externally.</p>
+        <div className="proof-actions"><button type="button" data-walkthrough-target="apply-reviewed" onClick={() => onReview('APPLY')} disabled={!view.canReview}>Apply reviewed decision</button><button type="button" className="proof-secondary" onClick={() => onReview('DISCARD')} disabled={!view.canReview}>Discard</button></div>
+      </footer>
+    </> : <div className="sheet-body"><p>No reviewable proposal. No decision application was attempted.</p></div>}
+  </motion.aside></motion.div></MotionConfig>;
 };
 
 const ActionReceipt = ({ receipt }: Readonly<{ receipt: DecisionTransitionView }>) => <section className="action-receipt" aria-labelledby="changed-title">
@@ -148,17 +138,48 @@ const Assessments = ({ view }: Readonly<{ view: DecisionTraceView }>) => {
   </section>;
 };
 
-export const ProofExperience = ({ prepare, review }: Readonly<{
+/**
+ * Presentation-and-orchestration hooks the Guided Walkthrough composes this experience
+ * with. Every field is optional to the caller and the whole object defaults to undefined:
+ * deterministic Control and Live Control render and behave exactly as before.
+ */
+export type ControlWalkthrough = Readonly<{
+  /** Replaces the deterministic-proof context indicator in the shared topbar. */
+  context: ReactNode;
+  /** Replaces the H01/H02/H03 attention queue; the walkthrough never mixes into it. */
+  rail: ReactNode;
+  /**
+   * Replaces the proof-case context block in the workspace header. Outside a walkthrough
+   * the decision genuinely IS a configured proof input; inside one it is the decision the
+   * learner just watched being acquired, so the story has to stay causal while both truths
+   * stay stated — the acquisition was simulated, the evaluation is the real H02 path.
+   */
+  caseContext: ReactNode;
+  /** Same reason, for the Decision object's own provenance line. */
+  decisionSource: Readonly<{ label: string; detail: string }>;
+  onReviewOpen?: () => void;
+  /** Reports the action taken and the disposition the Broker actually produced for it. */
+  onReviewResolved?: (action: 'APPLY' | 'DISCARD', disposition: string) => void;
+}>;
+
+/**
+ * CONTROL PROOF: the independent surface for verifying deterministic ALLOW / BLOCK / WAIT
+ * behaviour against configured evidence. It is NOT the Control workspace for an acquired
+ * user decision, so it is reached only by explicit proof entry points — Home's scenario
+ * cards, the Control Gate, and walkthrough completion — and its primary Control navigation
+ * leads OUT of here, to the Control workspace.
+ */
+export const ProofExperience = ({ prepare, review, onNavigateAcquisition, onNavigateControl, onNavigateHome, initialScenario = 'H02', walkthrough }: Readonly<{
   prepare: (scenario: ProofScenario) => ProofSession;
   review: (session: ProofSession, action: 'APPLY' | 'DISCARD') => ProofSession;
+  onNavigateAcquisition?: () => void;
+  onNavigateControl?: () => void;
+  onNavigateHome?: () => void;
+  initialScenario?: ProofScenario;
+  walkthrough?: ControlWalkthrough;
 }>) => {
-  const [session, setSession] = useState(() => prepare('H02'));
+  const [session, setSession] = useState(() => prepare(initialScenario));
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [applicationAttempt, setApplicationAttempt] = useState<Readonly<{
-    before: ProofSession;
-    resolved: ProofSession;
-    visual: ReturnType<typeof attemptVisualFor>;
-  }> | null>(null);
   const [resolvedAnnouncement, setResolvedAnnouncement] = useState('');
   const [receipt, setReceipt] = useState<DecisionTransitionView | null>(null);
   const applicationLock = useRef(false);
@@ -168,92 +189,90 @@ export const ProofExperience = ({ prepare, review }: Readonly<{
   const reviewWasOpen = useRef(false);
   const reviewCloseDestination = useRef<'trigger' | 'surface'>('trigger');
   const view = createDecisionTraceView(session);
-  const control = createDecisionControlView(session);
-  const queue = proofScenarios.map((scenario) => ({ scenario, control: createDecisionControlView(
+  const baseModel = createControlSurfaceModel(session);
+  // Only the Decision's provenance LINE is contextualized for the walkthrough; every
+  // evaluated value in the model stays exactly what the deterministic Broker produced.
+  const model = walkthrough === undefined ? baseModel : {
+    ...baseModel,
+    decision: { ...baseModel.decision, sourceLabel: walkthrough.decisionSource.label, sourceDetail: walkthrough.decisionSource.detail },
+  };
+  const queue = proofScenarios.map((scenario) => createControlQueueItem(
     scenario.id === session.inputs.scenario ? session : prepare(scenario.id),
-  ) }));
-  useEffect(() => {
-    if (applicationAttempt === null) return undefined;
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    const timer = window.setTimeout(() => {
-      const resolvedControl = createDecisionControlView(applicationAttempt.resolved);
-      setSession(applicationAttempt.resolved);
-      setReceipt(createDecisionTransitionView({ beforeSession: applicationAttempt.before, afterSession: applicationAttempt.resolved, action: 'APPLY' }));
-      setResolvedAnnouncement(`Broker disposition ${resolvedControl.disposition}. ${resolvedControl.why}`);
-      setApplicationAttempt(null);
-      applicationLock.current = false;
-    }, reducedMotion ? 0 : 700);
-    return () => window.clearTimeout(timer);
-  }, [applicationAttempt]);
+    scenario.id, scenario.title, `Proof case ${scenario.id}`,
+  ));
+  useEffect(() => { applicationLock.current = false; }, [session]);
   const onReview = (action: 'APPLY' | 'DISCARD') => {
     // Use the rendered snapshot, not a functional updater that might consume the next
     // role's proposal on a rapid repeated click. Every next proposal needs a new render.
     if (!view.canReview || applicationLock.current) return;
     reviewCloseDestination.current = 'surface';
-    if (action === 'APPLY') {
-      applicationLock.current = true;
-      const resolved = review(session, action);
-      setApplicationAttempt({ before: session, resolved, visual: attemptVisualFor(resolved) });
-    } else {
-      const resolved = review(session, action);
-      setSession(resolved);
-      setReceipt(createDecisionTransitionView({ beforeSession: session, afterSession: resolved, action: 'DISCARD' }));
-    }
+    applicationLock.current = true;
+    const resolved = review(session, action);
+    setSession(resolved);
+    setReceipt(createDecisionTransitionView({ beforeSession: session, afterSession: resolved, action }));
+    const resolvedControl = createDecisionControlView(resolved);
+    if (action === 'APPLY') setResolvedAnnouncement(`Broker disposition ${resolvedControl.disposition}. ${resolvedControl.why}`);
     setReviewOpen(false);
+    walkthrough?.onReviewResolved?.(action, resolvedControl.disposition);
   };
   useEffect(() => {
     if (backgroundRef.current) backgroundRef.current.inert = reviewOpen;
     if (reviewOpen) reviewWasOpen.current = true;
     else if (reviewWasOpen.current) {
       reviewWasOpen.current = false;
-      (reviewCloseDestination.current === 'trigger' ? reviewButtonRef.current : controlSummaryRef.current)?.focus();
+      // Focus the stable instrument without moving the camera between states.
+      (reviewCloseDestination.current === 'trigger' ? reviewButtonRef.current : controlSummaryRef.current)?.focus({ preventScroll: true });
     }
   }, [reviewOpen]);
-  const openReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(true); };
+  const openReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(true); walkthrough?.onReviewOpen?.(); };
   const closeReview = () => { reviewCloseDestination.current = 'trigger'; setReviewOpen(false); };
   const focusScenario = (scenario: ProofScenario) => {
     if (applicationLock.current) return;
     setSession(prepare(scenario)); setReviewOpen(false); setResolvedAnnouncement(''); setReceipt(null);
   };
-  return <div className="app-shell proof-shell"><div ref={backgroundRef}><header className="product-topbar"><div className="brand-row"><BrokerMark /><span>Exception Broker</span></div><nav aria-label="Product"><span aria-current="page">Decision control</span></nav><span className="proof-mode" aria-label="Demo environment: deterministic local proof with configured evidence. No external execution."><b>Demo</b><span>Deterministic · configured evidence · local only · No external execution</span></span><ThemeControl /></header>
-    <div className="product-layout"><aside className="control-queue" aria-labelledby="queue-title"><p className="eyebrow">Decision control queue</p><h1 id="queue-title">Needs attention</h1><p>Three independent deterministic demo cases.</p>
-      <div className="queue-list">{queue.map(({ scenario, control: item }) => <button type="button" key={scenario.id} disabled={applicationAttempt !== null} aria-label={`${scenario.id} / ${scenario.title} · ${item.disposition}`} aria-pressed={view.scenario === scenario.id} onClick={() => focusScenario(scenario.id)}>
-        <span className="queue-heading"><span><strong>{scenario.title}</strong><small>Demo case {scenario.id}</small></span><b className={`disposition disposition-${item.disposition.toLowerCase().replace(' ', '-')}`}>{item.disposition}</b></span>
-        <span className="queue-state"><b>{item.decision}</b><i aria-hidden="true">·</i><b>{item.authority}</b></span>
-        <span className="queue-reason">{item.why}</span><span className="queue-action"><small>Next</small>{item.nextAction}</span>
-      </button>)}</div>
+  return <div className="app-shell proof-shell control-surface"><div className="control-chassis" ref={backgroundRef}><ProductTopbar surface={walkthrough === undefined ? 'control-proof' : 'walkthrough'} onNavigateHome={onNavigateHome} onNavigateAcquisition={onNavigateAcquisition} onNavigateControl={onNavigateControl}
+      context={walkthrough?.context ?? <SurfaceContext label="Deterministic proof" detail="Configured evidence · local only · no external execution"
+        ariaLabel="Proof environment: deterministic local proof with configured evidence. No external execution." />} />
+    <div className="product-layout">
+    {walkthrough?.rail ?? <AttentionQueue items={queue} selectedId={view.scenario} onSelect={(id) => { const selected = proofScenarios.find((scenario) => scenario.id === id); if (selected) focusScenario(selected.id); }} title="Needs attention" description="Three independent deterministic proof cases.">
       <aside className="queue-history" aria-label="Historical CALL-E evidence"><strong>Historical CALL-E evidence</strong><span>Read-only observed runs · separate from this queue</span></aside>
-    </aside><main className="control-workspace">
-    <header className="proof-header"><p>Decision control</p><h1>Decision is not authority.</h1><p>The broker evaluates the application attempt—not the word APPROVED.</p></header>
-    <section className="case-context" aria-label="Demo case context"><div><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><p>Supply exception <span aria-hidden="true">·</span> Demo case {view.scenario}</p></div><strong>Deterministic workspace</strong></section>
-    <section ref={controlSummaryRef} tabIndex={-1} className="control-summary" aria-label="Decision control model">
-      <article><span>Decision</span><strong className="decision-neutral">{control.decision}</strong><p>Normalized synthetic input</p></article>
-      <article className={view.canReview ? 'control-priority' : ''}><span>Authority</span><strong>{control.authority}</strong><p>{view.canReview ? 'Exact proposal review is still required.' : 'Derived from the current review state.'}</p></article>
-      <article><span>Operational truth</span><strong>{control.operationalTruth}</strong><p>Local represented facts only</p></article>
-      <article><span>Broker disposition</span><strong className={`disposition-text disposition-${control.disposition.toLowerCase().replace(' ', '-')}`}>{control.disposition}</strong><p>{control.why}</p></article>
-    </section>
-    {applicationAttempt ? <section className={`application-attempt attempt-${applicationAttempt.visual.treatment}`} aria-label="Application Attempt">
-      <div><p className="eyebrow">Application Attempt</p><h2>Applying the reviewed decision to the represented local state</h2></div>
-      <dl><div><dt>Decision</dt><dd>{control.decision}</dd></div><div><dt>Proposal</dt><dd>Exact plan version {view.plan.version}</dd></div><div><dt>Review</dt><dd>Exact review bound</dd></div></dl>
-      <div className="attempt-continuity" aria-hidden="true"><span /><i /><span /></div>
-    </section> : null}
+    </AttentionQueue>}
+    <main className="control-workspace">
+    <header className="control-head"><p className="eyebrow">Decision control</p><h1>{controlQuestion}</h1><p>{model.answer}</p>
+      {walkthrough?.caseContext ?? <section className="control-context" aria-label="Proof case context"><b>Proof</b><h2>{proofScenarios.find(({ id }) => id === view.scenario)?.title}</h2><small>Supply exception <span aria-hidden="true">·</span> Proof case {view.scenario}</small><strong>Deterministic workspace</strong></section>}
+    </header>
+    <ControlInstrument
+      ref={controlSummaryRef}
+      ariaLabel="Decision control model"
+      sceneKey={view.scenario}
+      model={model}
+      reviewAction={view.canReview
+        ? <div className="control-review-action"><button ref={reviewButtonRef} type="button" data-walkthrough-target="review-proposal" onClick={openReview}>Review exact proposal <span aria-hidden="true">→</span></button><small>{model.nextActionNote}</small></div>
+        : model.review.state === 'COMPLETED'
+          ? <p className="control-review-done"><i aria-hidden="true">✓</i><small>{model.review.detail}</small></p>
+          : null}
+    />
     <p className="resolved-announcement" aria-live="polite" aria-atomic="true">{resolvedAnnouncement}</p>
-    <section className={`outcome-language outcome-${control.disposition.toLowerCase().replace(' ', '-')}`} aria-label="Why this disposition">
-      <div><p className="eyebrow">Why?</p><h2>{control.why}</h2></div>
-      {control.factors.length > 0 ? <dl>{control.factors.map((factor) => <div key={factor.label}><dt>{factor.label}</dt><dd>{factor.value}</dd></div>)}</dl> : null}
-      <p className="outcome-therefore"><span>Broker disposition</span><strong>{control.disposition}</strong></p>
-      {control.effectSummary ? <p className="outcome-effects">{control.effectSummary}</p> : null}
-      {control.disposition === 'ALLOW' ? <p className="outcome-scope">Eligible for local application under the represented controls. No external execution.</p> : null}
-    </section>
-    <section className="control-next"><div><p className="eyebrow">Next action</p><h2>{control.nextAction}</h2><p>Applying asks the broker; it never bypasses controls.</p></div>{view.canReview && applicationAttempt === null ? <button ref={reviewButtonRef} type="button" onClick={openReview}>Review exact proposal</button> : null}</section>
-    <div className="proof-reset"><p>Each demo case starts independent state. H01 is not a repair or inventory update of H02.</p><button type="button" disabled={applicationAttempt !== null} onClick={() => focusScenario(view.scenario)}>Reset demo case</button></div>
-    <section className="proof-intent" aria-label="Proposed recovery"><div><p className="eyebrow">Explicit planner proposal / version {view.plan.version}</p><h2>{view.plan.originalQuantityTomorrow} original + {view.plan.substituteQuantityTomorrow} substitute</h2><p>One recovery proposal. No plan generation or autonomous execution.</p></div><details><summary>Plan identity &amp; cost</summary><p>{view.plan.caseId} / {view.plan.id}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></details></section>
-    {receipt ? <ActionReceipt receipt={receipt} /> : null}
-    <details className="supporting-proof"><summary>Verify current decision</summary><div className="supporting-proof-content">
-      <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
-      <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><ReviewApplicationProof view={view} /></section>
-      <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /></section>
-    </div></details>
-    <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic demo case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></details>
-  </main></div><footer>Exception Broker · Decision acquisition ≠ authority to execute</footer></div>{reviewOpen ? <Review view={view} onReview={onReview} onClose={closeReview} /> : null}</div>;
+    {/* The dock holds guidance and proof. Level 1 keeps its height; depth opens as a local drawer. */}
+    <div className="control-dock">
+      <div className="control-dock-top">
+        {model.takeaway ? <ControlKeyTakeaway takeaway={model.takeaway} tone={model.disposition.tone} /> : null}
+        {/* Verification before proof utilities: Reset is a proof affordance, not a product action. */}
+        {walkthrough === undefined ? <div className="control-dock-tools">
+          <details className="supporting-proof"><summary>Verify current decision</summary><div className="control-drawer"><div className="supporting-proof-content">
+            <p className="drawer-note">Each proof case starts independent state. H01 is not a repair or inventory update of H02. One recovery proposal; no plan generation or autonomous execution.</p>
+            <section aria-labelledby="operational-evidence-group"><h2 id="operational-evidence-group">Operational evidence</h2><Evidence view={view} /></section>
+            <section aria-labelledby="review-application-group"><h2 id="review-application-group">Exact review &amp; application</h2><ReviewApplicationProof view={view} /></section>
+            <section aria-labelledby="technical-basis-group"><h2 id="technical-basis-group">Technical basis &amp; local effects</h2><Assessments view={view} /><TechnicalResult view={view} /><section className="proof-card proof-plan-identity" aria-label="Plan identity and cost"><h3>Plan identity &amp; cost</h3><p>{view.plan.caseId} / {view.plan.id} · version {view.plan.version}</p><p>Client cost {view.plan.clientAdditionalCost}; Supplier cost {view.plan.supplierAbsorbedCost}; Production cost {view.plan.productionAbsorbedCost} (demo-case cost units).</p></section></section>
+          </div></div></details>
+          <details className="observed-live"><summary>Observed live validation <span>2 historical runs · read-only</span></summary><div className="control-drawer"><aside className="proof-historical" aria-labelledby="historical-title"><p className="eyebrow">Historical · read-only</p><h2 id="historical-title">Observed live validation</h2><p>Real CALL-E interactions observed during operator validation. Not replayed by this browser. Not provenance for the selected deterministic proof case.</p><div className="proof-history-grid">{historicalCallProof.runs.map((run) => <article key={run.name}><h3>{run.name}</h3><p>{run.observation}</p><p>{run.limit}</p></article>)}</div><p><strong>{historicalCallProof.unproven}</strong></p><p className="proof-note">Source: {historicalCallProof.source}</p></aside></div></details>
+          <button type="button" className="dock-reset" onClick={() => focusScenario(view.scenario)}>Reset proof case</button>
+        </div> : null}
+      </div>
+      <div className="control-dock-bar">
+        {view.canReview ? null : <section className="control-next"><p className="eyebrow">Next action</p><h2>{model.nextAction}</h2></section>}
+        {receipt ? <ActionReceipt receipt={receipt} /> : null}
+      </div>
+    </div>
+  </main></div></div>{reviewOpen ? <Review view={view} proposal={model.proposal} onReview={onReview} onClose={closeReview} /> : null}</div>;
 };

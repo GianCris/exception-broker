@@ -9,8 +9,11 @@ const isoTime = z.string().datetime({ offset: true });
 export const acquisitionCreateSchema = z.object({
   acquisitionId: nonEmpty.max(120),
   clientToken: nonEmpty.max(256),
+  accessMode: z.enum(['HOSTED_DEMO', 'BYOK']),
   authorizationConfirmed: z.literal(true),
   phoneNumber: z.string().regex(/^\+[1-9]\d{7,14}$/, 'Phone number must use E.164 format'),
+  /** A claim, never a grant: the server re-verifies ownership, mode and terminal technical failure. */
+  recoveryOfAcquisitionId: nonEmpty.max(120).optional(),
   request: callRequestSchema.omit({ phoneNumber: true }).extend({
     objective: nonEmpty.max(2_000),
     context: nonEmpty.max(5_000),
@@ -20,8 +23,37 @@ export const acquisitionCreateSchema = z.object({
 export type AcquisitionCreateInput = z.infer<typeof acquisitionCreateSchema>;
 
 export type AcquisitionStatus = 'creating' | z.infer<typeof calleStatusSchema>;
+export type AcquisitionAccessMode = 'HOSTED_DEMO' | 'BYOK';
 export type NormalizationStatus = 'PENDING' | 'USABLE' | 'SAFE_STOP';
 export type HandoffState = 'NOT_READY' | 'READY_FOR_REVIEW' | 'SAFE_STOP';
+
+/** Where the technical problem was observed. Never a business disposition. */
+export type AcquisitionFailureStage = 'CREATE' | 'PROVIDER_TERMINAL';
+
+/**
+ * What can actually be PROVEN about whether CALL-E received the create request.
+ * `callId === null` never proves non-acceptance, so an exception raised once the
+ * request could already be in flight stays UNKNOWN.
+ */
+export type ProviderAcceptance =
+  /** A local boundary before the provider invocation refused to dispatch. */
+  | 'DEFINITELY_NOT_SENT'
+  /** The request may or may not have been accepted. Recoverable, never terminal. */
+  | 'UNKNOWN'
+  /** CALL-E returned a call identity, so the provider definitely accepted the work. */
+  | 'PROVIDER_IDENTIFIED';
+
+export type AcquisitionTechnicalFailure = Readonly<{
+  stage: AcquisitionFailureStage;
+  acceptance: ProviderAcceptance;
+  /** True only while the same acquisition can still be retried with the same idempotency key. */
+  reconciliationAvailable: boolean;
+  /** Bounded provider dispatch attempts already spent for this acquisition. */
+  attempts: number;
+  code: string | null;
+  message: string | null;
+  observedAt: string;
+}>;
 
 export type SanitizedTranscriptTurn = Readonly<{
   offsetSeconds: number | null;
@@ -76,7 +108,10 @@ export type AcquisitionRecord = Readonly<{
   acquisitionId: string;
   idempotencyKey: string;
   requestFingerprint: string;
+  requestDefinitionFingerprint?: string;
   clientTokenHash: string;
+  /** Server-derived metadata. Missing only on records created before access-mode persistence. */
+  accessMode?: AcquisitionAccessMode;
   authorizationConfirmed: true;
   maskedRecipient: string;
   decisionContext: PersistedDecisionContext;
@@ -90,6 +125,12 @@ export type AcquisitionRecord = Readonly<{
   normalizationStatus: NormalizationStatus;
   safeStopReason: string | null;
   handoffState: HandoffState;
+  /** Sanitized technical diagnostics. Absent on records written before diagnostics existed. */
+  technicalFailure?: AcquisitionTechnicalFailure;
+  /** Durable, server-owned proof that this acquisition already consumed one recovery allowance. */
+  recoveryOfAcquisitionId?: string;
+  /** Denormalized convenience pointer. Never the sole proof that the allowance was consumed. */
+  recoveredByAcquisitionId?: string;
 }>;
 
 export type CreateAcquisitionResult =
@@ -100,12 +141,12 @@ export type PollAcquisitionResult =
   | Readonly<{ found: true; record: AcquisitionRecord }>
   | Readonly<{ found: false; code: 'NOT_FOUND' | 'PROVIDER_FAILURE' | 'POLL_TIMEOUT'; reason: string }>;
 
-export type AcquisitionPublicRecord = Omit<AcquisitionRecord, 'clientTokenHash' | 'requestFingerprint' | 'decisionContext'> & Readonly<{
+export type AcquisitionPublicRecord = Omit<AcquisitionRecord, 'clientTokenHash' | 'requestFingerprint' | 'requestDefinitionFingerprint' | 'decisionContext'> & Readonly<{
   decisionContext: PersistedDecisionContext;
 }>;
 
 export const toPublicAcquisitionRecord = (record: AcquisitionRecord): AcquisitionPublicRecord => {
-  const { clientTokenHash: _clientTokenHash, requestFingerprint: _requestFingerprint, ...safe } = record;
+  const { clientTokenHash: _clientTokenHash, requestFingerprint: _requestFingerprint, requestDefinitionFingerprint: _requestDefinitionFingerprint, ...safe } = record;
   return structuredClone(safe);
 };
 
